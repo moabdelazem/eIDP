@@ -1,0 +1,13 @@
+# Host dependencies are built for the host; the image installs its own.
+node_modules
+**/node_modules
+
+# Never bake secrets or build output into an image layer.
+.env
+.env.*
+!.env.example
+.cache
+dist
+**/dist
+
+.git

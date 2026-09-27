@@ -45,23 +45,43 @@ Sign in as `alice` / `alicepw` or `bob` / `bobpw` — the test accounts in
 | `pnpm test` | API tests, needs the containers running |
 | `pnpm build` | production build |
 
-### On a machine with podman
+### With podman, no node needed
 
-`scripts/dev.sh` is the podman equivalent of `compose.yaml` — it runs Postgres
-and OpenLDAP in a pod and reads the same `.env`, so you can run the apps
-natively against them on your organization network.
+`scripts/dev.sh up` runs the whole thing in containers — Postgres, OpenLDAP,
+the API and the UI — so nothing has to be installed on the machine but podman.
+It reads the same `.env`, so one file configures everything.
 
 ```sh
-./scripts/dev.sh up       # start, wait for readiness, seed LDAP
+./scripts/dev.sh up        # build and start everything
+./scripts/dev.sh restart   # restart the apps, e.g. after editing .env
+./scripts/dev.sh build     # rebuild the image after a dependency change
+./scripts/dev.sh logs      # follow the api; pass a name for another
 ./scripts/dev.sh status
-./scripts/dev.sh down     # stop, keep the data
-./scripts/dev.sh reset    # stop, wipe volumes, start again
+./scripts/dev.sh down      # stop, keep the data
+./scripts/dev.sh reset     # stop, wipe volumes, start again
+```
+
+Then open http://localhost:5173. `apps/*/src` is mounted into the containers,
+so edits reload in place without rebuilding.
+
+To run only the backing services and the apps yourself with pnpm:
+
+```sh
+./scripts/dev.sh services
 pnpm install && pnpm -r --parallel dev
 ```
 
-Rootless podman cannot bind ports below 1024, so LDAP is published on **1389**
-rather than 389. The script prints the `LDAP_URL` to use and warns if `.env`
-still points at 389.
+Things worth knowing:
+
+- Rootless podman cannot bind ports below 1024, so LDAP is published on
+  **1389** rather than 389. The script prints the `LDAP_URL` to use and warns
+  if `.env` still points at 389.
+- Published ports are fixed when the pod is created, so changing
+  `API_HOST_PORT` and friends needs a `down` first.
+- If the browser stops reloading on a change, bind-mount file events are not
+  arriving: `VITE_POLLING=1 ./scripts/dev.sh restart`.
+- Dependencies are installed inside the image, so the host's `node_modules` is
+  never used and `.env` is never copied into a layer.
 
 ## Building the project map
 

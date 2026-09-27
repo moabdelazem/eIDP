@@ -125,6 +125,19 @@ rules and the traps they exist for are in `parse.ts`; `__fixtures__/repo` is a
 small tree covering both layout conventions, so the parser is tested without
 network or checkout.
 
+## Running it in containers
+
+`scripts/dev.sh up` runs everything under podman in one pod: Postgres,
+OpenLDAP, api and web. Because they share a network namespace, the app
+containers reach the services on the *container* ports (5432, 389), not the
+published host ports — the script passes `DATABASE_URL` and `LDAP_URL`
+overrides that win over `.env`.
+
+`Containerfile.dev` installs dependencies into the image and only source is
+bind-mounted, so the container never sees the host's `node_modules`. It also
+installs `git`, which the catalog sync shells out to and the base image lacks.
+`.containerignore` keeps `.env` out of the image layers.
+
 ## The catalog
 
 `services/catalog.ts` owns it. `syncCatalog()` pulls the inventories checkout,

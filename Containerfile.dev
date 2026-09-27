@@ -1,0 +1,21 @@
+# Development image for both apps. Dependencies are installed into the image;
+# only source is bind-mounted at run time, so the container keeps its own
+# node_modules and never sees the host's.
+FROM docker.io/library/node:24-alpine
+
+# The catalog sync shells out to git to clone the inventories repo, and the
+# base image does not ship it.
+RUN apk add --no-cache git
+
+RUN corepack enable
+WORKDIR /app
+
+# Manifests first, so a source change does not reinstall dependencies.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api/package.json ./apps/api/
+COPY apps/web/package.json ./apps/web/
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+
+EXPOSE 3000 5173
