@@ -8,6 +8,10 @@ import { z } from 'zod'
 const schema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
 
+  DATABASE_URL: z.string().min(1).default('postgresql://eidp:eidp@localhost:5432/eidp'),
+  /** Sync on boot and then on this interval. 0 disables the timer. */
+  SYNC_INTERVAL_MINUTES: z.coerce.number().min(0).default(30),
+
   JWT_SECRET: z.string().min(16, 'must be at least 16 characters'),
   SESSION_TTL_HOURS: z.coerce.number().positive().default(8),
 
@@ -18,6 +22,21 @@ const schema = z.object({
   LDAP_BASE_DN: z.string().min(1).default('dc=eidp,dc=local'),
   LDAP_BIND_DN: z.string().min(1).default('cn=admin,dc=eidp,dc=local'),
   LDAP_BIND_PASSWORD: z.string().min(1).default('admin'),
+
+  // Azure DevOps Server (on-prem). Optional so the API still boots without
+  // them; the integration reports what is missing when something asks it to
+  // work. ADO_BASE_URL includes the collection, e.g.
+  // https://tfs.example.com/tfs/DefaultCollection
+  ADO_BASE_URL: z.string().url().optional(),
+  ADO_PAT: z.string().min(1).optional(),
+  /** Pinned to the server release — it decides which endpoints exist. */
+  ADO_API_VERSION: z.string().default('6.0'),
+
+  /** Where the inventories repo lives inside that collection. */
+  INVENTORIES_PROJECT: z.string().min(1).optional(),
+  INVENTORIES_REPO: z.string().min(1).default('inventories'),
+  /** Working copy the sync clones into and pulls on later runs. */
+  INVENTORIES_CHECKOUT: z.string().min(1).default('.cache/inventories'),
 })
 
 export type Config = z.infer<typeof schema>

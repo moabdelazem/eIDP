@@ -1,0 +1,16 @@
+project_name: AgriLand
+company: eFinance
+dev_team: DEVdotNET
+qc_team: QC
+uat_team: DEVOPS
+prd_team: DEVOPS
+qc_waittime: "1440"
+automatic_deploy_to_qc: "false"
+dev_team_list:
+  -
+ops_team_list:
+  - DEVOPS
+prd_approvers:
+  - DEVOPS
+project_managers:
+  - DEVOPS

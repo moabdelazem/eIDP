@@ -1,0 +1,6 @@
+project_name: NBFS_LoanManagementSystem
+company: eFinance
+prd_team: DEVOPS
+prd_approvers:
+  - DEVOPS
+  - SECURITY

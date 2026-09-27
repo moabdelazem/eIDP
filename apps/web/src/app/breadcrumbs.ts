@@ -1,4 +1,4 @@
-import { findProject } from '@/features/projects/projects.ts'
+import { findApplication, type System } from '@/features/projects/catalog.ts'
 
 export type Crumb = {
   label: string
@@ -15,20 +15,19 @@ const sectionLabels: Record<string, string> = {
  * The trail for a path. Derived from the URL rather than from route handles,
  * because `useMatches` needs a data router and we use the declarative one.
  *
- * ponytail: dynamic labels are looked up locally. Once the map is loaded from
- * the API, the crumb needs the entity the page already fetched — pass it in
- * rather than growing this lookup.
+ * Dynamic labels are resolved against the catalog the page already loaded, so
+ * the trail never triggers a fetch of its own.
  */
-export function crumbsFor(pathname: string): Crumb[] {
+export function crumbsFor(pathname: string, systems: System[] = []): Crumb[] {
   if (pathname === '/') return [{ label: sectionLabels['/']! }]
 
   const segments = pathname.split('/').filter(Boolean)
 
   if (segments[0] === 'projects') {
-    const project = findProject(segments[1])
+    const found = findApplication(systems, segments[1] ? decodeURIComponent(segments[1]) : undefined)
     return [
       { label: sectionLabels['/']!, path: '/' },
-      { label: project?.name ?? 'Unknown project' },
+      { label: found?.app.name ?? decodeURIComponent(segments[1] ?? 'Unknown application') },
     ]
   }
 

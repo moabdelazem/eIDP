@@ -48,8 +48,18 @@ pnpm workspace. `apps/*` and `packages/*`.
   use the declarative one. Each page renders exactly one `h1` in its content;
   the header is the trail, not a heading.
 
-  `features/projects/projects.ts` is placeholder data so the map and its detail
-  page can be walked before `inventories` is wired. Replace it wholesale.
+  `features/projects/catalog.ts` is placeholder data shaped to match what the
+  API's inventories parser produces — replace the rows, keep the types.
+  `tree.ts` turns a catalog into the map's node tree; `mind-map.tsx` lays it out
+  with `d3-hierarchy` and pans/zooms with `d3-zoom`, rendering plain SVG so it
+  inherits the theme. Links are hand-written cubic beziers rather than pulling
+  in `d3-shape` for one function.
+
+  The map prunes collapsed branches before layout, so a node's `children` is
+  gone while collapsed — `childCount` is carried alongside, or a collapsed node
+  looks like a leaf and loses its toggle. The map is a `role="tree"` of
+  focusable nodes, and the List view beside it is the plain, screen-reader
+  friendly path to the same data.
 
   The sidebar collapses to an icon rail
   (`collapsible="icon"`), and `AppShell` reads the `sidebar_state` cookie back
@@ -95,6 +105,43 @@ with its baked `rgb(240,243,250)` background knocked out and the padding
 trimmed, so it sits on the eggplant rail and on paper without a visible box.
 `logo-source.png` beside it is the untouched original. Replacing the logo
 means repeating that knockout, or supplying one with real transparency.
+
+## Integrations
+
+`integrations/ado/` — Azure DevOps **Server** (on-prem), not Services. URLs are
+`<base>/<project>/_apis/<area>?api-version=<version>`, where `ADO_BASE_URL`
+already carries the collection and the api-version is pinned to the server
+release. A PAT authenticates as an empty username. ADO settings are optional so
+the API boots without them; `adoConfig()` names what is missing when something
+asks it to work.
+
+Reading the ~1100 applications over the Items API would be thousands of calls,
+so `git.ts` keeps a shallow working copy instead: clone once, fetch after. The
+token goes in through `GIT_CONFIG_*` environment variables — command-line
+arguments are world-readable in `ps`, a process environment is not.
+
+`integrations/inventories/` — parses that working copy into the catalog. Its
+rules and the traps they exist for are in `parse.ts`; `__fixtures__/repo` is a
+small tree covering both layout conventions, so the parser is tested without
+network or checkout.
+
+## The catalog
+
+`services/catalog.ts` owns it. `syncCatalog()` pulls the inventories checkout,
+parses it and rebuilds the tables in one transaction — delete-then-insert,
+because the catalog is derived data and readers keep the previous contents
+until the commit lands. `catalog_sync` is a single row holding the outcome, so
+the UI can tell current from stale from never-built.
+
+The API never blocks boot on a sync and never fails to start because Azure
+DevOps is unreachable: `index.ts` kicks the sync off in the background and the
+state is reported through `/catalog`. Stale data is still served; only an empty
+catalog is an error, and then the message carries the reason the last attempt
+failed.
+
+`lib/schema.sql` is applied at startup and is written to be re-runnable. There
+is no migration tool — see the `ponytail:` note in `lib/db.ts` for when that
+stops being enough.
 
 ## Talking to the API
 

@@ -3,6 +3,7 @@ import { logger } from 'hono/logger'
 import { onError } from './lib/errors.ts'
 import type { AppEnv } from './middleware/auth.ts'
 import { authRoutes } from './routes/auth.ts'
+import { catalogRoutes } from './routes/catalog.ts'
 import { healthRoutes } from './routes/health.ts'
 
 /**
@@ -17,6 +18,7 @@ export function createApp() {
 
   app.route('/health', healthRoutes)
   app.route('/auth', authRoutes)
+  app.route('/catalog', catalogRoutes)
 
   return app
 }

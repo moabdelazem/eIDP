@@ -13,10 +13,13 @@
     "@hono/zod-validator": "^0.9.1",
     "hono": "^4.7.0",
     "ldapts": "^9.2.0",
+    "pg": "^8.23.0",
+    "yaml": "^2.9.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
     "typescript": "^5.7.0"
   }
 }

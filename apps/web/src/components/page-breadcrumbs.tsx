@@ -1,6 +1,7 @@
 import { Fragment } from 'react'
 import { Link, useLocation } from 'react-router'
 import { crumbsFor } from '@/app/breadcrumbs.ts'
+import { useCatalog } from '@/features/projects/catalog-context.tsx'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -12,7 +13,7 @@ import {
 
 /** Where you are, and the way back up. */
 export function PageBreadcrumbs() {
-  const crumbs = crumbsFor(useLocation().pathname)
+  const crumbs = crumbsFor(useLocation().pathname, useCatalog().systems)
 
   return (
     <Breadcrumb>

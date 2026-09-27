@@ -1,0 +1,7 @@
+repository_name: agriland-api
+build_technology: dotnet
+deploy_technology: ocp
+deploy_platform: OpenShift
+app_type: backend
+microservice: "true"
+replicas: 2

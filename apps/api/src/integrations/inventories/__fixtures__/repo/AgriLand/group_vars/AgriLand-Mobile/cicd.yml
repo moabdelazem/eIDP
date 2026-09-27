@@ -1,0 +1,3 @@
+repository_name: agriland-mobile
+build_technology: Flutter
+microservice: "false"

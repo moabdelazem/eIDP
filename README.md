@@ -44,3 +44,35 @@ Sign in as `alice` / `alicepw` or `bob` / `bobpw` — the test accounts in
 | `pnpm reset` | containers down, **data wiped**, back up |
 | `pnpm test` | API tests, needs the containers running |
 | `pnpm build` | production build |
+
+### On a machine with podman
+
+`scripts/dev.sh` is the podman equivalent of `compose.yaml` — it runs Postgres
+and OpenLDAP in a pod and reads the same `.env`, so you can run the apps
+natively against them on your organization network.
+
+```sh
+./scripts/dev.sh up       # start, wait for readiness, seed LDAP
+./scripts/dev.sh status
+./scripts/dev.sh down     # stop, keep the data
+./scripts/dev.sh reset    # stop, wipe volumes, start again
+pnpm install && pnpm -r --parallel dev
+```
+
+Rootless podman cannot bind ports below 1024, so LDAP is published on **1389**
+rather than 389. The script prints the `LDAP_URL` to use and warns if `.env`
+still points at 389.
+
+## Building the project map
+
+The map is built by syncing the `inventories` repo out of Azure DevOps Server.
+Set these in `.env`, then restart the API or `POST /catalog/sync`:
+
+```sh
+ADO_BASE_URL=https://<host>/<collection>   # collection included
+ADO_PAT=<personal access token, Code: Read>
+INVENTORIES_PROJECT=<ADO project holding the repo>
+```
+
+Without them the API still runs; the project map reports that it cannot be
+built and says which setting is missing.
