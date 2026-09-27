@@ -1,0 +1,19 @@
+dn: ou=people,dc=eidp,dc=local
+objectClass: organizationalUnit
+ou: people
+
+dn: uid=alice,ou=people,dc=eidp,dc=local
+objectClass: inetOrgPerson
+uid: alice
+cn: Alice Example
+sn: Example
+mail: alice@eidp.local
+userPassword: alicepw
+
+dn: uid=bob,ou=people,dc=eidp,dc=local
+objectClass: inetOrgPerson
+uid: bob
+cn: Bob Example
+sn: Example
+mail: bob@eidp.local
+userPassword: bobpw

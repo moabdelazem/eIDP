@@ -1,0 +1,111 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* Eggplant is the ground, red is the signal. Nothing decorative is red:
+   if it's red, it's an action or it wants attention. */
+:root {
+  --radius: 0.375rem;
+
+  --background: #fbf8fa;
+  --foreground: #251829;
+  --card: #ffffff;
+  --card-foreground: #251829;
+  --popover: #ffffff;
+  --popover-foreground: #251829;
+
+  --primary: #c4142b;
+  --primary-foreground: #fff5f6;
+  --secondary: #f0e8f1;
+  --secondary-foreground: #3c2842;
+  --muted: #f3edf4;
+  --muted-foreground: #6b5771;
+  --accent: #4a2b52;
+  --accent-foreground: #faf5fb;
+  --destructive: #c4142b;
+  --destructive-foreground: #fff5f6;
+
+  --border: #e3d7e6;
+  --input: #e3d7e6;
+  --ring: #7a4a85;
+
+  /* App chrome — the eggplant rail, identical in both themes. */
+  --rail: #2a1930;
+  --rail-foreground: #e8dcea;
+  --rail-border: #422c4a;
+  --rail-muted: #9c86a4;
+}
+
+.dark {
+  --background: #150e18;
+  --foreground: #ece2ee;
+  --card: #1f1523;
+  --card-foreground: #ece2ee;
+  --popover: #1f1523;
+  --popover-foreground: #ece2ee;
+
+  --primary: #e8394f;
+  --primary-foreground: #1a0509;
+  --secondary: #2c1e31;
+  --secondary-foreground: #ece2ee;
+  --muted: #2c1e31;
+  --muted-foreground: #a08faa;
+  --accent: #3a2740;
+  --accent-foreground: #f2e9f4;
+  --destructive: #e8394f;
+  --destructive-foreground: #1a0509;
+
+  --border: #392640;
+  --input: #392640;
+  --ring: #9c6faa;
+}
+
+@theme inline {
+  --font-sans: 'Archivo', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-rail: var(--rail);
+  --color-rail-foreground: var(--rail-foreground);
+  --color-rail-border: var(--rail-border);
+  --color-rail-muted: var(--rail-muted);
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: 'cv05' 1;
+  }
+  /* Identifiers the user can copy — repo paths, DNs, pipeline ids. */
+  code, kbd, samp {
+    @apply font-mono;
+  }
+}
