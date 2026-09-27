@@ -11,6 +11,11 @@ pnpm workspace. `apps/*` and `packages/*`.
 - `apps/api` — Hono API (`@eidp/api`).
 - `apps/web` — Vite + React UI (`@eidp/web`). Dev server proxies `/api` to
   the API on :3000.
+  `src/components/dashboard.tsx` is the signed-in shell: shadcn sidebar plus
+  a view switcher. The sidebar collapses to an icon rail (`collapsible="icon"`),
+  and the provider reads the `sidebar_state` cookie back itself — shadcn only
+  writes it, since Next reads it server-side. No router yet — views are local
+  state. Add one when a project needs its own URL.
 
 ## Stack
 
@@ -29,7 +34,10 @@ pnpm workspace. `apps/*` and `packages/*`.
 
 Eggplant is the ground, red is the signal — if something is red it is an
 action or it wants attention, never decoration. The app chrome (`--rail`)
-stays dark eggplant; `--background` is paper.
+stays dark eggplant; `--background` is paper. The shadcn `--sidebar-*`
+tokens point at the rail, so the sidebar is the rail. `shadcn add` writes
+its own neutral values into `src/index.css` — check them after adding any
+component and point them back at the rail.
 
 Light is the only theme in use — `<html>` carries no `dark` class. The `.dark`
 token block in `src/index.css` is kept and works, but nothing switches to it
