@@ -6,7 +6,8 @@
     "dev": "node --watch --env-file-if-exists=../../.env src/index.ts",
     "start": "node src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --env-file-if-exists=../../.env --test 'src/**/*.test.ts'"
+    "test": "node --env-file-if-exists=../../.env --test 'src/**/*.test.ts'",
+    "ldap:doctor": "node --env-file-if-exists=../../.env src/integrations/ldap/doctor.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.8",

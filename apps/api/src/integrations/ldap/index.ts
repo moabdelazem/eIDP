@@ -1,6 +1,7 @@
 import { InvalidCredentialsError } from 'ldapts'
 import { config } from '../../lib/config.ts'
-import { bindAsService, escapeFilter, first, withClient } from './client.ts'
+import { ApiError } from '../../lib/errors.ts'
+import { bindAsService, escapeFilter, first, userFilter, withClient } from './client.ts'
 
 /** A person as the directory knows them. */
 export type DirectoryUser = {
@@ -26,31 +27,56 @@ export async function authenticate(uid: string, password: string): Promise<Direc
   if (!uid || !password) return null
 
   return withClient(async (client) => {
+    // The service bind is our configuration, not the user's credentials.
+    // Letting it fall through as "wrong password" hides a broken deployment
+    // behind a message that blames the person signing in.
     try {
       await bindAsService(client)
-      const { searchEntries } = await client.search(config.LDAP_BASE_DN, {
-        scope: 'sub',
-        filter: `(&(objectClass=inetOrgPerson)(uid=${escapeFilter(uid)}))`,
-        attributes: ['uid', 'cn', 'mail'],
-      })
+    } catch (err) {
+      if (err instanceof InvalidCredentialsError) {
+        throw new ApiError(
+          503,
+          'ldap_service_bind_failed',
+          'The portal could not authenticate to the directory. Check LDAP_BIND_DN and LDAP_BIND_PASSWORD.',
+        )
+      }
+      throw err
+    }
 
-      // More than one match means the uid is not the unique handle we assume
-      // it is; refusing beats guessing which account was meant.
-      if (searchEntries.length !== 1) return null
-      const entry = searchEntries[0]!
+    const { searchEntries } = await client.search(config.LDAP_BASE_DN, {
+      scope: 'sub',
+      filter: userFilter(uid),
+      attributes: [config.LDAP_USER_ATTRIBUTE, 'cn', 'mail'],
+    })
 
+    if (searchEntries.length === 0) {
+      // Not "wrong password" — the directory has no such account under this
+      // base DN and filter. Worth saying out loud: it is usually config.
+      console.warn(
+        `ldap: no account matched ${userFilter(uid)} under ${config.LDAP_BASE_DN}`,
+      )
+      return null
+    }
+    if (searchEntries.length > 1) {
+      console.warn(`ldap: ${searchEntries.length} accounts matched ${userFilter(uid)}`)
+      return null
+    }
+
+    const entry = searchEntries[0]!
+
+    try {
       await client.unbind()
       await client.bind(entry.dn, password)
-
-      return {
-        uid: first(entry.uid),
-        dn: entry.dn,
-        name: first(entry.cn),
-        mail: first(entry.mail),
-      }
     } catch (err) {
       if (err instanceof InvalidCredentialsError) return null
       throw err
+    }
+
+    return {
+      uid: first(entry[config.LDAP_USER_ATTRIBUTE]) || uid,
+      dn: entry.dn,
+      name: first(entry.cn),
+      mail: first(entry.mail),
     }
   })
 }

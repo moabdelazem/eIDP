@@ -22,6 +22,13 @@ const schema = z.object({
   LDAP_BASE_DN: z.string().min(1).default('dc=eidp,dc=local'),
   LDAP_BIND_DN: z.string().min(1).default('cn=admin,dc=eidp,dc=local'),
   LDAP_BIND_PASSWORD: z.string().min(1).default('admin'),
+  /**
+   * How an account is recognised. OpenLDAP usually means inetOrgPerson/uid;
+   * Active Directory means user/sAMAccountName. Wrong values here look exactly
+   * like a wrong password, so they are config rather than constants.
+   */
+  LDAP_USER_OBJECT_CLASS: z.string().min(1).default('inetOrgPerson'),
+  LDAP_USER_ATTRIBUTE: z.string().min(1).default('uid'),
 
   // Azure DevOps Server (on-prem). Optional so the API still boots without
   // them; the integration reports what is missing when something asks it to

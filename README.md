@@ -83,6 +83,22 @@ Things worth knowing:
 - Dependencies are installed inside the image, so the host's `node_modules` is
   never used and `.env` is never copied into a layer.
 
+## When a login fails
+
+The API deliberately tells a caller nothing beyond "those credentials did not
+work". To find out which stage actually failed:
+
+```sh
+pnpm --filter @eidp/api ldap:doctor <username> [password]
+```
+
+It reports the connection, the service bind, the account lookup and the user's
+own password separately. When the lookup finds nothing, it searches again
+without assuming a schema and prints what the account really looks like, along
+with the `LDAP_USER_OBJECT_CLASS` and `LDAP_USER_ATTRIBUTE` to set — Active
+Directory needs `user`/`sAMAccountName` where OpenLDAP needs
+`inetOrgPerson`/`uid`.
+
 ## Building the project map
 
 The map is built by syncing the `inventories` repo out of Azure DevOps Server.

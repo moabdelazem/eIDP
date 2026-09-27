@@ -20,6 +20,11 @@ export async function bindAsService(client: Client): Promise<void> {
   await client.bind(config.LDAP_BIND_DN, config.LDAP_BIND_PASSWORD)
 }
 
+/** The filter that finds one account, built from the configured schema. */
+export function userFilter(username: string): string {
+  return `(&(objectClass=${config.LDAP_USER_OBJECT_CLASS})(${config.LDAP_USER_ATTRIBUTE}=${escapeFilter(username)}))`
+}
+
 /** RFC 4515 §3 — keeps user input out of the filter grammar. */
 export function escapeFilter(value: string): string {
   return value.replace(/[\\*()\0]/g, (c) => '\\' + c.charCodeAt(0).toString(16).padStart(2, '0'))

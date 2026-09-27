@@ -175,6 +175,12 @@ call goes through `withClient`, which always unbinds.
 `hono/jwt` middleware guards protected routes. `JWT_SECRET` is required at
 boot.
 
+A failed login has four distinct causes and they must not be conflated: the
+directory being unreachable, the *service* account being rejected (a broken
+deployment, reported as 503 — never as the user's fault), no account matching
+the filter (usually `LDAP_BASE_DN` or the schema settings), and the user's own
+password being wrong (the only real 401). `ldap:doctor` reports which one.
+
 Test users live in `ldap/seed.ldif` (alice/alicepw, bob/bobpw), mounted into
 the container's bootstrap dir so a fresh volume gets them. `pnpm --filter
 @eidp/api test` runs against the live container.
