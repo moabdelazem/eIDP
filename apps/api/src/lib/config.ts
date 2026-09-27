@@ -34,7 +34,13 @@ const schema = z.object({
    * cannot express — Active Directory wants objectCategory=person to keep
    * computer accounts out. `{username}` is replaced, already escaped.
    */
-  LDAP_USER_FILTER: z.string().min(1).optional(),
+  LDAP_USER_FILTER: z
+    .string()
+    .trim()
+    // An empty value in .env means "fall back to the schema settings", not an
+    // empty filter that would match nothing.
+    .transform((value) => value || undefined)
+    .optional(),
 
   // Azure DevOps Server (on-prem). Optional so the API still boots without
   // them; the integration reports what is missing when something asks it to

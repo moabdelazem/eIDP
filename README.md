@@ -99,14 +99,12 @@ user's own password separately.
 
 When the lookup finds nothing it searches again without assuming a schema,
 prints what the account really looks like, and names the settings to use.
-Active Directory needs
+`.env.example` is written for Active Directory, which is what the organization
+runs. `objectCategory=person` in the filter matters: in AD a computer account
+is also `objectClass=user`, so without it a machine can match a login.
 
-```sh
-LDAP_USER_FILTER=(&(objectCategory=person)(objectClass=user)(sAMAccountName={username}))
-```
-
-where OpenLDAP needs `inetOrgPerson`/`uid`. `objectCategory=person` matters on
-AD: `objectClass=user` also matches computer accounts.
+To develop offline against the bundled OpenLDAP container instead, uncomment
+the block at the bottom of `.env.example` and sign in as `alice`/`alicepw`.
 
 ## Building the project map
 

@@ -1,7 +1,8 @@
 import { InsufficientAccessError, InvalidCredentialsError, NoSuchObjectError } from 'ldapts'
 import { config } from '../../lib/config.ts'
 import { ApiError } from '../../lib/errors.ts'
-import { bindAsService, escapeFilter, first, userFilter, withClient } from './client.ts'
+import { bindAsService, first, userFilter, withClient } from './client.ts'
+import { readBindFailure } from './ad-errors.ts'
 
 /** A person as the directory knows them. */
 export type DirectoryUser = {
@@ -51,7 +52,14 @@ export async function authenticate(uid: string, password: string): Promise<Direc
       ;({ searchEntries } = await client.search(config.LDAP_BASE_DN, {
         scope: 'sub',
         filter: userFilter(uid),
-        attributes: [config.LDAP_USER_ATTRIBUTE, 'cn', 'mail'],
+          attributes: [
+          config.LDAP_USER_ATTRIBUTE,
+          'sAMAccountName',
+          'displayName',
+          'cn',
+          'mail',
+          'userPrincipalName',
+        ],
       }))
     } catch (err) {
       if (err instanceof NoSuchObjectError) {
@@ -90,15 +98,22 @@ export async function authenticate(uid: string, password: string): Promise<Direc
       await client.unbind()
       await client.bind(entry.dn, password)
     } catch (err) {
-      if (err instanceof InvalidCredentialsError) return null
+      if (err instanceof InvalidCredentialsError) {
+        // Active Directory hides the real reason in a sub-code. An expired or
+        // locked account is worth saying out loud; a wrong password is not.
+        const failure = readBindFailure(err)
+        if (failure?.code) throw new ApiError(401, failure.code, failure.message)
+        return null
+      }
       throw err
     }
 
     return {
-      uid: first(entry[config.LDAP_USER_ATTRIBUTE]) || uid,
+      uid: first(entry[config.LDAP_USER_ATTRIBUTE]) || first(entry.sAMAccountName) || uid,
       dn: entry.dn,
-      name: first(entry.cn),
-      mail: first(entry.mail),
+      // displayName is the one AD actually shows; cn is the fallback elsewhere.
+      name: first(entry.displayName) || first(entry.cn) || uid,
+      mail: first(entry.mail) || first(entry.userPrincipalName),
     }
   })
 }

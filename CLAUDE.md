@@ -175,6 +175,18 @@ call goes through `withClient`, which always unbinds.
 `hono/jwt` middleware guards protected routes. `JWT_SECRET` is required at
 boot.
 
+The organization runs **Active Directory**, which `.env.example` is written
+for. `ad-errors.ts` reads the sub-code AD buries in every bind rejection
+(`... data 532 ...`): an expired password, a locked, disabled or expired
+account and a logon restriction are each named to the person, because being
+told "wrong password" when the account is locked makes people retry into a
+longer lockout. `525` (no such user) and `52e` (wrong password) stay generic —
+separating them would turn the login form into an account-name oracle.
+
+Name and mail are read from the first attribute that has a value —
+`displayName` then `cn`, `mail` then `userPrincipalName` — rather than
+assuming one directory's schema.
+
 The directory product is not assumed. `identify.ts` reads the rootDSE to name
 the vendor and list its naming contexts, and the user filter is configurable —
 `LDAP_USER_FILTER` as a `{username}` template when the two schema settings
