@@ -6,12 +6,14 @@
     "dev": "node --watch --env-file-if-exists=../../.env src/index.ts",
     "start": "node src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --env-file-if-exists=../../.env --test src/*.test.ts"
+    "test": "node --env-file-if-exists=../../.env --test 'src/**/*.test.ts'"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.8",
+    "@hono/zod-validator": "^0.9.1",
     "hono": "^4.7.0",
-    "ldapts": "^9.2.0"
+    "ldapts": "^9.2.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

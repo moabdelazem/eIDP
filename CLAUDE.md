@@ -8,7 +8,19 @@ See README.md for the product shape.
 
 pnpm workspace. `apps/*` and `packages/*`.
 
-- `apps/api` — Hono API (`@eidp/api`).
+- `apps/api` — Hono API (`@eidp/api`), layered by concern:
+
+  | Folder | Holds | Rule |
+  |---|---|---|
+  | `routes/` | HTTP shape: paths, validation, status codes | No business logic, no direct integration calls beyond one service |
+  | `services/` | Logic that spans integrations | Knows nothing about HTTP |
+  | `integrations/<name>/` | One outside system, one folder | `index.ts` is the only entry point others import |
+  | `middleware/` | Cross-cutting request handling | Owns `AppEnv`, the typed context |
+  | `lib/` | Config, errors, validation | No feature knowledge |
+
+  `app.ts` builds the app without listening so tests drive it via
+  `app.request()`; `index.ts` only serves it. Adding an integration means a new
+  folder under `integrations/` and a route module — nothing else moves.
 - `apps/web` — Vite + React UI (`@eidp/web`). Dev server proxies `/api` to
   the API on :3000.
   `src/components/dashboard.tsx` is the signed-in shell: shadcn sidebar plus
@@ -22,7 +34,13 @@ pnpm workspace. `apps/*` and `packages/*`.
 - Node 24 — runs `.ts` directly via native type stripping. No tsx, no build
   step, no ts-node. `erasableSyntaxOnly` is on: no enums, no parameter
   properties, no namespaces.
-- Hono + `@hono/node-server`.
+- Hono + `@hono/node-server`. Zod for env and request validation.
+  `lib/config.ts` parses `process.env` once at boot, so a missing variable
+  fails immediately with a readable message — read config from there, never
+  `process.env` directly. Routes use `lib/validate.ts`, not `zValidator`, so
+  every failure has the same shape: `{ error: { code, message } }`. Throw
+  `ApiError(status, code, message)` for expected failures; anything else that
+  escapes becomes a 500 with no detail leaked.
 - React 19, Vite, Tailwind v4 (`@tailwindcss/vite`, no config file — tokens
   live in `src/index.css`), shadcn/ui new-york. shadcn 4.x imports `cn` from
   the `cn` package and Radix from the unified `radix-ui` package, so there is
@@ -54,9 +72,10 @@ means repeating that knockout, or supplying one with real transparency.
 
 ## Auth
 
-LDAP is the auth service. `apps/api/src/ldap.ts` service-binds, searches for
-the uid, then re-binds as that user's DN to verify the password — the uid is
-never assumed to map to a DN pattern.
+LDAP is the auth service. `integrations/ldap/` service-binds, searches for the
+uid, then re-binds as that user's DN to verify the password — the uid is never
+assumed to map to a DN pattern. `client.ts` owns connection handling: every
+call goes through `withClient`, which always unbinds.
 
 `POST /auth/login` returns an 8h HS256 JWT (`hono/jwt`, no extra dep);
 `hono/jwt` middleware guards protected routes. `JWT_SECRET` is required at

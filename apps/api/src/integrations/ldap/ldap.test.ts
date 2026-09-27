@@ -1,7 +1,7 @@
 // Integration check — needs `docker compose up -d openldap` and the seed LDIF.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { authenticate } from './ldap.ts'
+import { authenticate } from './index.ts'
 
 test('valid credentials return the user', async () => {
   const user = await authenticate('alice', 'alicepw')
