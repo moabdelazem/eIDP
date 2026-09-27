@@ -21,13 +21,22 @@ pnpm workspace. `apps/*` and `packages/*`.
   `app.ts` builds the app without listening so tests drive it via
   `app.request()`; `index.ts` only serves it. Adding an integration means a new
   folder under `integrations/` and a route module — nothing else moves.
-- `apps/web` — Vite + React UI (`@eidp/web`). Dev server proxies `/api` to
-  the API on :3000.
-  `src/components/dashboard.tsx` is the signed-in shell: shadcn sidebar plus
-  a view switcher. The sidebar collapses to an icon rail (`collapsible="icon"`),
-  and the provider reads the `sidebar_state` cookie back itself — shadcn only
-  writes it, since Next reads it server-side. No router yet — views are local
-  state. Add one when a project needs its own URL.
+- `apps/web` — Vite + React UI (`@eidp/web`), organized by feature. Dev server
+  proxies `/api` to the API on :3000.
+
+  | Folder | Holds | Rule |
+  |---|---|---|
+  | `app/` | Providers, route table, shell, nav config | The only place routes are declared |
+  | `features/<name>/` | One feature's pages, data access and state | Never imports another feature's internals |
+  | `components/` | Shared app chrome (`app-sidebar`, `empty-state`) | Used by two or more features |
+  | `components/ui/` | shadcn primitives | Generated — regenerate, don't hand-edit |
+  | `lib/` | `api-client`, `token-store` | No React, no feature knowledge |
+
+  Routes live in `app/routes.tsx`; `RequireSession` guards everything behind it
+  and remembers where you were headed. `app/nav.ts` is the single source for
+  sidebar items and page titles. The sidebar collapses to an icon rail
+  (`collapsible="icon"`), and `AppShell` reads the `sidebar_state` cookie back
+  itself — shadcn only writes it, since Next reads it server-side.
 
 ## Stack
 
@@ -41,7 +50,7 @@ pnpm workspace. `apps/*` and `packages/*`.
   every failure has the same shape: `{ error: { code, message } }`. Throw
   `ApiError(status, code, message)` for expected failures; anything else that
   escapes becomes a 500 with no detail leaked.
-- React 19, Vite, Tailwind v4 (`@tailwindcss/vite`, no config file — tokens
+- React 19, React Router (declarative mode), Vite, Tailwind v4 (`@tailwindcss/vite`, no config file — tokens
   live in `src/index.css`), shadcn/ui new-york. shadcn 4.x imports `cn` from
   the `cn` package and Radix from the unified `radix-ui` package, so there is
   no `src/lib/utils.ts`.
@@ -69,6 +78,14 @@ with its baked `rgb(240,243,250)` background knocked out and the padding
 trimmed, so it sits on the eggplant rail and on paper without a visible box.
 `logo-source.png` beside it is the untouched original. Replacing the logo
 means repeating that knockout, or supplying one with real transparency.
+
+## Talking to the API
+
+`lib/api-client.ts` is the only thing that calls `fetch`. It attaches the
+session token, and turns a failure into an `ApiError` carrying the message the
+API wrote — the UI shows that message rather than inventing its own wording for
+a server-side outcome. A 401 clears the stored token, since a dead session is
+dead everywhere.
 
 ## Auth
 

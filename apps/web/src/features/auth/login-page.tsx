@@ -1,23 +1,36 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
+import { Navigate, useLocation, useNavigate } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { login, type Session } from '@/auth'
+import { ApiError } from '@/lib/api-client.ts'
+import { login } from './api.ts'
+import { useSession } from './session-context.tsx'
 import logo from '@/assets/logo.png'
 
-export function Login({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
+export function LoginPage() {
+  const { session, signIn } = useSession()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
 
-  async function submit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    const form = new FormData(e.currentTarget)
+  // Whoever sent us here wanted a particular page; go back to it.
+  const from = (location.state as { from?: string } | null)?.from ?? '/'
+
+  if (session) return <Navigate to={from} replace />
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
     setPending(true)
     setError(null)
     try {
-      onSignedIn(await login(String(form.get('username')), String(form.get('password'))))
+      signIn(await login(String(form.get('username')), String(form.get('password'))))
+      navigate(from, { replace: true })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      // The API already wrote a message fit to read; don't invent another.
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.')
     } finally {
       setPending(false)
     }
