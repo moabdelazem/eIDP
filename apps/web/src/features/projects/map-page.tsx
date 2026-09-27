@@ -7,7 +7,7 @@ export function ProjectMapPage() {
     <div>
       <h1 className="text-lg font-semibold tracking-tight">Project map</h1>
       <p className="mt-2 max-w-prose text-muted-foreground">
-        Everything the <code>engine</code> repository knows about. Placeholder entries until it
+        Everything the <code>inventories</code> repository knows about. Placeholder entries until it
         is wired up.
       </p>
 

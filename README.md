@@ -5,11 +5,11 @@ things it does:
 
 ## 1. Project map
 
-A catalog of every project in the org, built by reading the **`engine`** repo —
+A catalog of every project in the org, built by reading the **`inventories`** repo —
 the single source of truth for what exists and how it is wired. e-IDP reads it
 and renders the map; it does not own that data.
 
-> Structure of `engine` and how it is parsed: TBD.
+> Structure of `inventories` and how it is parsed: TBD.
 
 ## 2. Self-service requests
 

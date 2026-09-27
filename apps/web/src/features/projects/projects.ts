@@ -8,7 +8,7 @@ export type Project = {
 
 /**
  * Stand-in data so the map and its detail page can be navigated before the
- * engine repository is wired up. Replace wholesale — nothing should grow
+ * inventories repository is wired up. Replace wholesale — nothing should grow
  * around this shape until the real one is known.
  */
 export const projects: Project[] = [

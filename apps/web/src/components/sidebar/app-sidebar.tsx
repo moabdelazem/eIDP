@@ -1,13 +1,11 @@
-import { browseItems, requestItems } from '@/app/nav.ts'
+import { browseItems } from '@/app/nav.ts'
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
-  SidebarSeparator,
 } from '@/components/ui/sidebar'
 import { NavMain } from './nav-main.tsx'
-import { NavRequests } from './nav-requests.tsx'
 import { NavUser } from './nav-user.tsx'
 import logo from '@/assets/logo.png'
 
@@ -30,11 +28,6 @@ export function AppSidebar() {
 
       <SidebarContent>
         <NavMain label="Browse" items={browseItems} />
-        {/* SidebarSeparator asks for w-auto, but separator.tsx sets
-            data-[orientation=horizontal]:w-full, which out-specifies it — so the
-            rule renders full width *plus* its mx-2 margins and spills out of the
-            sidebar. Forcing w-auto here keeps ui/ generated and untouched. */}
-        <SidebarSeparator className="w-auto! group-data-[collapsible=icon]:hidden" />
       </SidebarContent>
 
       <SidebarFooter>

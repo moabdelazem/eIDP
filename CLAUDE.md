@@ -1,6 +1,6 @@
 # e-IDP
 
-Internal developer portal: a project map sourced from the `engine` repo, plus
+Internal developer portal: a project map sourced from the `inventories` repo, plus
 self-service requests (create repo, create pipeline, request repo access).
 See README.md for the product shape.
 
@@ -29,6 +29,10 @@ pnpm workspace. `apps/*` and `packages/*`.
   | `app/` | Providers, route table, shell, nav config | The only place routes are declared |
   | `features/<name>/` | One feature's pages, data access and state | Never imports another feature's internals |
   | `components/sidebar/` | `app-sidebar` plus one file per nav group | A new group is a new file mounted in `app-sidebar`, not a branch |
+
+  `SidebarSeparator` between groups needs `w-auto!` — `separator.tsx` sets
+  `data-[orientation=horizontal]:w-full`, which out-specifies the sidebar's own
+  `w-auto`, so it renders full width plus `mx-2` and spills out of the rail.
   | `components/` | Shared app chrome (`empty-state`) | Used by two or more features |
   | `components/ui/` | shadcn primitives | Generated — regenerate, don't hand-edit |
   | `lib/` | `api-client`, `token-store` | No React, no feature knowledge |
@@ -45,7 +49,9 @@ pnpm workspace. `apps/*` and `packages/*`.
   the header is the trail, not a heading.
 
   `features/projects/projects.ts` is placeholder data so the map and its detail
-  page can be walked before `engine` is wired. Replace it wholesale. The sidebar collapses to an icon rail
+  page can be walked before `inventories` is wired. Replace it wholesale.
+
+  The sidebar collapses to an icon rail
   (`collapsible="icon"`), and `AppShell` reads the `sidebar_state` cookie back
   itself — shadcn only writes it, since Next reads it server-side.
 
@@ -128,5 +134,5 @@ docker compose up -d
 
 ## Notes
 
-- `engine` is read-only input. e-IDP never writes back to it.
+- `inventories` is read-only input. e-IDP never writes back to it.
 - Don't add a dependency for something Node 24 or Hono already does.
