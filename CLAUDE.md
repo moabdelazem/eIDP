@@ -175,11 +175,19 @@ call goes through `withClient`, which always unbinds.
 `hono/jwt` middleware guards protected routes. `JWT_SECRET` is required at
 boot.
 
-A failed login has four distinct causes and they must not be conflated: the
-directory being unreachable, the *service* account being rejected (a broken
-deployment, reported as 503 — never as the user's fault), no account matching
-the filter (usually `LDAP_BASE_DN` or the schema settings), and the user's own
-password being wrong (the only real 401). `ldap:doctor` reports which one.
+The directory product is not assumed. `identify.ts` reads the rootDSE to name
+the vendor and list its naming contexts, and the user filter is configurable —
+`LDAP_USER_FILTER` as a `{username}` template when the two schema settings
+cannot express what a directory needs. The username is escaped before
+substitution, so a template cannot become an injection point.
+
+A failed login has six distinct causes and they must not be conflated: the
+directory being unreachable, the *service* account being rejected, a
+`LDAP_BASE_DN` the server does not serve, the service account being denied the
+search, no account matching the filter, and the user's own password being
+wrong. Only the last is a 401 — the rest are 503s naming the setting at fault,
+because a broken deployment must never be reported as the user's mistake.
+`ldap:doctor` reports which one.
 
 Test users live in `ldap/seed.ldif` (alice/alicepw, bob/bobpw), mounted into
 the container's bootstrap dir so a fresh volume gets them. `pnpm --filter

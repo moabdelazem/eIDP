@@ -6,9 +6,10 @@
  *
  * Prints no attribute values beyond the ones that identify an account.
  */
-import { Client, InvalidCredentialsError } from 'ldapts'
+import { Client, InsufficientAccessError, InvalidCredentialsError, NoSuchObjectError } from 'ldapts'
 import { config } from '../../lib/config.ts'
 import { escapeFilter, userFilter } from './client.ts'
+import { identifyServer, suggestedSettings, type ServerIdentity } from './identify.ts'
 
 const [username, password] = process.argv.slice(2)
 if (!username) {
@@ -27,6 +28,7 @@ console.log(`  LDAP_BIND_DN           ${config.LDAP_BIND_DN}`)
 console.log(`  LDAP_BIND_PASSWORD     ${config.LDAP_BIND_PASSWORD ? '(set)' : '(empty)'}`)
 console.log(`  LDAP_USER_OBJECT_CLASS ${config.LDAP_USER_OBJECT_CLASS}`)
 console.log(`  LDAP_USER_ATTRIBUTE    ${config.LDAP_USER_ATTRIBUTE}`)
+console.log(`  LDAP_USER_FILTER       ${config.LDAP_USER_FILTER ?? '(unset — built from the two above)'}`)
 
 if (config.LDAP_URL.includes('localhost') || config.LDAP_URL.includes('127.0.0.1')) {
   hint('LDAP_URL points at this machine. If you meant your organization directory, it is not set.')
@@ -34,8 +36,33 @@ if (config.LDAP_URL.includes('localhost') || config.LDAP_URL.includes('127.0.0.1
 
 const client = new Client({ url: config.LDAP_URL, timeout: 10_000, connectTimeout: 10_000 })
 
+let identity: ServerIdentity | null = null
+
 console.log('\nstages')
 try {
+  // 0. what are we even talking to
+  identity = await identifyServer(client)
+  if (identity) {
+    ok(`server is ${identity.vendor}`)
+    if (identity.namingContexts.length > 0) {
+      console.log(`        serves: ${identity.namingContexts.join(', ')}`)
+      const known = identity.namingContexts.some(
+        (context) => context.toLowerCase() === config.LDAP_BASE_DN.toLowerCase(),
+      )
+      if (!known) {
+        hint(`LDAP_BASE_DN (${config.LDAP_BASE_DN}) is not one of those suffixes.`)
+        hint(`Try LDAP_BASE_DN=${identity.defaultNamingContext ?? identity.namingContexts[0]}`)
+      }
+    }
+    if (identity.isActiveDirectory && !config.LDAP_USER_FILTER) {
+      const suggestion = suggestedSettings(identity)
+      hint('This is Active Directory, but the filter is the OpenLDAP one. Use:')
+      hint(`  LDAP_USER_FILTER=${suggestion.filter}`)
+    }
+  } else {
+    console.log('  ----  the server would not describe itself anonymously')
+  }
+
   // 1. reachable
   try {
     await client.bind(config.LDAP_BIND_DN, config.LDAP_BIND_PASSWORD)
@@ -53,11 +80,26 @@ try {
 
   // 2. the configured filter finds exactly one account
   const filter = userFilter(username)
-  const { searchEntries } = await client.search(config.LDAP_BASE_DN, {
-    scope: 'sub',
-    filter,
-    attributes: ['dn'],
-  })
+  let searchEntries
+  try {
+    ;({ searchEntries } = await client.search(config.LDAP_BASE_DN, {
+      scope: 'sub',
+      filter,
+      attributes: ['dn'],
+    }))
+  } catch (err) {
+    const message = (err as Error).message
+    if (err instanceof NoSuchObjectError) {
+      bad(`the server has no entry at ${config.LDAP_BASE_DN}`)
+      hint('LDAP_BASE_DN is wrong. Use one of the suffixes listed above.')
+    } else if (err instanceof InsufficientAccessError) {
+      bad('the service account is not allowed to search there')
+      hint('It can bind but not read. Ask for read access to the user subtree.')
+    } else {
+      bad(`the search failed: ${message}`)
+    }
+    process.exit(1)
+  }
 
   if (searchEntries.length === 1) {
     ok(`found exactly one account: ${searchEntries[0]!.dn}`)
@@ -119,9 +161,16 @@ async function suggestSchema(): Promise<void> {
       if (values.length > 0) console.log(`    ${attribute.padEnd(18)} ${values.join(', ')}`)
     }
     const matched = candidates.find(
-      (a) => entry[a] && [entry[a]].flat().some((v) => String(v).toLowerCase() === username.toLowerCase()),
+      (a) =>
+        entry[a] &&
+        [entry[a]].flat().some((v) => String(v).toLowerCase() === username.toLowerCase()),
     )
-    const objectClass = classes.includes('user') ? 'user' : classes.at(-1)
-    hint(`Set LDAP_USER_OBJECT_CLASS=${objectClass} and LDAP_USER_ATTRIBUTE=${matched ?? 'uid'}`)
+    if (identity?.isActiveDirectory) {
+      const suggestion = suggestedSettings(identity)
+      hint(`Set LDAP_USER_FILTER=${suggestion.filter!.replace('sAMAccountName', matched ?? 'sAMAccountName')}`)
+    } else {
+      const objectClass = classes.includes('user') ? 'user' : classes.at(-1)
+      hint(`Set LDAP_USER_OBJECT_CLASS=${objectClass} and LDAP_USER_ATTRIBUTE=${matched ?? 'uid'}`)
+    }
   }
 }

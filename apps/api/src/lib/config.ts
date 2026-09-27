@@ -29,6 +29,12 @@ const schema = z.object({
    */
   LDAP_USER_OBJECT_CLASS: z.string().min(1).default('inetOrgPerson'),
   LDAP_USER_ATTRIBUTE: z.string().min(1).default('uid'),
+  /**
+   * Overrides the two settings above when a directory needs a filter they
+   * cannot express — Active Directory wants objectCategory=person to keep
+   * computer accounts out. `{username}` is replaced, already escaped.
+   */
+  LDAP_USER_FILTER: z.string().min(1).optional(),
 
   // Azure DevOps Server (on-prem). Optional so the API still boots without
   // them; the integration reports what is missing when something asks it to

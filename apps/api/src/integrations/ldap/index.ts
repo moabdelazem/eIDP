@@ -1,4 +1,4 @@
-import { InvalidCredentialsError } from 'ldapts'
+import { InsufficientAccessError, InvalidCredentialsError, NoSuchObjectError } from 'ldapts'
 import { config } from '../../lib/config.ts'
 import { ApiError } from '../../lib/errors.ts'
 import { bindAsService, escapeFilter, first, userFilter, withClient } from './client.ts'
@@ -43,11 +43,33 @@ export async function authenticate(uid: string, password: string): Promise<Direc
       throw err
     }
 
-    const { searchEntries } = await client.search(config.LDAP_BASE_DN, {
-      scope: 'sub',
-      filter: userFilter(uid),
-      attributes: [config.LDAP_USER_ATTRIBUTE, 'cn', 'mail'],
-    })
+    // A base DN the server does not serve, or one the service account may not
+    // read, is a deployment problem. Reporting it as a bad password would send
+    // people to reset a password that was never wrong.
+    let searchEntries
+    try {
+      ;({ searchEntries } = await client.search(config.LDAP_BASE_DN, {
+        scope: 'sub',
+        filter: userFilter(uid),
+        attributes: [config.LDAP_USER_ATTRIBUTE, 'cn', 'mail'],
+      }))
+    } catch (err) {
+      if (err instanceof NoSuchObjectError) {
+        throw new ApiError(
+          503,
+          'ldap_base_dn_not_found',
+          `The directory has no entry at ${config.LDAP_BASE_DN}. Check LDAP_BASE_DN.`,
+        )
+      }
+      if (err instanceof InsufficientAccessError) {
+        throw new ApiError(
+          503,
+          'ldap_search_denied',
+          'The service account is not allowed to search the directory. Check its permissions.',
+        )
+      }
+      throw err
+    }
 
     if (searchEntries.length === 0) {
       // Not "wrong password" — the directory has no such account under this

@@ -20,9 +20,11 @@ export async function bindAsService(client: Client): Promise<void> {
   await client.bind(config.LDAP_BIND_DN, config.LDAP_BIND_PASSWORD)
 }
 
-/** The filter that finds one account, built from the configured schema. */
+/** The filter that finds one account: the template if set, else the schema. */
 export function userFilter(username: string): string {
-  return `(&(objectClass=${config.LDAP_USER_OBJECT_CLASS})(${config.LDAP_USER_ATTRIBUTE}=${escapeFilter(username)}))`
+  const escaped = escapeFilter(username)
+  if (config.LDAP_USER_FILTER) return config.LDAP_USER_FILTER.replaceAll('{username}', escaped)
+  return `(&(objectClass=${config.LDAP_USER_OBJECT_CLASS})(${config.LDAP_USER_ATTRIBUTE}=${escaped}))`
 }
 
 /** RFC 4515 §3 — keeps user input out of the filter grammar. */

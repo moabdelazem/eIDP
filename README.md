@@ -92,12 +92,21 @@ work". To find out which stage actually failed:
 pnpm --filter @eidp/api ldap:doctor <username> [password]
 ```
 
-It reports the connection, the service bind, the account lookup and the user's
-own password separately. When the lookup finds nothing, it searches again
-without assuming a schema and prints what the account really looks like, along
-with the `LDAP_USER_OBJECT_CLASS` and `LDAP_USER_ATTRIBUTE` to set — Active
-Directory needs `user`/`sAMAccountName` where OpenLDAP needs
-`inetOrgPerson`/`uid`.
+It reads the server's rootDSE first, so it names the product you are actually
+talking to and lists the suffixes it serves — which are the valid values for
+`LDAP_BASE_DN`. Then it reports the service bind, the account lookup and the
+user's own password separately.
+
+When the lookup finds nothing it searches again without assuming a schema,
+prints what the account really looks like, and names the settings to use.
+Active Directory needs
+
+```sh
+LDAP_USER_FILTER=(&(objectCategory=person)(objectClass=user)(sAMAccountName={username}))
+```
+
+where OpenLDAP needs `inetOrgPerson`/`uid`. `objectCategory=person` matters on
+AD: `objectClass=user` also matches computer accounts.
 
 ## Building the project map
 
