@@ -28,13 +28,24 @@ pnpm workspace. `apps/*` and `packages/*`.
   |---|---|---|
   | `app/` | Providers, route table, shell, nav config | The only place routes are declared |
   | `features/<name>/` | One feature's pages, data access and state | Never imports another feature's internals |
-  | `components/` | Shared app chrome (`app-sidebar`, `empty-state`) | Used by two or more features |
+  | `components/sidebar/` | `app-sidebar` plus one file per nav group | A new group is a new file mounted in `app-sidebar`, not a branch |
+  | `components/` | Shared app chrome (`empty-state`) | Used by two or more features |
   | `components/ui/` | shadcn primitives | Generated — regenerate, don't hand-edit |
   | `lib/` | `api-client`, `token-store` | No React, no feature knowledge |
 
   Routes live in `app/routes.tsx`; `RequireSession` guards everything behind it
   and remembers where you were headed. `app/nav.ts` is the single source for
-  sidebar items and page titles. The sidebar collapses to an icon rail
+  sidebar items, split by what they do: `browseItems` for destinations,
+  `requestItems` for things people ask for. An item's `owns` prefixes keep its
+  section lit on detail pages.
+
+  The header shows a breadcrumb from `app/breadcrumbs.ts`, derived from the
+  pathname rather than route handles — `useMatches` needs a data router and we
+  use the declarative one. Each page renders exactly one `h1` in its content;
+  the header is the trail, not a heading.
+
+  `features/projects/projects.ts` is placeholder data so the map and its detail
+  page can be walked before `engine` is wired. Replace it wholesale. The sidebar collapses to an icon rail
   (`collapsible="icon"`), and `AppShell` reads the `sidebar_state` cookie back
   itself — shadcn only writes it, since Next reads it server-side.
 
