@@ -174,7 +174,6 @@ start_apps() {
 
   note "Starting web"
   podman run -d --pod "$pod" --name "$pod-web" \
-    -e VITE_HOST=0.0.0.0 \
     -e "VITE_POLLING=${VITE_POLLING:-}" \
     -v "$root/apps/web/src:/app/apps/web/src:Z" \
     -v "$root/apps/web/index.html:/app/apps/web/index.html:Z" \
