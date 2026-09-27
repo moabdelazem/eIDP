@@ -32,17 +32,39 @@ if [[ ! -f "$env_file" ]]; then
   cp "$root/.env.example" "$env_file"
 fi
 
-# Load .env so the containers and the apps agree on credentials. `set -a`
-# exports every assignment; anything already in the environment wins, which is
-# what lets POSTGRES_IMAGE and friends be overridden on the command line.
-set -a
-# shellcheck disable=SC1090
-source "$env_file"
-set +a
+# Read .env as data. It must never be sourced: an Active Directory filter
+# contains parentheses, which the shell parses as an array assignment and dies
+# on before this script does anything at all.
+env_value() {
+  local value
+  value="$(sed -n "s/^[[:space:]]*$1=//p" "$env_file" | tail -1)"
+  # Tolerate quotes, though podman --env-file wants values unquoted.
+  value="${value%\"}"; value="${value#\"}"
+  value="${value%\'}"; value="${value#\'}"
+  printf '%s' "$value"
+}
 
+DATABASE_URL_ENV="$(env_value DATABASE_URL)"
+LDAP_URL_ENV="$(env_value LDAP_URL)"
+ADO_PAT="$(env_value ADO_PAT)"
+
+# A URL that names this machine means "the container in this pod". Anything
+# else is a real server the user configured, and must be left alone.
+points_here() { [[ -z "$1" || "$1" == *localhost* || "$1" == *127.0.0.1* ]]; }
+
+points_here "$DATABASE_URL_ENV" && USE_LOCAL_POSTGRES=1 || USE_LOCAL_POSTGRES=0
+points_here "$LDAP_URL_ENV" && USE_LOCAL_LDAP=1 || USE_LOCAL_LDAP=0
+
+# Take the credentials from DATABASE_URL so the container and the app cannot
+# disagree about them.
 POSTGRES_USER="${POSTGRES_USER:-eidp}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-eidp}"
 POSTGRES_DB="${POSTGRES_DB:-eidp}"
+if [[ "$DATABASE_URL_ENV" =~ ^postgres(ql)?://([^:]+):([^@]+)@[^/]+/([^?]+) ]]; then
+  POSTGRES_USER="${BASH_REMATCH[2]}"
+  POSTGRES_PASSWORD="${BASH_REMATCH[3]}"
+  POSTGRES_DB="${BASH_REMATCH[4]}"
+fi
 POSTGRES_HOST_PORT="${POSTGRES_HOST_PORT:-5432}"
 LDAP_HOST_PORT="${LDAP_HOST_PORT:-1389}"
 API_HOST_PORT="${API_HOST_PORT:-3000}"
@@ -70,7 +92,9 @@ services() {
       -p "$WEB_HOST_PORT:5173" >/dev/null
   fi
 
-  if running "$pod-postgres"; then
+  if [[ "$USE_LOCAL_POSTGRES" == 0 ]]; then
+    note "DATABASE_URL points at $DATABASE_URL_ENV — not starting a postgres container"
+  elif running "$pod-postgres"; then
     note "postgres already running"
   else
     podman rm -f "$pod-postgres" >/dev/null 2>&1 || true
@@ -83,7 +107,9 @@ services() {
       "$POSTGRES_IMAGE" >/dev/null
   fi
 
-  if running "$pod-openldap"; then
+  if [[ "$USE_LOCAL_LDAP" == 0 ]]; then
+    note "LDAP_URL points at $LDAP_URL_ENV — not starting an openldap container"
+  elif running "$pod-openldap"; then
     note "openldap already running"
   else
     podman rm -f "$pod-openldap" >/dev/null 2>&1 || true
@@ -98,8 +124,9 @@ services() {
       "$OPENLDAP_IMAGE" --copy-service >/dev/null
   fi
 
-  wait_for_postgres
-  ensure_ldap_seed
+  [[ "$USE_LOCAL_POSTGRES" == 1 ]] && wait_for_postgres
+  [[ "$USE_LOCAL_LDAP" == 1 ]] && ensure_ldap_seed
+  return 0
 }
 
 up() {
@@ -152,14 +179,18 @@ build_image() {
   podman build -f "$root/Containerfile.dev" -t "$APP_IMAGE" "$root"
 }
 
-# Inside the pod the containers share a network namespace, so they reach the
-# services on the container ports — 5432 and 389 — not the published host
-# ports. These overrides win over whatever .env says.
-in_pod_env=(
-  -e "DATABASE_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/$POSTGRES_DB"
-  -e "LDAP_URL=ldap://localhost:389"
-  -e "INVENTORIES_CHECKOUT=/app/.cache/inventories"
-)
+# Inside the pod the containers share a network namespace, so a service in the
+# pod is reached on its *container* port, not the published host port. Only
+# rewrite a URL that points at this machine: one naming a real server is the
+# user's configuration and overriding it silently sends the app somewhere it
+# was never told to go.
+in_pod_env=(-e "INVENTORIES_CHECKOUT=/app/.cache/inventories")
+if [[ "$USE_LOCAL_POSTGRES" == 1 ]]; then
+  in_pod_env+=(-e "DATABASE_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/$POSTGRES_DB")
+fi
+if [[ "$USE_LOCAL_LDAP" == 1 ]]; then
+  in_pod_env+=(-e "LDAP_URL=ldap://localhost:389")
+fi
 
 start_apps() {
   podman rm -f "$pod-api" "$pod-web" >/dev/null 2>&1 || true
@@ -194,6 +225,9 @@ report_apps() {
   echo "  web   http://localhost:$WEB_HOST_PORT"
   echo "  api   http://localhost:$API_HOST_PORT/health"
   echo
+  echo "  directory  ${LDAP_URL_ENV:-(unset)}$([[ "$USE_LOCAL_LDAP" == 1 ]] && echo '  [bundled container]')"
+  echo "  database   ${DATABASE_URL_ENV:-(unset)}$([[ "$USE_LOCAL_POSTGRES" == 1 ]] && echo '  [bundled container]')"
+  echo
   echo "  Source under apps/*/src is mounted, so edits reload in place."
   echo "  Set VITE_POLLING=1 if the browser stops reloading on a change."
   echo
@@ -220,8 +254,9 @@ report() {
   LDAP_BIND_DN=cn=admin,$base
 
 EOF
-  if [[ "$LDAP_HOST_PORT" != "389" ]] && grep -q 'LDAP_URL=ldap://localhost:389$' "$env_file" 2>/dev/null; then
-    warn "Your .env still points LDAP_URL at :389, but the container is published on :$LDAP_HOST_PORT."
+  if [[ "$USE_LOCAL_LDAP" == 1 && "$LDAP_HOST_PORT" != "389" && "$LDAP_URL_ENV" == *":389" ]]; then
+    warn "Your .env points LDAP_URL at :389, but the container is published on :$LDAP_HOST_PORT."
+    warn "That only matters for apps run with pnpm; inside the pod :389 is correct."
   fi
   if [[ -z "${ADO_PAT:-}" ]]; then
     warn "ADO_PAT is empty, so the project map cannot be built. Set ADO_BASE_URL, ADO_PAT and INVENTORIES_PROJECT in .env."
