@@ -48,6 +48,19 @@ pnpm workspace. `apps/*` and `packages/*`.
   use the declarative one. Each page renders exactly one `h1` in its content;
   the header is the trail, not a heading.
 
+  The map has to work at ~207 systems and ~1100 applications. Three rules keep
+  it usable there, and breaking any one of them makes it unusable again:
+
+  - A flat root of 207 siblings is a 5000px column no one can scan, so above
+    `BUCKET_THRESHOLD` systems are grouped by initial. Filtering removes the
+    buckets, because a narrowed list does not need them.
+  - Filters and the expansion they imply are applied in **one** update. Set the
+    expansion in an effect and the map measures the tree from the render
+    before, then fits to the wrong shape.
+  - Auto-fit refuses to shrink below `MIN_READABLE`. A result that technically
+    fits but renders at 6px is worse than one you pan through. The fit button
+    overrides it, because asking for the whole shape is explicit.
+
   `features/projects/catalog.ts` is placeholder data shaped to match what the
   API's inventories parser produces — replace the rows, keep the types.
   `tree.ts` turns a catalog into the map's node tree; `mind-map.tsx` lays it out

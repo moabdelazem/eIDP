@@ -1,33 +1,114 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
+import type { System } from './catalog.ts'
 import { useCatalog } from './catalog-context.tsx'
 import { CatalogUnavailable } from './catalog-error.tsx'
-import { Skeleton } from '@/components/ui/skeleton'
+import { MapToolbar } from './map-toolbar.tsx'
 import { MindMap } from './mind-map.tsx'
-import { buildTree, matches, pathTo } from './tree.ts'
-import type { System } from './catalog.ts'
+import {
+  allBranchIds,
+  buildTree,
+  countLeaves,
+  emptyFilters,
+  facetsOf,
+  hasFilters,
+  type Filters,
+} from './tree.ts'
 
 export function ProjectMapPage() {
   const { status, systems, sync, error, reload } = useCatalog()
+  const [view, setView] = useState<'map' | 'list'>('map')
+  const [filters, setFilters] = useState<Filters>(emptyFilters)
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['root']))
 
   // Name the root after the company when every system agrees on one.
-  const root = useMemo(() => {
+  const rootLabel = useMemo(() => {
     const company = systems[0]?.company
-    const shared = company && systems.every((system) => system.company === company)
-    return buildTree(systems, shared ? company : 'Organization')
+    return company && systems.every((system) => system.company === company) ? company : 'Organization'
   }, [systems])
-  const [view, setView] = useState<'map' | 'list'>('map')
-  const [query, setQuery] = useState('')
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['root']))
-  const [focusId, setFocusId] = useState<string | null>(null)
 
-  const hits = useMemo(() => matches(root, query), [root, query])
+  const root = useMemo(
+    () => buildTree(systems, rootLabel, filters),
+    [systems, rootLabel, filters],
+  )
+  const facets = useMemo(() => facetsOf(systems), [systems])
+
+  const showing = useMemo(
+    () => ({ systems: countLeaves(root, 'system'), applications: countLeaves(root, 'application') }),
+    [root],
+  )
+
+  /**
+   * A narrowed tree opens itself down to the applications: you filtered to see
+   * what matched, so making you click through to it is busywork. Clearing the
+   * filters returns to the top level rather than leaving hundreds open.
+   *
+   * Both happen in one update, so the map measures the tree it will actually
+   * draw — done in an effect, the fit ran a render early and overflowed.
+   */
+  function applyFilters(next: Filters) {
+    const nextRoot = buildTree(systems, rootLabel, next)
+    setFilters(next)
+    setExpanded(hasFilters(next) ? new Set(allBranchIds(nextRoot, 2)) : new Set(['root']))
+  }
 
   if (status === 'error') return <CatalogUnavailable error={error!} onRetry={reload} />
   if (status === 'loading') return <MapSkeleton />
+
+  const filtered = systems
+    .map((system) => ({
+      ...system,
+      applications: system.applications.filter((app) =>
+        matchesList(app.name, app.repository, filters),
+      ),
+    }))
+    .filter(
+      (system) =>
+        !hasFilters(filters) ||
+        system.applications.length > 0 ||
+        system.projectName.toLowerCase().includes(filters.query.trim().toLowerCase()),
+    )
+
+  return (
+    <div>
+      <h1 className="text-lg font-semibold tracking-tight">Project map</h1>
+
+      <div className="mt-4">
+        <MapToolbar
+          filters={filters}
+          onChange={applyFilters}
+          facets={facets}
+          showing={showing}
+          view={view}
+          onView={setView}
+          onExpandAll={() => setExpanded(new Set(allBranchIds(root)))}
+          onCollapseAll={() => setExpanded(new Set(['root']))}
+        />
+      </div>
+
+      <div className="mt-4">
+        {view === 'map' ? (
+          <MindMap
+            root={root}
+            expanded={expanded}
+            onToggle={toggle}
+            fitKey={`${filters.query}|${filters.technologies}|${filters.environments}`}
+          />
+        ) : (
+          <CatalogList systems={filtered} />
+        )}
+      </div>
+
+      {sync?.commit && (
+        <p className="mt-3 text-sm text-muted-foreground">
+          Built from <code>inventories</code> at {sync.commit.slice(0, 8)}
+          {sync.finishedAt && ` on ${new Date(sync.finishedAt).toLocaleString()}`}.
+        </p>
+      )}
+    </div>
+  )
 
   function toggle(id: string) {
     setExpanded((current) => {
@@ -37,80 +118,21 @@ export function ProjectMapPage() {
       return next
     })
   }
+}
 
-  /** Opens every ancestor of a hit, then centres the map on it. */
-  function reveal(id: string) {
-    const path = pathTo(root, id)
-    if (!path) return
-    setExpanded((current) => new Set([...current, ...path.slice(0, -1)]))
-    setFocusId(id)
+function matchesList(name: string, repository: string | null, filters: Filters): boolean {
+  const query = filters.query.trim().toLowerCase()
+  if (query && !name.toLowerCase().includes(query) && !repository?.toLowerCase().includes(query)) {
+    return false
   }
-
-  return (
-    <div>
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-lg font-semibold tracking-tight">Project map</h1>
-        <div className="ml-auto flex items-center gap-2">
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Find a system or application"
-            className="w-64"
-            aria-label="Find a system or application"
-          />
-          <div className="flex rounded-md border p-0.5">
-            {(['map', 'list'] as const).map((option) => (
-              <Button
-                key={option}
-                size="sm"
-                variant={view === option ? 'secondary' : 'ghost'}
-                onClick={() => setView(option)}
-                className="capitalize"
-              >
-                {option}
-              </Button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {query && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {hits.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nothing matches “{query}”.</p>
-          ) : (
-            hits.slice(0, 12).map((hit) => (
-              <Button key={hit.id} size="sm" variant="outline" onClick={() => reveal(hit.id)}>
-                {hit.label}
-              </Button>
-            ))
-          )}
-        </div>
-      )}
-
-      <div className="mt-4">
-        {view === 'map' ? (
-          <MindMap root={root} expanded={expanded} onToggle={toggle} focusId={focusId} />
-        ) : (
-          <CatalogList systems={systems} />
-        )}
-      </div>
-
-      <p className="mt-3 text-sm text-muted-foreground">
-        {sync?.commit
-          ? `Built from inventories at ${sync.commit.slice(0, 8)}${
-              sync.finishedAt ? ` on ${new Date(sync.finishedAt).toLocaleString()}` : ''
-            }.`
-          : 'Click a filled node to open it, an application name to see its detail.'}
-      </p>
-    </div>
-  )
+  return true
 }
 
 function MapSkeleton() {
   return (
     <div>
       <Skeleton className="h-7 w-40" />
+      <Skeleton className="mt-4 h-10 w-full" />
       <Skeleton className="mt-4 h-96 w-full" />
     </div>
   )
@@ -118,6 +140,10 @@ function MapSkeleton() {
 
 /** The same catalog as a plain list — searchable, linkable, screen-reader friendly. */
 function CatalogList({ systems }: { systems: System[] }) {
+  if (systems.length === 0) {
+    return <p className="text-sm text-muted-foreground">Nothing matches those filters.</p>
+  }
+
   return (
     <div className="max-w-3xl space-y-8">
       {systems.map((system) => (
@@ -135,9 +161,7 @@ function CatalogList({ systems }: { systems: System[] }) {
                     <code className="text-sm text-muted-foreground">{app.repository}</code>
                   )}
                   <span className="ml-auto flex gap-1">
-                    {app.buildTechnology && (
-                      <Badge variant="secondary">{app.buildTechnology}</Badge>
-                    )}
+                    {app.buildTechnology && <Badge variant="secondary">{app.buildTechnology}</Badge>}
                     {app.environments.map((env) => (
                       <Badge key={env} variant="outline">
                         {env}
