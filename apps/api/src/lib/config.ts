@@ -34,17 +34,16 @@ const schema = z.object({
    * cannot express — Active Directory wants objectCategory=person to keep
    * computer accounts out. `{username}` is replaced, already escaped.
    */
+  LDAP_USER_FILTER: z.string().min(1).optional(),
   /**
    * Finds the groups an account belongs to. `{dn}` is the account's DN, escaped.
-   * The OpenLDAP default matches direct membership; Active Directory should use
-   * the in-chain rule (1.2.840.113556.1.4.1941), which also follows nested
-   * groups — someone in a team that is itself inside DEVOPS still counts.
+   * Unset, it is chosen from what the server says it is (see `groupFilter`):
+   * a hardcoded default is wrong for one of AD or OpenLDAP, and wrong here
+   * means nobody is ever an approver.
    */
-  LDAP_GROUP_FILTER: z.string().min(1).default('(&(objectClass=groupOfNames)(member={dn}))'),
+  LDAP_GROUP_FILTER: z.string().min(1).optional(),
   /** Members of this group decide requests, and nobody else can. */
   APPROVER_GROUP: z.string().min(1).default('DEVOPS'),
-
-  LDAP_USER_FILTER: z.string().min(1).optional(),
 
   // Azure DevOps Server (on-prem). Optional so the API still boots without
   // them; the integration reports what is missing when something asks it to

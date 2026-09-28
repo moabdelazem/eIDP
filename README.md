@@ -110,7 +110,12 @@ pnpm --filter @eidp/api ldap:doctor <username> [password]
 It reads the server's rootDSE first, so it names the product you are actually
 talking to and lists the suffixes it serves — which are the valid values for
 `LDAP_BASE_DN`. Then it reports the service bind, the account lookup and the
-user's own password separately.
+user's own password separately, and finally the groups the account is in and
+whether that makes them an approver.
+
+Someone who is in DEVOPS but gets no Approvals page can also open **Your
+profile** from the menu under their name: it shows the groups the directory
+returned for them and how they were looked up.
 
 When the lookup finds nothing it searches again without assuming a schema,
 prints what the account really looks like, and names the settings to use.

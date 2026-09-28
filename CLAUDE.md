@@ -204,9 +204,21 @@ Server naming restrictions.
 development — including the sign-in page ADO returns instead of a 401, and the
 queued operation behind project creation.
 
-`LDAP_GROUP_FILTER` finds group membership. On Active Directory it uses the
-in-chain matching rule, because `memberOf` misses nested groups — someone in a
-team that is itself inside DEVOPS would otherwise not count.
+Group membership is found by `groupFilter()` in `integrations/ldap/groups.ts`.
+An explicit `LDAP_GROUP_FILTER` wins; otherwise the server's rootDSE decides —
+Active Directory gets the in-chain matching rule, because `memberOf` misses
+nested groups, and OpenLDAP gets `groupOfNames`. It used to be a hardcoded
+OpenLDAP default, and on AD that silently found no groups: nobody in DEVOPS
+could approve anything. When the rootDSE is refused, an AD-style
+`LDAP_USER_FILTER` is taken as the signal. The choice is pure
+(`chooseGroupFilter`) so every branch is tested without an AD.
+
+The UI decides whether to offer approvals from `GET /auth/profile`, read live
+from the directory, not from the token's `roles` claim. A session that predates
+a group change — or predates `roles` altogether — still shows the truth. The
+profile page (`/me`) shows title, department, team (AD's `division`), manager
+and groups, and when someone is not an approver it says what the directory
+returned and how groups were looked up, rather than leaving them to guess.
 
 Blank values in `.env` (`KEY=`) are treated as unset in `lib/config.ts`. Before
 that, a `.env` copied from `.env.example` failed to boot on its blank

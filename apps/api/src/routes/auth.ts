@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { authenticate } from '../integrations/ldap/index.ts'
+import { authenticate, profileOf } from '../integrations/ldap/index.ts'
 import { ApiError } from '../lib/errors.ts'
 import { validate } from '../lib/validate.ts'
 import { requireAuth, type AppEnv } from '../middleware/auth.ts'
@@ -24,3 +24,17 @@ export const authRoutes = new Hono<AppEnv>()
     return c.json({ token, expiresAt })
   })
   .get('/me', requireAuth, (c) => c.json(c.get('jwtPayload')))
+
+  /**
+   * Who you are according to the directory right now — title, department,
+   * groups, and whether you can approve. Live rather than from the token, so a
+   * session that predates a group change, or predates roles entirely, still
+   * shows the truth.
+   */
+  .get('/profile', requireAuth, async (c) => {
+    const profile = await profileOf(c.get('jwtPayload').sub)
+    if (!profile) {
+      throw new ApiError(404, 'profile_not_found', 'The directory no longer has an account for you.')
+    }
+    return c.json(profile)
+  })

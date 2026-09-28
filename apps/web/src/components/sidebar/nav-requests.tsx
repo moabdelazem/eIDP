@@ -9,14 +9,13 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
-import { useSession } from '@/features/auth/session-context.tsx'
+import { useProfile } from '@/features/auth/profile-context.tsx'
 import { requestsApi } from '@/features/requests/api.ts'
 import { useResource } from '@/lib/use-resource.ts'
 
 export function NavRequests() {
   const { pathname } = useLocation()
-  const { session } = useSession()
-  const approver = session?.roles.includes('approver') ?? false
+  const { isApprover: approver } = useProfile()
 
   return (
     <SidebarGroup>

@@ -126,6 +126,27 @@ try {
       } else throw err
     }
   }
+
+  // 4. groups — whether this person can approve requests
+  const { groupFilter, groupsOf, isApproverGroup } = await import('./groups.ts')
+  const lookup = await groupFilter()
+  const groups = await groupsOf(searchEntries[0]!.dn)
+  console.log(`\n  groups (${lookup.source})`)
+  if (groups.length === 0) {
+    bad('no groups found for this account')
+    hint(`Filter used: ${lookup.filter}`)
+    hint('Active Directory needs objectClass=group; OpenLDAP needs groupOfNames.')
+    hint('If the groups live outside LDAP_BASE_DN, they are not searched at all.')
+  } else {
+    ok(`${groups.length} group${groups.length === 1 ? '' : 's'}: ${groups.slice(0, 12).join(', ')}${groups.length > 12 ? ', …' : ''}`)
+    if (groups.some(isApproverGroup)) {
+      ok(`in ${config.APPROVER_GROUP} — can approve and reject requests`)
+    } else {
+      console.log(`  ----  not in ${config.APPROVER_GROUP}, so cannot approve requests`)
+      const close = groups.filter((g) => g.toLowerCase().includes(config.APPROVER_GROUP.toLowerCase()))
+      if (close.length > 0) hint(`Did you mean APPROVER_GROUP=${close[0]}?`)
+    }
+  }
 } finally {
   await client.unbind().catch(() => {})
   console.log()

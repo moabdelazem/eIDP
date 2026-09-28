@@ -4,6 +4,7 @@ import { useParams } from 'react-router'
 import { EmptyState } from '@/components/empty-state.tsx'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useProfile } from '@/features/auth/profile-context.tsx'
 import { useSession } from '@/features/auth/session-context.tsx'
 import { useResource } from '@/lib/use-resource.ts'
 import { isInFlight, requestsApi, targetPath, type PortalRequest } from './api.ts'
@@ -14,6 +15,7 @@ import { KIND_LABEL, since, StatusBadge, TargetPath, WrappingUrl } from './statu
 export function RequestPage() {
   const { requestId = '' } = useParams()
   const { session } = useSession()
+  const { isApprover: approver } = useProfile()
   const [pollMs, setPollMs] = useState<number | null>(3000)
   const request = useResource(
     async () => {
@@ -32,7 +34,6 @@ export function RequestPage() {
   if (!request.data) return <Skeleton className="h-64 w-full max-w-2xl" />
 
   const r = request.data
-  const approver = session?.roles.includes('approver') ?? false
   const own = r.requestedBy === session?.uid
 
   return (
