@@ -11,20 +11,21 @@ import { Textarea } from '@/components/ui/textarea'
 import { ApiError } from '@/lib/api-client.ts'
 import { useResource } from '@/lib/use-resource.ts'
 import { requestsApi, type Check as CheckResult, type RequestKind, type Target } from './api.ts'
+import { REQUEST_TYPES } from './kinds.ts'
 import { ProjectPicker } from './project-picker.tsx'
 import { TargetPath, WrappingUrl } from './status.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 
-const COPY: Record<RequestKind, { title: string; lead: string; noun: string; why: string }> = {
+// The title comes from kinds.ts, so the menu, the breadcrumb and this heading
+// cannot drift apart; only the form's own wording lives here.
+const COPY: Record<RequestKind, { lead: string; noun: string; why: string }> = {
   create_repository: {
-    title: 'Ask for a repository',
-    lead: 'It is created in Azure DevOps once someone in DevOps approves it.',
+    lead: 'A Git repository in an existing project, created once someone in DevOps approves it.',
     noun: 'repository',
     why: 'e.g. New service for loan scoring, owned by the Payments team.',
   },
   create_project: {
-    title: 'Ask for a project',
-    lead: 'A new Azure DevOps project, with Git, created once DevOps approves it.',
+    lead: 'A project with Git, in any collection, created once someone in DevOps approves it.',
     noun: 'project',
     why: 'e.g. Platform rewrite agreed in Q3 planning; repositories will follow.',
   },
@@ -33,7 +34,7 @@ const COPY: Record<RequestKind, { title: string; lead: string; noun: string; why
 type Verdict = { state: 'idle' } | { state: 'checking' } | { state: 'done'; result: CheckResult }
 
 export function NewRequestPage({ kind }: { kind: RequestKind }) {
-  const copy = COPY[kind]
+  const copy = { ...COPY[kind], title: REQUEST_TYPES.find((type) => type.kind === kind)!.title }
   usePageTitle(copy.title)
   const navigate = useNavigate()
   const collections = useResource(() => requestsApi.collections(), [])

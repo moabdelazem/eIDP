@@ -194,6 +194,20 @@ stops being enough.
 
 ## Requests
 
+**Request types live in one registry**, `apps/web/src/features/requests/kinds.ts`,
+grouped by provider (Azure DevOps, Jira, …). The sidebar's New request
+dropdown, the same dropdown on My requests, the Ctrl/⌘ K palette, the routes,
+the breadcrumbs and the form's title all read it. Paths are provider-scoped
+(`/requests/new/azure-devops/project`) because an Azure DevOps project and a
+Jira project are different things. A type with `kind: null` is listed as
+"Soon" and disabled, and gets no route.
+
+Adding a type: its registry entry, its form, and its API `kind` with an
+executor in `services/requests.ts` — then flip `kind` from null. The sidebar
+uses a dropdown rather than one item per type (shadcn's sidebar-06 pattern):
+types will outgrow a flat list, and a dropdown is the only thing that still
+works in the collapsed icon rail.
+
 `services/requests.ts` owns the lifecycle: pending → approved → completed or
 failed, or pending → rejected or cancelled. Rows are never deleted; the row is
 the history.

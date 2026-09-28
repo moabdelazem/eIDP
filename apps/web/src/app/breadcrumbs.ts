@@ -1,4 +1,5 @@
 import { findApplication, type System } from '@/features/projects/catalog.ts'
+import { typeForPath } from '@/features/requests/kinds.ts'
 
 export type Crumb = {
   label: string
@@ -34,7 +35,7 @@ export function crumbsFor(pathname: string, systems: System[] = []): Crumb[] {
   if (segments[0] === 'requests') {
     const mine = { label: 'My requests', path: '/requests' }
     if (segments[1] === 'new') {
-      return [mine, { label: segments[2] === 'project' ? 'Ask for a project' : 'Ask for a repository' }]
+      return [mine, { label: typeForPath(pathname)?.title ?? 'New request' }]
     }
     if (segments[1]) return [mine, { label: 'Request' }]
     return [{ label: 'My requests' }]

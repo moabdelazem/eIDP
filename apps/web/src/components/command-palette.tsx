@@ -14,6 +14,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { useCatalog } from '@/features/projects/catalog-context.tsx'
+import { isAvailable, REQUEST_TYPES } from '@/features/requests/kinds.ts'
 
 const MAX_APPLICATIONS = 12
 const MAX_SYSTEMS = 6
@@ -78,8 +79,15 @@ function Palette({ onDone }: { onDone: () => void }) {
   const [query, setQuery] = useState('')
 
   // DevOps pages are offered only to DevOps — the same rule as the sidebar.
+  // Request types come from the registry by their full title, so "repository"
+  // and "azure" both find one; only the ones with a form are offered.
   const pages: NavItem[] = useMemo(
-    () => [...browseItems, ...requestItems, ...(isApprover ? devopsItems : [])],
+    () => [
+      ...browseItems,
+      ...REQUEST_TYPES.filter(isAvailable).map((type) => ({ path: type.path, label: type.title, icon: type.icon })),
+      ...requestItems,
+      ...(isApprover ? devopsItems : []),
+    ],
     [isApprover],
   )
 

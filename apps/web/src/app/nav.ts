@@ -1,4 +1,4 @@
-import { Boxes, FolderGit2, FolderKanban, Inbox, ListChecks } from 'lucide-react'
+import { Boxes, Inbox, ListChecks } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 export type NavItem = {
@@ -21,10 +21,12 @@ export const browseItems: NavItem[] = [
   { path: '/', label: 'Projects map', icon: Boxes, owns: (p) => p.startsWith('/projects') },
 ]
 
-/** Things you ask DevOps for, and where you follow them. */
+/**
+ * Where you follow what you asked for. The kinds of request themselves are not
+ * nav items — they live in `features/requests/kinds.ts` and open from the New
+ * request menu, because there will be too many for a flat list.
+ */
 export const requestItems: NavItem[] = [
-  { path: '/requests/new/repository', label: 'Ask for a repository', icon: FolderGit2 },
-  { path: '/requests/new/project', label: 'Ask for a project', icon: FolderKanban },
   { path: '/requests', label: 'My requests', icon: Inbox, owns: (p) => REQUEST_DETAIL.test(p) },
 ]
 

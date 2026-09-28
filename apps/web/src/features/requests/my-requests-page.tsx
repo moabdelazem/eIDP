@@ -1,6 +1,7 @@
-import { FolderGit2, FolderKanban } from 'lucide-react'
-import { Link } from 'react-router'
+import { ChevronDown, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { NewRequestMenuContent } from './new-request-menu.tsx'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useResource } from '@/lib/use-resource.ts'
 import { isInFlight, requestsApi } from './api.ts'
@@ -18,7 +19,7 @@ export function MyRequestsPage() {
           <h1 className="text-lg font-semibold tracking-tight">My requests</h1>
           <p className="mt-1 text-muted-foreground">Everything you have asked DevOps for, newest first.</p>
         </div>
-        <NewButtons />
+        <NewButton />
       </div>
 
       <div className="mt-6">
@@ -30,7 +31,8 @@ export function MyRequestsPage() {
           <div className="rounded-lg border border-dashed p-8 text-center">
             <p className="font-medium">You haven’t asked for anything yet</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Ask for a repository or a project, and follow it here until it exists.
+              Start one from <span className="font-medium">New request</span>, and follow it here
+              until it exists.
             </p>
           </div>
         ) : (
@@ -67,19 +69,16 @@ function Group({ title, requests }: { title: string; requests: Awaited<ReturnTyp
   )
 }
 
-function NewButtons() {
+/** The same menu as the sidebar's, so the two can never offer different things. */
+function NewButton() {
   return (
-    <div className="flex gap-2">
-      <Button asChild variant="outline" size="sm">
-        <Link to="/requests/new/repository">
-          <FolderGit2 /> Ask for a repository
-        </Link>
-      </Button>
-      <Button asChild variant="outline" size="sm">
-        <Link to="/requests/new/project">
-          <FolderKanban /> Ask for a project
-        </Link>
-      </Button>
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm">
+          <Plus /> New request <ChevronDown />
+        </Button>
+      </DropdownMenuTrigger>
+      <NewRequestMenuContent align="end" />
+    </DropdownMenu>
   )
 }

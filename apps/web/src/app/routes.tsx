@@ -1,9 +1,10 @@
-import { Route, Routes } from 'react-router'
+import { Navigate, Route, Routes } from 'react-router'
 import { LoginPage } from '@/features/auth/login-page.tsx'
 import { ProfilePage } from '@/features/auth/profile-page.tsx'
 import { ProjectMapPage } from '@/features/projects/map-page.tsx'
 import { ProjectPage } from '@/features/projects/project-page.tsx'
 import { ApprovalsPage } from '@/features/requests/approvals-page.tsx'
+import { isAvailable, REQUEST_TYPES } from '@/features/requests/kinds.ts'
 import { MyRequestsPage } from '@/features/requests/my-requests-page.tsx'
 import { NewRequestPage } from '@/features/requests/new-request-page.tsx'
 import { RequestPage } from '@/features/requests/request-page.tsx'
@@ -22,8 +23,17 @@ export function AppRoutes() {
           <Route index element={<ProjectMapPage />} />
           <Route path="projects/:projectId" element={<ProjectPage />} />
           <Route path="requests" element={<MyRequestsPage />} />
-          <Route path="requests/new/repository" element={<NewRequestPage key="repo" kind="create_repository" />} />
-          <Route path="requests/new/project" element={<NewRequestPage key="project" kind="create_project" />} />
+          {/* One route per request type that has a form — see features/requests/kinds.ts. */}
+          {REQUEST_TYPES.filter(isAvailable).map((type) => (
+            <Route
+              key={type.path}
+              path={type.path.slice(1)}
+              element={<NewRequestPage key={type.path} kind={type.kind!} />}
+            />
+          ))}
+          {/* Where these lived before request types were grouped by provider. */}
+          <Route path="requests/new/repository" element={<Navigate to="/requests/new/azure-devops/repository" replace />} />
+          <Route path="requests/new/project" element={<Navigate to="/requests/new/azure-devops/project" replace />} />
           <Route path="requests/:requestId" element={<RequestPage />} />
           <Route path="me" element={<ProfilePage />} />
 
