@@ -14,8 +14,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 type Project = { name: string; description: string | null }
 
 /**
- * A searchable project list. A collection can hold hundreds of projects, and a
- * plain select makes people scroll for the one they already know the name of.
+ * A searchable list of names — projects in a collection, or someone's
+ * directory groups. Either can run to hundreds, and a plain select makes people
+ * scroll for the one they already know the name of.
  */
 export function ProjectPicker({
   id,
@@ -23,12 +24,14 @@ export function ProjectPicker({
   value,
   onChange,
   loading,
+  noun = 'project',
 }: {
   id: string
   projects: Project[]
   value: string
   onChange: (name: string) => void
   loading: boolean
+  noun?: string
 }) {
   const [open, setOpen] = useState(false)
 
@@ -44,16 +47,16 @@ export function ProjectPicker({
           className="w-full justify-between font-normal"
         >
           <span className={value ? '' : 'text-muted-foreground'}>
-            {loading ? 'Loading projects…' : value || 'Choose a project'}
+            {loading ? `Loading ${noun}s…` : value || `Choose a ${noun}`}
           </span>
           <ChevronsUpDown className="opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-(--radix-popover-trigger-width) p-0" align="start">
         <Command>
-          <CommandInput placeholder="Search projects" />
+          <CommandInput placeholder={`Search ${noun}s`} />
           <CommandList>
-            <CommandEmpty>No project by that name in this collection.</CommandEmpty>
+            <CommandEmpty>No {noun} by that name.</CommandEmpty>
             <CommandGroup>
               {projects.map((project) => (
                 <CommandItem

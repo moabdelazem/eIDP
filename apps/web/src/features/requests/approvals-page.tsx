@@ -142,6 +142,16 @@ function PendingCard({ request: r, own, onDecided }: { request: PortalRequest; o
       </div>
 
       <blockquote className="mt-3 border-l-2 pl-3 text-sm text-muted-foreground">{r.justification}</blockquote>
+      {/* What approving hands out, so it is decided with open eyes. */}
+      <p className="mt-3 text-sm">
+        <span className="text-muted-foreground">Contributor access for </span>
+        {r.requestedByName}
+        {r.teamGroup && (
+          <>
+            {' '}and <code className="text-[13px]">{r.teamGroup}</code>
+          </>
+        )}
+      </p>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {own ? (

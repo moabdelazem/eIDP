@@ -76,6 +76,11 @@ create table if not exists requests (
   )
 );
 
+-- The directory group the requester chose as their team. It gets Contributor
+-- access alongside them once the thing exists. Null on rows filed before
+-- teams were asked for; those grant the requester alone.
+alter table requests add column if not exists team_group text;
+
 create index if not exists requests_requested_by_idx on requests (requested_by, requested_at desc);
 create index if not exists requests_status_idx on requests (status, requested_at);
 

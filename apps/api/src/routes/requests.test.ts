@@ -68,7 +68,15 @@ const repoRequest = (repository: string) => ({
   project: 'AgriLand',
   repository,
   justification: 'New service for the loan scoring work.',
+  teamGroup: 'Payments',
 })
+
+/** Allow bits an identity holds on a repository, by account name. */
+function accessOn(repository: string, account: string): number | undefined {
+  const repo = fake.collections.get('DefaultCollection')!.repos.find((r) => r.name === repository)!
+  const identity = fake.identities.find((i) => i.properties.Account.$value === account)!
+  return fake.acl.get(`repoV2/${repo.project.id}/${repo.id}`)?.get(identity.descriptor)
+}
 
 test('the collections on the server are discovered, with the default marked', async () => {
   const body = await json(await call('bob', 'GET', '/ado/collections'))
@@ -109,12 +117,21 @@ test('a request needs a reason', async () => {
   assert.equal(res.status, 400)
 })
 
+test('the team has to be one of the requester’s own groups', async () => {
+  const notTheirs = await call('bob', 'POST', '/requests', { ...repoRequest('not-my-team'), teamGroup: 'DEVOPS' })
+  assert.equal(notTheirs.status, 400)
+  assert.match(String((await json<{ error: { message: string } }>(notTheirs)).error.message), /not a member of DEVOPS/)
+  const { teamGroup: _, ...noTeam } = repoRequest('no-team')
+  assert.equal((await call('bob', 'POST', '/requests', noTeam)).status, 400)
+})
+
 test('a developer files a request and it waits for DEVOPS', async () => {
   const res = await call('bob', 'POST', '/requests', repoRequest('loan-scoring'))
   assert.equal(res.status, 201)
   const request = await json(res)
   assert.equal(request.status, 'pending')
   assert.equal(request.requestedByName, 'Bob Example')
+  assert.equal(request.teamGroup, 'Payments')
 })
 
 test('the same request cannot be filed twice while it is open', async () => {
@@ -143,6 +160,43 @@ test('DEVOPS approves, and the repository is created in Azure DevOps', async () 
   assert.match(done.resultUrl!, /\/DefaultCollection\/AgriLand\/_git\/loan-scoring$/)
   const repos = fake.collections.get('DefaultCollection')!.repos.map((r) => r.name)
   assert.ok(repos.includes('loan-scoring'))
+})
+
+test('approval grants the requester and their team Contributor on the new repository', async () => {
+  const { CONTRIBUTOR } = await import('../integrations/ado/index.ts')
+  assert.equal(accessOn('loan-scoring', 'bob'), CONTRIBUTOR)
+  assert.equal(accessOn('loan-scoring', 'Payments'), CONTRIBUTOR)
+  // The approver gets nothing from deciding.
+  assert.equal(accessOn('loan-scoring', 'alice'), undefined)
+})
+
+test('a team Azure DevOps cannot find fails the request before anything is created', async () => {
+  const payments = fake.identities.findIndex((i) => i.properties.Account.$value === 'Payments')
+  const [removed] = fake.identities.splice(payments, 1)
+  const created = await json<{ id: string }>(await call('bob', 'POST', '/requests', repoRequest('unknown-team')))
+  await call('alice', 'POST', `/requests/${created.id}/approve`, {})
+  const failed = await settled(created.id)
+  fake.identities.splice(payments, 0, removed!)
+  assert.equal(failed.status, 'failed')
+  assert.match(failed.error!, /does not know an account or group called Payments/)
+  assert.ok(!fake.collections.get('DefaultCollection')!.repos.some((r) => r.name === 'unknown-team'))
+})
+
+test('when granting fails after creating, a retry only grants', async () => {
+  fake.setDenyGrants(true)
+  const created = await json<{ id: string }>(await call('bob', 'POST', '/requests', repoRequest('grant-later')))
+  await call('alice', 'POST', `/requests/${created.id}/approve`, {})
+  const failed = await settled(created.id)
+  assert.equal(failed.status, 'failed')
+  assert.match(failed.error!, /Created grant-later, but could not grant access/)
+
+  fake.setDenyGrants(false)
+  await call('carol', 'POST', `/requests/${created.id}/retry`)
+  const done = await settled(created.id)
+  assert.equal(done.status, 'completed')
+  // Not created twice — the retry would have hit "already exists" otherwise.
+  assert.equal(fake.collections.get('DefaultCollection')!.repos.filter((r) => r.name === 'grant-later').length, 1)
+  assert.ok(accessOn('grant-later', 'bob'))
 })
 
 test('a decided request cannot be approved again', async () => {
@@ -203,6 +257,7 @@ test('a new project waits for Azure DevOps to finish creating it', async () => {
       project: 'NewPlatform',
       description: 'Platform rewrite',
       justification: 'Kick-off approved in Q3 planning.',
+      teamGroup: 'Payments',
     }),
   )
   await call('alice', 'POST', `/requests/${created.id}/approve`, {})
@@ -210,6 +265,13 @@ test('a new project waits for Azure DevOps to finish creating it', async () => {
   assert.equal(done.status, 'completed')
   assert.match(done.resultUrl!, /\/Legacy\/NewPlatform$/)
   assert.ok(fake.collections.get('Legacy')!.projects.some((p) => p.name === 'NewPlatform'))
+
+  // The requester and their team join the new project's Contributors group.
+  const contributors = fake.identities.find((i) => i.providerDisplayName === '[NewPlatform]\\Contributors')!
+  const joined = [...(fake.members.get(contributors.id) ?? [])].map(
+    (id) => fake.identities.find((i) => i.id === id)!.properties.Account.$value,
+  )
+  assert.deepEqual(joined.sort(), ['Payments', 'bob'])
 })
 
 test('a malformed id is simply not found', async () => {
@@ -224,6 +286,7 @@ test('when Azure DevOps fails, the request says why and DEVOPS can retry it', as
       collection: 'Legacy',
       project: 'Flaky',
       justification: 'Testing failure handling.',
+      teamGroup: 'Payments',
     }),
   )
   await call('alice', 'POST', `/requests/${created.id}/approve`, {})

@@ -35,3 +35,12 @@ cn: Carol Example
 sn: Example
 mail: carol@eidp.local
 userPassword: carolpw
+
+# A team group, so requests have a team to grant access to. Everyone is in it;
+# only alice and carol are in DEVOPS.
+dn: cn=Payments,ou=groups,dc=eidp,dc=local
+objectClass: groupOfNames
+cn: Payments
+member: uid=alice,ou=people,dc=eidp,dc=local
+member: uid=bob,ou=people,dc=eidp,dc=local
+member: uid=carol,ou=people,dc=eidp,dc=local

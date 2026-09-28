@@ -105,8 +105,12 @@ export function adoPost<T>(path: string, body: unknown, options: Scope = {}): Pr
   return adoRequest<T>('POST', path, options, body)
 }
 
+export function adoPut<T>(path: string, options: Scope = {}): Promise<T> {
+  return adoRequest<T>('PUT', path, options)
+}
+
 async function adoRequest<T>(
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'PUT',
   path: string,
   options: Scope,
   body?: unknown,
@@ -130,6 +134,8 @@ async function adoRequest<T>(
   }
 
   if (!res.ok) throw await adoError(res)
+  // Adding a group member answers with no body at all on some releases.
+  if (res.status === 204) return undefined as T
 
   // A PAT that has expired gets an HTML sign-in page with a 200, not a 401.
   const type = res.headers.get('content-type') ?? ''

@@ -1,12 +1,16 @@
 import type { DatabaseError } from 'pg'
 import {
+  addToContributors,
   createProject,
   createRepository,
+  findIdentity,
+  grantRepository,
   listProjects,
   listRepositories,
   webUrlFor,
+  type Principal,
 } from '../integrations/ado/index.ts'
-import { isApprover } from '../integrations/ldap/index.ts'
+import { isApprover, profileOf } from '../integrations/ldap/index.ts'
 import { query } from '../lib/db.ts'
 import { ApiError } from '../lib/errors.ts'
 import { nameProblem } from './request-rules.ts'
@@ -25,6 +29,8 @@ export type RequestRecord = {
   repository: string | null
   description: string | null
   justification: string
+  /** The directory group granted access with the requester; null on older rows. */
+  teamGroup: string | null
   requestedBy: string
   requestedByName: string
   requestedAt: string
@@ -44,6 +50,7 @@ export type NewRequest = {
   repository?: string
   description?: string
   justification: string
+  teamGroup: string
 }
 
 export type Check = { ok: true } | { ok: false; reason: string }
@@ -54,7 +61,7 @@ export type Check = { ok: true } | { ok: false; reason: string }
  * calls this as someone types, and `submit` runs the same thing, so the answer
  * on screen is the answer on submit.
  */
-export async function check(input: Omit<NewRequest, 'justification'>): Promise<Check> {
+export async function check(input: Omit<NewRequest, 'justification' | 'teamGroup'>): Promise<Check> {
   const creatingRepo = input.kind === 'create_repository'
   const name = creatingRepo ? (input.repository ?? '') : input.project
   const problem = nameProblem(name, creatingRepo ? 'repository' : 'project')
@@ -93,6 +100,13 @@ export async function submit(input: NewRequest, actor: Actor): Promise<RequestRe
   if (!input.justification.trim()) {
     throw new ApiError(400, 'invalid_request', 'Say why you need it, so DEVOPS can decide.')
   }
+  // Whoever is granted access must be the requester's own team: asked of the
+  // directory now, so nobody can hand a repository to a group they are not in.
+  const groups = (await profileOf(actor.uid))?.groups ?? []
+  const team = groups.find((group) => same(group, input.teamGroup))
+  if (!team) {
+    throw new ApiError(400, 'invalid_request', `You are not a member of ${input.teamGroup}. Choose one of your own groups.`)
+  }
   const verdict = await check(input)
   if (!verdict.ok) throw new ApiError(409, 'request_not_possible', verdict.reason)
 
@@ -100,8 +114,8 @@ export async function submit(input: NewRequest, actor: Actor): Promise<RequestRe
     const { rows } = await query<Row>(
       `insert into requests
          (kind, collection, project, repository, description, justification,
-          requested_by, requested_by_name)
-       values ($1, $2, $3, $4, $5, $6, $7, $8)
+          requested_by, requested_by_name, team_group)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        returning *`,
       [
         input.kind,
@@ -112,6 +126,7 @@ export async function submit(input: NewRequest, actor: Actor): Promise<RequestRe
         input.justification.trim(),
         actor.uid,
         actor.name,
+        team,
       ],
     )
     return toRecord(rows[0]!)
@@ -243,15 +258,42 @@ export async function recoverInterrupted(): Promise<number> {
   return rowCount ?? 0
 }
 
+/**
+ * Creates the thing, then gives the requester and their team Contributor
+ * access to it. Nobody asks for a repository they cannot push to.
+ *
+ * Identities are resolved before anything is created, so a team ADO cannot
+ * find fails the request with nothing made. `result_url` is written the moment
+ * creation succeeds: if granting then fails, a retry sees it and only grants,
+ * rather than trying to create something that now exists.
+ */
 async function execute(request: RequestRecord): Promise<void> {
   try {
+    const principals: Principal[] = []
+    for (const name of [request.requestedBy, request.teamGroup]) {
+      if (name) principals.push(await findIdentity(request.collection, name))
+    }
+    const created = request.resultUrl !== null
+
     let resultUrl: string
     if (request.kind === 'create_repository') {
-      const repo = await createRepository(request.collection, request.project, request.repository!)
+      const repo = created
+        ? await existingRepository(request)
+        : await createRepository(request.collection, request.project, request.repository!)
       resultUrl = repo.webUrl ?? webUrlFor(request.collection, request.project, repo.name)
+      if (!created) await recordCreated(request.id, resultUrl)
+      await withContext(`Created ${repo.name}, but could not grant access`, () =>
+        grantRepository(request.collection, repo.project.id, repo.id, principals),
+      )
     } else {
-      const project = await createProject(request.collection, request.project, request.description ?? '')
+      const project = created
+        ? { name: request.project }
+        : await createProject(request.collection, request.project, request.description ?? '')
       resultUrl = webUrlFor(request.collection, project.name)
+      if (!created) await recordCreated(request.id, resultUrl)
+      await withContext(`Created ${project.name}, but could not grant access`, () =>
+        addToContributors(request.collection, project.name, principals),
+      )
     }
     await query(
       `update requests set status = 'completed', completed_at = now(), result_url = $2, error = null
@@ -262,6 +304,26 @@ async function execute(request: RequestRecord): Promise<void> {
     const message = err instanceof Error ? err.message : String(err)
     console.error(`request ${request.id} failed:`, message)
     await query(`update requests set status = 'failed', error = $2 where id = $1`, [request.id, message])
+  }
+}
+
+async function existingRepository(request: RequestRecord) {
+  const repos = await listRepositories(request.collection, request.project)
+  const repo = repos.find((r) => same(r.name, request.repository!))
+  if (!repo) throw new ApiError(404, 'ado_repository_missing', `${request.repository} is no longer in ${request.project}.`)
+  return repo
+}
+
+function recordCreated(id: string, resultUrl: string) {
+  return query('update requests set result_url = $2 where id = $1', [id, resultUrl])
+}
+
+/** Says what already happened when a later step fails, so DevOps know a retry only has to grant. */
+async function withContext(context: string, step: () => Promise<void>): Promise<void> {
+  try {
+    await step()
+  } catch (err) {
+    throw new Error(`${context}: ${err instanceof Error ? err.message : String(err)}`)
   }
 }
 
@@ -298,6 +360,7 @@ type Row = {
   repository: string | null
   description: string | null
   justification: string
+  team_group: string | null
   requested_by: string
   requested_by_name: string
   requested_at: Date
@@ -320,6 +383,7 @@ function toRecord(row: Row): RequestRecord {
     repository: row.repository,
     description: row.description,
     justification: row.justification,
+    teamGroup: row.team_group,
     requestedBy: row.requested_by,
     requestedByName: row.requested_by_name,
     requestedAt: row.requested_at.toISOString(),

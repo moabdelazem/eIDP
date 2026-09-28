@@ -250,6 +250,22 @@ The rules that matter, each tested in `routes/requests.test.ts`:
   operation; `createProject` polls it to the end rather than reporting success
   for something the server might still fail to create.
 
+**Approval grants access, not just existence.** The requester and the team
+they chose on the form — one of their own directory groups, checked live at
+submit so nobody hands a repository to a group they are not in — get
+Contributor: on a repository, an ACE in the Git namespace (read, contribute,
+branch, tag, notes, pull requests; not force-push, policy exemption or
+permission management); on a project, membership of `[Project]\Contributors`.
+`integrations/ado/access.ts` finds each ADO identity by account name and
+refuses to guess when a name matches nothing or two domains. Identities are
+resolved *before* creating, so an unknown team fails with nothing made;
+`result_url` is written the moment creation succeeds, so a retry after a
+failed grant only grants. The ADO service account therefore needs Manage
+permissions on repositories and the right to edit project group membership —
+without them requests end `failed` with "Created X, but could not grant
+access", and a retry finishes once that is fixed. Rows filed before teams
+existed have `team_group` null and grant the requester alone.
+
 `check()` is what the form calls as someone types and what `submit()` runs, so
 the two can never disagree. Name rules are in `request-rules.ts`, from the ADO
 Server naming restrictions.

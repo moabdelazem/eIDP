@@ -50,8 +50,8 @@ test('an account that does not exist is not an approver', async () => {
 })
 
 test('group names come back by cn', async () => {
-  assert.deepEqual(await groupsOf('uid=alice,ou=people,dc=eidp,dc=local'), ['DEVOPS'])
-  assert.deepEqual(await groupsOf('uid=bob,ou=people,dc=eidp,dc=local'), [])
+  assert.deepEqual(await groupsOf('uid=alice,ou=people,dc=eidp,dc=local'), ['DEVOPS', 'Payments'])
+  assert.deepEqual(await groupsOf('uid=bob,ou=people,dc=eidp,dc=local'), ['Payments'])
 })
 
 test('a dn is escaped before it enters the group filter', async () => {
@@ -69,7 +69,7 @@ test('the profile carries title, department, manager and groups', async () => {
   assert.equal(bob?.isApprover, false)
 
   const alice = await profileOf('alice')
-  assert.deepEqual(alice?.groups, ['DEVOPS'])
+  assert.deepEqual(alice?.groups, ['DEVOPS', 'Payments'])
   assert.equal(alice?.isApprover, true)
 })
 

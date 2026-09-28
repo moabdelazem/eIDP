@@ -15,8 +15,13 @@ import { Hono } from 'hono'
 type Project = { id: string; name: string; description: string; state: 'wellFormed' }
 type Repo = { id: string; name: string; project: { id: string; name: string } }
 type Operation = { id: string; status: string; resultMessage: string | null; pending: () => void }
+type Identity = { id: string; descriptor: string; providerDisplayName: string; properties: { Account: { $value: string } } }
 
-export function createFakeAdo(options: { failProjects?: boolean; denyServerScope?: boolean } = {}) {
+export function createFakeAdo(options: { failProjects?: boolean; denyServerScope?: boolean; denyGrants?: boolean } = {}) {
+  /** A service account allowed to create but not to manage permissions. */
+  const setDenyGrants = (deny: boolean) => {
+    options.denyGrants = deny
+  }
   /** A PAT scoped to one collection is refused at the server root. */
   const setDenyServerScope = (deny: boolean) => {
     options.denyServerScope = deny
@@ -27,6 +32,23 @@ export function createFakeAdo(options: { failProjects?: boolean; denyServerScope
   }
   const collections = new Map<string, { id: string; projects: Project[]; repos: Repo[] }>()
   const operations = new Map<string, Operation>()
+  /** Everyone ADO can find — the directory it is joined to, plus project groups. */
+  const identities: Identity[] = []
+  /** Access control entries by security token, then descriptor → allow bits. */
+  const acl = new Map<string, Map<string, number>>()
+  /** Group memberships: group identity id → member identity ids. */
+  const members = new Map<string, Set<string>>()
+
+  function addIdentity(account: string, displayName = account) {
+    const identity: Identity = {
+      id: randomUUID(),
+      descriptor: `System.Security.Principal.WindowsIdentity;S-1-5-21-${identities.length + 1000}`,
+      providerDisplayName: displayName,
+      properties: { Account: { $value: account } },
+    }
+    identities.push(identity)
+    return identity
+  }
 
   function addCollection(name: string) {
     collections.set(name, { id: randomUUID(), projects: [], repos: [] })
@@ -34,6 +56,8 @@ export function createFakeAdo(options: { failProjects?: boolean; denyServerScope
   function addProject(collection: string, name: string) {
     const project: Project = { id: randomUUID(), name, description: '', state: 'wellFormed' }
     collections.get(collection)!.projects.push(project)
+    // Every project comes with its own Contributors group, as in ADO.
+    addIdentity('Contributors', `[${name}]\\Contributors`)
     return project
   }
   function addRepo(collection: string, project: string, name: string) {
@@ -41,6 +65,8 @@ export function createFakeAdo(options: { failProjects?: boolean; denyServerScope
     const p = c.projects.find((x) => x.name === project)!
     c.repos.push({ id: randomUUID(), name, project: { id: p.id, name: p.name } })
   }
+
+  for (const account of ['alice', 'bob', 'carol', 'Payments', 'DEVOPS']) addIdentity(account)
 
   addCollection('DefaultCollection')
   addCollection('Legacy')
@@ -145,7 +171,40 @@ export function createFakeAdo(options: { failProjects?: boolean; denyServerScope
     return c.json(repo, 201)
   })
 
-  return { app, collections, setFailProjects, setDenyServerScope }
+  app.get('/:collection/_apis/identities', (c) => {
+    const filter = (c.req.query('filterValue') ?? '').toLowerCase()
+    return c.json(
+      list(
+        identities.filter(
+          (i) => i.properties.Account.$value.toLowerCase().includes(filter) || i.providerDisplayName.toLowerCase().includes(filter),
+        ),
+      ),
+    )
+  })
+
+  app.post('/:collection/_apis/accesscontrolentries/:namespace', async (c) => {
+    if (options.denyGrants) return c.json({ message: 'TF50309: The service account lacks Manage permissions.' }, 403)
+    const body = await c.req.json<{ token: string; merge: boolean; accessControlEntries: { descriptor: string; allow: number }[] }>()
+    const entries = acl.get(body.token) ?? new Map<string, number>()
+    for (const ace of body.accessControlEntries) {
+      if (!identities.some((i) => i.descriptor === ace.descriptor)) return c.json({ message: 'Unknown identity' }, 400)
+      entries.set(ace.descriptor, (body.merge ? (entries.get(ace.descriptor) ?? 0) : 0) | ace.allow)
+    }
+    acl.set(body.token, entries)
+    return c.json(list(body.accessControlEntries))
+  })
+
+  app.put('/:collection/_apis/identities/:group/members/:member', (c) => {
+    if (options.denyGrants) return c.json({ message: 'TF50309: The service account lacks Manage permissions.' }, 403)
+    const group = c.req.param('group')
+    if (!identities.some((i) => i.id === group)) return c.json({ message: 'Group not found' }, 404)
+    const set = members.get(group) ?? new Set<string>()
+    set.add(c.req.param('member'))
+    members.set(group, set)
+    return c.json(true)
+  })
+
+  return { app, collections, identities, acl, members, setFailProjects, setDenyServerScope, setDenyGrants }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

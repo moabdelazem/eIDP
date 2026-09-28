@@ -71,6 +71,15 @@ export function RequestPage() {
               {r.description}
             </p>
           )}
+          <p className="mt-2 text-sm">
+            <span className="text-muted-foreground">Contributor access for: </span>
+            {own ? 'you' : r.requestedByName}
+            {r.teamGroup && (
+              <>
+                {' '}and <code className="text-[13px]">{r.teamGroup}</code>
+              </>
+            )}
+          </p>
         </Step>
 
         <DecisionStep request={r} own={own} />

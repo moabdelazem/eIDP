@@ -12,6 +12,8 @@ export type PortalRequest = {
   repository: string | null
   description: string | null
   justification: string
+  /** The requester's directory group, granted access with them. Null on older requests. */
+  teamGroup: string | null
   requestedBy: string
   requestedByName: string
   requestedAt: string
@@ -39,10 +41,10 @@ export const requestsApi = {
     ),
   check: (target: Target) =>
     api<Check>('/requests/check', { method: 'POST', body: JSON.stringify(target) }),
-  submit: (target: Target, justification: string) =>
+  submit: (target: Target, justification: string, teamGroup: string) =>
     api<PortalRequest>('/requests', {
       method: 'POST',
-      body: JSON.stringify({ ...target, justification }),
+      body: JSON.stringify({ ...target, justification, teamGroup }),
     }),
   mine: () => api<PortalRequest[]>('/requests/mine'),
   pool: () => api<{ open: PortalRequest[]; recent: PortalRequest[] }>('/requests/pool'),

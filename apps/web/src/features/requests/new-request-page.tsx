@@ -16,6 +16,7 @@ import { REQUEST_TYPES } from './kinds.ts'
 import { ProjectPicker } from './project-picker.tsx'
 import { TargetPath, WrappingUrl } from './status.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
+import { useProfile } from '@/features/auth/profile-context.tsx'
 
 // The title comes from kinds.ts, so the menu, the breadcrumb and this heading
 // cannot drift apart; only the form's own wording lives here.
@@ -45,6 +46,11 @@ export function NewRequestPage({ kind }: { kind: RequestKind }) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [justification, setJustification] = useState('')
+  const { profile, loaded: profileLoaded } = useProfile()
+  const groups = profile?.groups ?? []
+  const [chosenTeam, setChosenTeam] = useState('')
+  // One group is not a choice.
+  const team = chosenTeam || (groups.length === 1 ? groups[0]! : '')
   const [verdict, setVerdict] = useState<Verdict>({ state: 'idle' })
   const [submitting, setSubmitting] = useState(false)
 
@@ -96,14 +102,19 @@ export function NewRequestPage({ kind }: { kind: RequestKind }) {
   }, [kind, collection, project, name])
 
   const canSubmit =
-    target !== null && verdict.state === 'done' && verdict.result.ok && justification.trim() !== '' && !submitting
+    target !== null &&
+    verdict.state === 'done' &&
+    verdict.result.ok &&
+    justification.trim() !== '' &&
+    team !== '' &&
+    !submitting
 
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (!target || !canSubmit) return
     setSubmitting(true)
     try {
-      const created = await requestsApi.submit(target, justification)
+      const created = await requestsApi.submit(target, justification, team)
       toast.success('Sent to DevOps for approval')
       navigate(`/requests/${created.id}`)
     } catch (err) {
@@ -219,6 +230,32 @@ export function NewRequestPage({ kind }: { kind: RequestKind }) {
           )}
 
           <Field
+            label="Your team"
+            htmlFor="team"
+            hint={`Gets Contributor access to the ${copy.noun} with you. One of your groups in the directory.`}
+          >
+            {profileLoaded && groups.length === 0 ? (
+              <p id="team" className="text-sm text-destructive">
+                The directory has you in no groups, so there is no team to give access to. Ask for your
+                account to be added to your team’s group, then come back.
+              </p>
+            ) : groups.length === 1 ? (
+              <p id="team" className="flex h-9 items-center font-mono text-sm">
+                {team}
+              </p>
+            ) : (
+              <ProjectPicker
+                id="team"
+                noun="team"
+                projects={groups.map((name) => ({ name, description: null }))}
+                value={team}
+                onChange={setChosenTeam}
+                loading={!profileLoaded}
+              />
+            )}
+          </Field>
+
+          <Field
             label="Why do you need it?"
             htmlFor="justification"
             hint="DevOps decides from this, so say who it is for and what it will hold."
@@ -258,6 +295,7 @@ export function NewRequestPage({ kind }: { kind: RequestKind }) {
               {[
                 'Someone in DevOps reviews it.',
                 `The ${copy.noun} is created for you in Azure DevOps.`,
+                `You and ${team || 'your team'} get Contributor access to it.`,
                 'The link appears on your request.',
               ].map((step, index) => (
                 <li key={step} className="flex gap-3">

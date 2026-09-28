@@ -19,7 +19,15 @@ const Target = z.discriminatedUnion('kind', [
   }),
 ])
 
-const NewRequest = z.intersection(Target, z.object({ justification: z.string().max(4000) }))
+const NewRequest = z.intersection(
+  Target,
+  z.object({
+    justification: z.string().max(4000),
+    // The requester's team, granted access with them. Checked against their
+    // groups in the directory by the service.
+    teamGroup: z.string().min(1, 'Choose your team.').max(256),
+  }),
+)
 
 const Decision = z.object({ note: z.string().max(4000).optional() })
 
