@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ExternalLink, Loader2 } from 'lucide-react'
 import { useParams } from 'react-router'
+import { DataView } from '@/components/data-view.tsx'
 import { EmptyState } from '@/components/empty-state.tsx'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -61,6 +62,13 @@ export function RequestPage() {
       </ol>
 
       <Actions request={r} approver={approver} own={own} onChanged={request.reload} />
+
+      <details className="group mt-10">
+        <summary className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground">
+          Request data
+        </summary>
+        <DataView className="mt-3" data={r} filename={`request-${r.repository ?? r.project}`} />
+      </details>
     </div>
   )
 }

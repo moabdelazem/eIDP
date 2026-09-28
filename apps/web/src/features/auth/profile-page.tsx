@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ShieldCheck } from 'lucide-react'
 import { Link } from 'react-router'
+import { DataView } from '@/components/data-view.tsx'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -70,6 +71,13 @@ export function ProfilePage() {
 
       <ApprovalStatus profile={profile} />
       <Groups profile={profile} />
+
+      <details className="mt-10">
+        <summary className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground">
+          What the directory returned
+        </summary>
+        <DataView className="mt-3" data={profile} filename={`profile-${profile.uid}`} />
+      </details>
     </div>
   )
 }

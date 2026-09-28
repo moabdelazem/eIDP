@@ -291,6 +291,18 @@ service account's token and rewrites the catalog.
 - **The map's search lives in the URL** (`/?q=`), so links land on a filtered
   map and back/forward keep it. Phones open the map on the List view — a tree
   needs width a phone does not have.
+- **`DataView` (`components/data-view.tsx`) shows any object as highlighted
+  YAML or JSON**, with copy and download. shadcn has no code or syntax
+  component — only a styled inline `<code>` — so it is built on Shiki, which
+  uses the same grammars as VS Code. It is on the application page (every
+  group directory keyed as in the repo), a request's data, and the profile.
+  Shiki (core, JS regex engine, json and yaml grammars) and the `yaml`
+  serialiser are dynamic imports in `lib/highlight.ts` and the component: none
+  of it is in the main bundle, and a page without a viewer never loads it.
+  Colours are `--shiki-*` variables in `index.css`, drawn from the palette —
+  never red. Output goes in via `dangerouslySetInnerHTML`, which is safe only
+  because Shiki escapes every token; keep it that way. The effect keys on the
+  serialised text, not the `data` object, because callers build it inline.
 - **Ctrl/⌘ K opens a jump-to palette** (`components/command-palette.tsx`)
   over applications, systems and pages. It filters itself and renders only the
   top matches, because cmdk's own filtering mounts every item — 1100 hidden

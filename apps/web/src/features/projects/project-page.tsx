@@ -6,7 +6,8 @@ import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
 import { fetchApplication, type ApplicationConfig } from './api.ts'
 import { findApplication, type Environment } from './catalog.ts'
-import { differences, flatten, keySettings } from './config.ts'
+import { differences, keySettings } from './config.ts'
+import { DataView } from '@/components/data-view.tsx'
 import { useCatalog } from './catalog-context.tsx'
 import { CatalogUnavailable } from './catalog-error.tsx'
 
@@ -165,9 +166,6 @@ function Configuration({ rows, error }: { rows: ApplicationConfig[] | undefined;
   const overrides = rows
     .filter((row) => row !== base && row.environment)
     .map((row) => ({ environment: row.environment!, changes: differences(base.descriptor, row.descriptor) }))
-  // Sorted, so build_image.* and deploy_image.* sit together rather than in
-  // whatever order the files happened to set them.
-  const everything = flatten(base.descriptor).sort(([a], [b]) => a.localeCompare(b))
 
   return (
     <>
@@ -237,24 +235,20 @@ function Configuration({ rows, error }: { rows: ApplicationConfig[] | undefined;
         </section>
       )}
 
-      {everything.length > 0 && (
-        <details className="mt-10 text-sm">
-          <summary className="cursor-pointer font-medium">All settings ({everything.length})</summary>
-          <p className="mt-2 text-muted-foreground">
-            Passwords, tokens and vault-encrypted values are shown as <code>[hidden]</code>.
-          </p>
-          <table className="mt-3 w-full">
-            <tbody className="divide-y border-y">
-              {everything.map(([key, value]) => (
-                <tr key={key} className="align-top">
-                  <td className="w-1/2 py-1.5 pr-4 font-mono break-all text-muted-foreground">{key}</td>
-                  <td className="py-1.5 font-mono break-words">{value}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </details>
-      )}
+      <section className="mt-10">
+        <h2 className="text-sm font-medium">All settings</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Each group directory, keyed as it is in <code>inventories</code>, with its files merged.
+          Passwords, tokens and vault-encrypted values show as <code>[hidden]</code>.
+        </p>
+        <DataView
+          className="mt-3"
+          // Keyed by directory, so it reads like the repo: the base group and
+          // each environment's own, side by side.
+          data={Object.fromEntries(rows.map((row) => [row.group, row.descriptor]))}
+          filename={base.name}
+        />
+      </section>
     </>
   )
 }

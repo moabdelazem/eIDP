@@ -134,3 +134,52 @@
     @apply font-mono;
   }
 }
+
+/*
+ * Syntax colours for DataView (Shiki's css-variables theme). Drawn from the
+ * palette: eggplant for keys, a quiet teal for strings, amber for numbers and
+ * booleans. Never red — red means "act", and a string is not asking for that.
+ */
+:root {
+  --shiki-foreground: var(--foreground);
+  --shiki-background: transparent;
+  --shiki-token-keyword: #6b3a78;
+  --shiki-token-function: #6b3a78;
+  --shiki-token-parameter: #6b3a78;
+  --shiki-token-string: #2f6b64;
+  --shiki-token-string-expression: #2f6b64;
+  --shiki-token-link: #2f6b64;
+  --shiki-token-constant: #99541a;
+  --shiki-token-comment: #8c7a92;
+  --shiki-token-punctuation: #8c7a92;
+}
+
+.dark {
+  --shiki-token-keyword: #d3a6e0;
+  --shiki-token-function: #d3a6e0;
+  --shiki-token-parameter: #d3a6e0;
+  --shiki-token-string: #7fcfc3;
+  --shiki-token-string-expression: #7fcfc3;
+  --shiki-token-link: #7fcfc3;
+  --shiki-token-constant: #e8b375;
+  --shiki-token-comment: #8f7d96;
+  --shiki-token-punctuation: #8f7d96;
+}
+
+.data-view pre {
+  @apply m-0 bg-transparent py-3 font-mono;
+  counter-reset: line;
+}
+.data-view code {
+  display: grid;
+}
+/* Line numbers, outside the selection, so copying a block copies the data only. */
+.data-view .line {
+  @apply pr-4;
+  counter-increment: line;
+  white-space: pre;
+}
+.data-view .line::before {
+  content: counter(line);
+  @apply inline-block w-10 pr-3 text-right text-muted-foreground/60 select-none;
+}
