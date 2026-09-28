@@ -5,8 +5,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useResource } from '@/lib/use-resource.ts'
 import { isInFlight, requestsApi } from './api.ts'
 import { RequestRow } from './request-row.tsx'
+import { usePageTitle } from '@/lib/use-page-title.ts'
 
 export function MyRequestsPage() {
+  usePageTitle('My requests')
   const mine = useResource(() => requestsApi.mine(), [], { pollMs: 10_000 })
 
   return (
@@ -14,7 +16,7 @@ export function MyRequestsPage() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-lg font-semibold tracking-tight">My requests</h1>
-          <p className="mt-1 text-muted-foreground">Everything you have asked DEVOPS for, newest first.</p>
+          <p className="mt-1 text-muted-foreground">Everything you have asked DevOps for, newest first.</p>
         </div>
         <NewButtons />
       </div>
@@ -70,12 +72,12 @@ function NewButtons() {
     <div className="flex gap-2">
       <Button asChild variant="outline" size="sm">
         <Link to="/requests/new/repository">
-          <FolderGit2 /> Repository
+          <FolderGit2 /> Ask for a repository
         </Link>
       </Button>
       <Button asChild variant="outline" size="sm">
         <Link to="/requests/new/project">
-          <FolderKanban /> Project
+          <FolderKanban /> Ask for a project
         </Link>
       </Button>
     </div>

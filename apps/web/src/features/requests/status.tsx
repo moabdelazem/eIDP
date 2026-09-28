@@ -2,7 +2,7 @@ import { Check, CircleDashed, Loader2, TriangleAlert, X } from 'lucide-react'
 import type { RequestKind, RequestStatus } from './api.ts'
 
 const LABEL: Record<RequestStatus, string> = {
-  pending: 'Waiting for DEVOPS',
+  pending: 'Waiting for DevOps',
   approved: 'Creating',
   completed: 'Created',
   rejected: 'Rejected',
@@ -59,19 +59,56 @@ export function since(iso: string): string {
   return format.format(-Math.round(seconds / 86400), 'day')
 }
 
-/** An identifier path, in the monospace we reserve for things people copy. */
+/**
+ * An identifier path, in the monospace we reserve for things people copy.
+ * Wraps between segments, never inside one — `break-all` used to split
+ * `Payments_Platform` into `Payments_Pl` / `atform` on a phone.
+ */
 export function TargetPath({ parts, className = '' }: { parts: string[]; className?: string }) {
   return (
-    <code className={`break-all ${className}`}>
+    <code className={`break-words ${className}`}>
       {parts.map((part, index) => (
         <span key={index}>
-          {index > 0 && <span className="text-muted-foreground"> / </span>}
+          {index > 0 && (
+            <span className="text-muted-foreground">
+              {' '}/<wbr />{' '}
+            </span>
+          )}
           <span className={index === parts.length - 1 ? 'font-medium text-foreground' : 'text-muted-foreground'}>
             {part}
           </span>
         </span>
       ))}
     </code>
+  )
+}
+
+/**
+ * What a request is for, name first. The collection is nearly always the
+ * same, so leading with it pushed the name — the part people scan for — off
+ * the end of the line on a phone.
+ */
+export function RequestName({
+  request,
+  as: Tag = 'p',
+  className = '',
+}: {
+  request: { kind: RequestKind; collection: string; project: string; repository: string | null }
+  as?: 'p' | 'h1'
+  className?: string
+}) {
+  const name = request.repository ?? request.project
+  const where =
+    request.kind === 'create_repository'
+      ? `${request.collection} / ${request.project}`
+      : request.collection
+  return (
+    <div className={`min-w-0 ${className}`}>
+      <Tag className={`font-mono font-medium break-words ${Tag === 'h1' ? 'text-lg' : ''}`}>{name}</Tag>
+      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+        {KIND_LABEL[request.kind]} in <span className="font-mono">{where}</span>
+      </p>
+    </div>
   )
 }
 

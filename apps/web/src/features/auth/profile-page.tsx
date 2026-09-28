@@ -5,10 +5,12 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useProfile, type Profile } from './profile-context.tsx'
+import { usePageTitle } from '@/lib/use-page-title.ts'
 
 const GROUPS_SHOWN = 24
 
 export function ProfilePage() {
+  usePageTitle('Your profile')
   const { profile, error, reload } = useProfile()
 
   if (error && !profile) {

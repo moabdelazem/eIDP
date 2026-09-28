@@ -4,17 +4,21 @@ import { Link } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSession } from '@/features/auth/session-context.tsx'
+import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
 import { requestsApi, targetPath, type PortalRequest } from './api.ts'
 import { decide, rejectRequest } from './decisions.ts'
 import { RejectDialog } from './reject-dialog.tsx'
 import { RequestRow } from './request-row.tsx'
-import { KIND_LABEL, since, TargetPath } from './status.tsx'
+import { RequestName, since } from './status.tsx'
 
 /** Mounted only behind `RequireDevOps` — see app/routes.tsx. */
 export function ApprovalsPage() {
   const { session } = useSession()
   const pool = useResource(() => requestsApi.pool(), [], { pollMs: 10_000 })
+  const pending = pool.data?.open.filter((r) => r.status === 'pending').length ?? 0
+  // The count in the tab lets DevOps leave it open and see when work arrives.
+  usePageTitle(pending > 0 ? `(${pending}) Approvals` : 'Approvals')
 
   if (!session) return null
 
@@ -28,12 +32,12 @@ export function ApprovalsPage() {
     <div className="max-w-3xl">
       <h1 className="text-lg font-semibold tracking-tight">Approvals</h1>
       <p className="mt-1 text-muted-foreground">
-        Requests wait here for anyone in DEVOPS. Approving creates it in Azure DevOps straight away.
+        Requests wait here for anyone in DevOps. Approving creates it in Azure DevOps straight away.
       </p>
 
       <section className="mt-8">
         <h2 className="text-sm font-medium text-muted-foreground">
-          Waiting on DEVOPS{waiting.length > 0 && ` · ${waiting.length}`}
+          Waiting for a decision{waiting.length > 0 && ` (${waiting.length})`}
         </h2>
         {waiting.length === 0 ? (
           <p className="mt-2 rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
@@ -92,22 +96,23 @@ function PendingCard({ request: r, own, onChanged }: { request: PortalRequest; o
 
   return (
     <article className="rounded-lg border bg-card p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Icon className="size-3.5" /> {KIND_LABEL[r.kind]} · {r.requestedByName} · {since(r.requestedAt)}
-          </p>
-          <Link to={`/requests/${r.id}`} className="mt-1 block hover:underline">
-            <TargetPath parts={targetPath(r)} className="text-[15px]" />
-          </Link>
-        </div>
+      <div className="flex items-start gap-3">
+        <Icon className="mt-1 size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <Link to={`/requests/${r.id}`} className="min-w-0 flex-1 hover:[&_p:first-child]:underline">
+          <RequestName request={r} className="text-[15px]" />
+        </Link>
+        <p className="shrink-0 text-right text-xs text-muted-foreground">
+          {r.requestedByName}
+          <br />
+          {since(r.requestedAt)}
+        </p>
       </div>
 
       <blockquote className="mt-3 border-l-2 pl-3 text-sm text-muted-foreground">{r.justification}</blockquote>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {own ? (
-          <p className="text-sm text-muted-foreground">Your own request — someone else in DEVOPS decides it.</p>
+          <p className="text-sm text-muted-foreground">Your own request — someone else in DevOps decides it.</p>
         ) : (
           <>
             <Button

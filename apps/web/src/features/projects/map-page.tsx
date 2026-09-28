@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Link } from 'react-router'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { System } from './catalog.ts'
@@ -16,12 +16,19 @@ import {
   hasFilters,
   type Filters,
 } from './tree.ts'
+import { usePageTitle } from '@/lib/use-page-title.ts'
 
 export function ProjectMapPage() {
+  usePageTitle('Project map')
   const { status, systems, sync, error, reload } = useCatalog()
-  const [view, setView] = useState<'map' | 'list'>('map')
+  const [searchParams, setSearchParams] = useSearchParams()
+  // A tree needs width a phone does not have; the list reads fine there.
+  const [view, setView] = useState<'map' | 'list'>(() =>
+    window.matchMedia('(max-width: 767px)').matches ? 'list' : 'map',
+  )
   const [filters, setFilters] = useState<Filters>(emptyFilters)
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['root']))
+  const seededFromUrl = useRef(false)
 
   // Name the root after the company when every system agrees on one.
   const rootLabel = useMemo(() => {
@@ -52,7 +59,21 @@ export function ProjectMapPage() {
     const nextRoot = buildTree(systems, rootLabel, next)
     setFilters(next)
     setExpanded(hasFilters(next) ? new Set(allBranchIds(nextRoot, 2)) : new Set(['root']))
+    // The search lives in the URL, so a link to "/?q=AgriLand" lands on it and
+    // back/forward keep it. `replace`, so typing does not flood the history.
+    const query = next.query.trim()
+    setSearchParams(query ? { q: query } : {}, { replace: true })
   }
+
+  // Apply a ?q= from a link once the catalog is here to search. Through
+  // applyFilters, so the expansion lands in the same update as the filter.
+  useEffect(() => {
+    if (seededFromUrl.current || systems.length === 0) return
+    seededFromUrl.current = true
+    const q = searchParams.get('q')
+    if (q) applyFilters({ ...emptyFilters, query: q })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [systems])
 
   if (status === 'error') return <CatalogUnavailable error={error!} onRetry={reload} />
   if (status === 'loading') return <MapSkeleton />

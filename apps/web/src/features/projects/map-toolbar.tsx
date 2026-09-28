@@ -40,7 +40,7 @@ export function MapToolbar({
           <Input
             value={filters.query}
             onChange={(event) => onChange({ ...filters, query: event.target.value })}
-            placeholder="Search systems, applications, repositories"
+            placeholder="Search by name or repository"
             aria-label="Search systems, applications, repositories"
             className="pl-9"
           />

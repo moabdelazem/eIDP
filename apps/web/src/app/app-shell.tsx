@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router'
 import { AppSidebar } from '@/components/sidebar/app-sidebar.tsx'
+import { CommandPalette } from '@/components/command-palette.tsx'
 import { PageBreadcrumbs } from '@/components/page-breadcrumbs.tsx'
 import { ProfileProvider } from '@/features/auth/profile-context.tsx'
 import { CatalogProvider } from '@/features/projects/catalog-context.tsx'
@@ -19,6 +20,7 @@ export function AppShell() {
               <SidebarTrigger />
               <Separator orientation="vertical" className="mr-1 h-4" />
               <PageBreadcrumbs />
+              <CommandPalette />
             </header>
             <main className="p-8">
               <Outlet />

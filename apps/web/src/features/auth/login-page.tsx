@@ -7,8 +7,10 @@ import { ApiError } from '@/lib/api-client.ts'
 import { login } from './api.ts'
 import { useSession } from './session-context.tsx'
 import logo from '@/assets/logo.png'
+import { usePageTitle } from '@/lib/use-page-title.ts'
 
 export function LoginPage() {
+  usePageTitle('Sign in')
   const { session, signIn } = useSession()
   const navigate = useNavigate()
   const location = useLocation()

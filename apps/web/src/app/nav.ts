@@ -21,7 +21,7 @@ export const browseItems: NavItem[] = [
   { path: '/', label: 'Project map', icon: Boxes, owns: (p) => p.startsWith('/projects') },
 ]
 
-/** Things you ask DEVOPS for, and where you follow them. */
+/** Things you ask DevOps for, and where you follow them. */
 export const requestItems: NavItem[] = [
   { path: '/requests/new/repository', label: 'Ask for a repository', icon: FolderGit2 },
   { path: '/requests/new/project', label: 'Ask for a project', icon: FolderKanban },

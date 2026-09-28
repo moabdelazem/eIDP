@@ -13,17 +13,18 @@ import { useResource } from '@/lib/use-resource.ts'
 import { requestsApi, type Check as CheckResult, type RequestKind, type Target } from './api.ts'
 import { ProjectPicker } from './project-picker.tsx'
 import { TargetPath, WrappingUrl } from './status.tsx'
+import { usePageTitle } from '@/lib/use-page-title.ts'
 
 const COPY: Record<RequestKind, { title: string; lead: string; noun: string; why: string }> = {
   create_repository: {
     title: 'Ask for a repository',
-    lead: 'It is created in Azure DevOps once someone in DEVOPS approves it.',
+    lead: 'It is created in Azure DevOps once someone in DevOps approves it.',
     noun: 'repository',
     why: 'e.g. New service for loan scoring, owned by the Payments team.',
   },
   create_project: {
     title: 'Ask for a project',
-    lead: 'A new Azure DevOps project, with Git, created once DEVOPS approves it.',
+    lead: 'A new Azure DevOps project, with Git, created once DevOps approves it.',
     noun: 'project',
     why: 'e.g. Platform rewrite agreed in Q3 planning; repositories will follow.',
   },
@@ -33,6 +34,7 @@ type Verdict = { state: 'idle' } | { state: 'checking' } | { state: 'done'; resu
 
 export function NewRequestPage({ kind }: { kind: RequestKind }) {
   const copy = COPY[kind]
+  usePageTitle(copy.title)
   const navigate = useNavigate()
   const collections = useResource(() => requestsApi.collections(), [])
 
@@ -100,7 +102,7 @@ export function NewRequestPage({ kind }: { kind: RequestKind }) {
     setSubmitting(true)
     try {
       const created = await requestsApi.submit(target, justification)
-      toast.success('Sent to DEVOPS for approval')
+      toast.success('Sent to DevOps for approval')
       navigate(`/requests/${created.id}`)
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Could not send the request. Try again.')
@@ -217,7 +219,7 @@ export function NewRequestPage({ kind }: { kind: RequestKind }) {
           <Field
             label="Why do you need it?"
             htmlFor="justification"
-            hint="DEVOPS decides from this, so say who it is for and what it will hold."
+            hint="DevOps decides from this, so say who it is for and what it will hold."
           >
             <Textarea
               id="justification"
@@ -252,7 +254,7 @@ export function NewRequestPage({ kind }: { kind: RequestKind }) {
             <p className="mt-5 text-sm text-muted-foreground">Then</p>
             <ol className="mt-2 space-y-2 text-sm">
               {[
-                'Someone in DEVOPS reviews it.',
+                'Someone in DevOps reviews it.',
                 `The ${copy.noun} is created for you in Azure DevOps.`,
                 'The link appears on your request.',
               ].map((step, index) => (

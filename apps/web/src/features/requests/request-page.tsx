@@ -6,11 +6,12 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { useSession } from '@/features/auth/session-context.tsx'
+import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
 import { isInFlight, requestsApi, targetPath, type PortalRequest } from './api.ts'
 import { decide, rejectRequest } from './decisions.ts'
 import { RejectDialog } from './reject-dialog.tsx'
-import { KIND_LABEL, since, StatusBadge, TargetPath, WrappingUrl } from './status.tsx'
+import { RequestName, since, StatusBadge, WrappingUrl } from './status.tsx'
 
 export function RequestPage() {
   const { requestId = '' } = useParams()
@@ -27,6 +28,7 @@ export function RequestPage() {
     [requestId],
     { pollMs },
   )
+  usePageTitle(request.data ? (request.data.repository ?? request.data.project) : 'Request')
 
   if (request.error && !request.data) {
     return <EmptyState title="Request not found">{request.error}</EmptyState>
@@ -38,13 +40,10 @@ export function RequestPage() {
 
   return (
     <div className="max-w-2xl">
-      <div className="flex flex-wrap items-center gap-3">
-        <p className="text-sm text-muted-foreground">{KIND_LABEL[r.kind]} request</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <RequestName request={r} as="h1" />
         <StatusBadge status={r.status} />
       </div>
-      <h1 className="mt-2 text-lg font-semibold tracking-tight">
-        <TargetPath parts={targetPath(r)} />
-      </h1>
 
       <ol className="mt-8 space-y-0">
         <Step title={own ? 'You asked for it' : `${r.requestedByName} asked for it`} when={r.requestedAt} done>
@@ -68,7 +67,7 @@ export function RequestPage() {
 
 function DecisionStep({ request: r, own }: { request: PortalRequest; own: boolean }) {
   if (r.status === 'pending') {
-    return <Step title="Waiting for DEVOPS to decide" current />
+    return <Step title="Waiting for DevOps to decide" current />
   }
   if (r.status === 'cancelled') {
     return <Step title={own ? 'You withdrew it' : `${r.requestedByName} withdrew it`} when={r.decidedAt} done last />
@@ -118,7 +117,7 @@ function OutcomeStep({ request: r }: { request: PortalRequest }) {
     return (
       <Step title="Azure DevOps could not create it" attention last>
         <p className="mt-2 text-sm">{r.error}</p>
-        <p className="mt-2 text-sm text-muted-foreground">DEVOPS can retry once the cause is fixed.</p>
+        <p className="mt-2 text-sm text-muted-foreground">DevOps can retry once the cause is fixed.</p>
       </Step>
     )
   }
@@ -181,7 +180,7 @@ function Actions({
           {actions}
           {approver && own && r.status === 'pending' && (
             <p className="text-sm text-muted-foreground">
-              This is your own request, so someone else in DEVOPS has to decide it.
+              This is your own request, so someone else in DevOps has to decide it.
             </p>
           )}
         </div>

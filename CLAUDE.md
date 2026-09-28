@@ -250,6 +250,29 @@ apps/api/src/routes` lists the whole admin surface.
 `POST /catalog/sync` is DevOps-only: a sync clones from Azure DevOps with the
 service account's token and rewrites the catalog.
 
+## UI conventions
+
+- **Every page names its tab** with `usePageTitle` (`lib/use-page-title.ts`),
+  most specific part first — `agriland-scoring — e-IDP`. Approvals puts the
+  pending count in front so DevOps can leave the tab open.
+- **Requests lead with the name.** `RequestName` shows the repository or
+  project name on its own line and the collection/project as context beneath.
+  Leading with the collection pushed the name off the end of the line on a
+  phone. In lists, status and time sit beside the name on wide screens and
+  drop beneath it on narrow ones.
+- **Identifiers wrap between segments, never inside one.** `TargetPath` and
+  `WrappingUrl` break at `/`; nothing uses `break-all`, which split
+  `Payments_Platform` into `Payments_Pl` / `atform`.
+- **"DevOps" in prose.** `DEVOPS` is the AD group name; it appears only where
+  the group itself is meant, on the profile and the access-denied page.
+- **The map's search lives in the URL** (`/?q=`), so links land on a filtered
+  map and back/forward keep it. Phones open the map on the List view — a tree
+  needs width a phone does not have.
+- **Ctrl/⌘ K opens a jump-to palette** (`components/command-palette.tsx`)
+  over applications, systems and pages. It filters itself and renders only the
+  top matches, because cmdk's own filtering mounts every item — 1100 hidden
+  rows per keystroke. DevOps pages are listed only to DevOps.
+
 ## Talking to the API
 
 `lib/api-client.ts` is the only thing that calls `fetch`. It attaches the
