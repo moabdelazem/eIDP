@@ -8,6 +8,7 @@ import { ApprovalsPage } from '@/features/requests/approvals-page.tsx'
 import { isAvailable, REQUEST_TYPES } from '@/features/requests/kinds.ts'
 import { MyRequestsPage } from '@/features/requests/my-requests-page.tsx'
 import { NewRequestPage } from '@/features/requests/new-request-page.tsx'
+import { GrantAccessPage } from '@/features/requests/grant-access-page.tsx'
 import { RequestPage } from '@/features/requests/request-page.tsx'
 import { AppShell } from './app-shell.tsx'
 import { NotFoundPage } from './not-found-page.tsx'
@@ -30,7 +31,13 @@ export function AppRoutes() {
             <Route
               key={type.path}
               path={type.path.slice(1)}
-              element={<NewRequestPage key={type.path} kind={type.kind!} />}
+              element={
+                type.kind === 'grant_access' ? (
+                  <GrantAccessPage />
+                ) : (
+                  <NewRequestPage key={type.path} kind={type.kind!} />
+                )
+              }
             />
           ))}
           {/* Where these lived before request types were grouped by provider. */}

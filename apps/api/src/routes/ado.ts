@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { ApiError } from '../lib/errors.ts'
 import { requireAuth, type AppEnv } from '../middleware/auth.ts'
-import { adoConfig, listCollections, listProjects } from '../integrations/ado/index.ts'
+import { adoConfig, listCollections, listProjects, listRepositories } from '../integrations/ado/index.ts'
 
 /** What the request form needs to offer choices rather than free text. */
 export const adoRoutes = new Hono<AppEnv>()
@@ -37,4 +37,9 @@ export const adoRoutes = new Hono<AppEnv>()
         .map(({ name, description }) => ({ name, description: description ?? null }))
         .sort((a, b) => a.name.localeCompare(b.name)),
     )
+  })
+
+  .get('/collections/:collection/projects/:project/repositories', async (c) => {
+    const repos = await listRepositories(c.req.param('collection'), c.req.param('project'))
+    return c.json(repos.map(({ name }) => ({ name, description: null })).sort((a, b) => a.name.localeCompare(b.name)))
   })

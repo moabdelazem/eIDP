@@ -4,7 +4,7 @@ import { adoConfig, adoGet, adoGetList, adoPost } from './client.ts'
 
 export { cloneOrUpdate, headCommit } from './git.ts'
 export { adoConfig } from './client.ts'
-export { addToContributors, CONTRIBUTOR, findIdentity, grantRepository, type Principal } from './access.ts'
+export { addToProjectGroup, CONTRIBUTOR, findIdentity, grantRepository, READER, type Principal } from './access.ts'
 
 export type AdoCollection = { id: string; name: string }
 

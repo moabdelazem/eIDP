@@ -13,7 +13,7 @@ import { useResource } from '@/lib/use-resource.ts'
 import { isInFlight, requestsApi, targetPath, type PortalRequest } from './api.ts'
 import { decide, rejectRequest } from './decisions.ts'
 import { RejectDialog } from './reject-dialog.tsx'
-import { RequestName, since, StatusBadge, WrappingUrl } from './status.tsx'
+import { AccessLine, RequestName, since, StatusBadge, WrappingUrl } from './status.tsx'
 import { HeaderSkeleton, Loading, TimelineSkeleton } from '@/components/skeletons.tsx'
 
 export function RequestPage() {
@@ -59,7 +59,7 @@ export function RequestPage() {
     <div className="max-w-2xl">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <RequestName request={r} as="h1" />
-        <StatusBadge status={r.status} />
+        <StatusBadge status={r.status} kind={r.kind} />
       </div>
 
       <ol className="mt-8 space-y-0">
@@ -71,15 +71,7 @@ export function RequestPage() {
               {r.description}
             </p>
           )}
-          <p className="mt-2 text-sm">
-            <span className="text-muted-foreground">Contributor access for: </span>
-            {own ? 'you' : r.requestedByName}
-            {r.teamGroup && (
-              <>
-                {' '}and <code className="text-[13px]">{r.teamGroup}</code>
-              </>
-            )}
-          </p>
+          <AccessLine request={r} own={own} className="mt-2" />
         </Step>
 
         <DecisionStep request={r} own={own} />
@@ -121,13 +113,14 @@ function DecisionStep({ request: r, own }: { request: PortalRequest; own: boolea
 }
 
 function OutcomeStep({ request: r }: { request: PortalRequest }) {
+  const granting = r.kind === 'grant_access'
   if (r.status === 'approved') {
-    return <Step title="Creating it in Azure DevOps…" current last />
+    return <Step title={granting ? 'Granting access in Azure DevOps…' : 'Creating it in Azure DevOps…'} current last />
   }
   if (r.status === 'completed') {
-    const cloneUrl = r.kind === 'create_repository' && r.resultUrl ? r.resultUrl : null
+    const cloneUrl = r.repository && r.resultUrl ? r.resultUrl : null
     return (
-      <Step title="Created in Azure DevOps" when={r.completedAt} done last>
+      <Step title={granting ? 'Access granted in Azure DevOps' : 'Created in Azure DevOps'} when={r.completedAt} done last>
         {r.resultUrl && (
           <Button asChild variant="outline" size="sm" className="mt-3">
             <a href={r.resultUrl} target="_blank" rel="noreferrer">
@@ -148,7 +141,7 @@ function OutcomeStep({ request: r }: { request: PortalRequest }) {
   }
   if (r.status === 'failed') {
     return (
-      <Step title="Azure DevOps could not create it" attention last>
+      <Step title={granting ? 'Azure DevOps could not grant it' : 'Azure DevOps could not create it'} attention last>
         <p className="mt-2 text-sm">{r.error}</p>
         <p className="mt-2 text-sm text-muted-foreground">DevOps can retry once the cause is fixed.</p>
       </Step>
@@ -184,7 +177,7 @@ function Actions({
     actions.push(
       <Button key="approve" disabled={busy} onClick={() => act('approve')}>
         {busy && <Spinner />}
-        Approve and create
+        {r.kind === 'grant_access' ? 'Approve and grant' : 'Approve and create'}
       </Button>,
       <Button key="reject" variant="outline" disabled={busy} onClick={() => setRejecting(true)}>
         Reject

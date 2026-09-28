@@ -1,21 +1,27 @@
 import type { DatabaseError } from 'pg'
 import {
-  addToContributors,
+  addToProjectGroup,
+  CONTRIBUTOR,
   createProject,
   createRepository,
   findIdentity,
   grantRepository,
   listProjects,
   listRepositories,
+  READER,
   webUrlFor,
   type Principal,
 } from '../integrations/ado/index.ts'
-import { isApprover, profileOf } from '../integrations/ldap/index.ts'
+import { dnOf, isApprover, profileOf } from '../integrations/ldap/index.ts'
 import { query } from '../lib/db.ts'
 import { ApiError } from '../lib/errors.ts'
 import { nameProblem } from './request-rules.ts'
 
-export type RequestKind = 'create_repository' | 'create_project'
+export type RequestKind = 'create_repository' | 'create_project' | 'grant_access'
+export type AccessLevel = 'read' | 'contribute'
+
+/** Enough for a team; a larger grant is a group's job, not a list of names. */
+const MAX_GRANTEES = 20
 export type RequestStatus = 'pending' | 'approved' | 'rejected' | 'completed' | 'failed' | 'cancelled'
 
 export type Actor = { uid: string; name: string }
@@ -31,6 +37,9 @@ export type RequestRecord = {
   justification: string
   /** The directory group granted access with the requester; null on older rows. */
   teamGroup: string | null
+  /** grant_access only: the accounts to be granted, and at what level. */
+  grantees: string[] | null
+  accessLevel: AccessLevel | null
   requestedBy: string
   requestedByName: string
   requestedAt: string
@@ -50,7 +59,11 @@ export type NewRequest = {
   repository?: string
   description?: string
   justification: string
-  teamGroup: string
+  /** Creations only. */
+  teamGroup?: string
+  /** grant_access only. */
+  grantees?: string[]
+  accessLevel?: AccessLevel
 }
 
 export type Check = { ok: true } | { ok: false; reason: string }
@@ -62,6 +75,7 @@ export type Check = { ok: true } | { ok: false; reason: string }
  * on screen is the answer on submit.
  */
 export async function check(input: Omit<NewRequest, 'justification' | 'teamGroup'>): Promise<Check> {
+  if (input.kind === 'grant_access') return checkGrant(input)
   const creatingRepo = input.kind === 'create_repository'
   const name = creatingRepo ? (input.repository ?? '') : input.project
   const problem = nameProblem(name, creatingRepo ? 'repository' : 'project')
@@ -96,14 +110,57 @@ export async function check(input: Omit<NewRequest, 'justification' | 'teamGroup
   return { ok: true }
 }
 
+/**
+ * Access to something that already exists: the project, and the repository if
+ * one is named, must be there, and every grantee must be an account the
+ * directory knows — ADO would otherwise fail it only after approval.
+ */
+async function checkGrant(input: Omit<NewRequest, 'justification' | 'teamGroup'>): Promise<Check> {
+  const grantees = uniqueNames(input.grantees ?? [])
+  if (grantees.length === 0) return { ok: false, reason: 'Name at least one person to grant access to.' }
+  if (grantees.length > MAX_GRANTEES) {
+    return { ok: false, reason: `At most ${MAX_GRANTEES} people per request; for more, grant their group.` }
+  }
+
+  const project = (await listProjects(input.collection)).find((p) => same(p.name, input.project))
+  if (!project) return { ok: false, reason: `There is no project ${input.project} in ${input.collection}.` }
+  if (input.repository) {
+    const repos = await listRepositories(input.collection, project.name)
+    if (!repos.some((r) => same(r.name, input.repository!))) {
+      return { ok: false, reason: `${project.name} has no repository called ${input.repository}.` }
+    }
+  }
+
+  const unknown: string[] = []
+  for (const name of grantees) if (!(await dnOf(name))) unknown.push(name)
+  if (unknown.length > 0) {
+    return {
+      ok: false,
+      reason: `The directory has no account called ${unknown.join(', ')}. Use login names, like jsmith.`,
+    }
+  }
+  return { ok: true }
+}
+
+function uniqueNames(names: string[]): string[] {
+  const seen = new Map<string, string>()
+  for (const raw of names) {
+    const name = raw.trim()
+    if (name && !seen.has(name.toLowerCase())) seen.set(name.toLowerCase(), name)
+  }
+  return [...seen.values()]
+}
+
 export async function submit(input: NewRequest, actor: Actor): Promise<RequestRecord> {
   if (!input.justification.trim()) {
     throw new ApiError(400, 'invalid_request', 'Say why you need it, so DEVOPS can decide.')
   }
+  if (input.kind === 'grant_access') return submitGrant(input, actor)
   // Whoever is granted access must be the requester's own team: asked of the
   // directory now, so nobody can hand a repository to a group they are not in.
+  if (!input.teamGroup) throw new ApiError(400, 'invalid_request', 'Choose your team.')
   const groups = (await profileOf(actor.uid))?.groups ?? []
-  const team = groups.find((group) => same(group, input.teamGroup))
+  const team = groups.find((group) => same(group, input.teamGroup!))
   if (!team) {
     throw new ApiError(400, 'invalid_request', `You are not a member of ${input.teamGroup}. Choose one of your own groups.`)
   }
@@ -138,6 +195,32 @@ export async function submit(input: NewRequest, actor: Actor): Promise<RequestRe
     }
     throw err
   }
+}
+
+async function submitGrant(input: NewRequest, actor: Actor): Promise<RequestRecord> {
+  if (input.accessLevel !== 'read' && input.accessLevel !== 'contribute') {
+    throw new ApiError(400, 'invalid_request', 'Choose read or contribute access.')
+  }
+  const verdict = await check(input)
+  if (!verdict.ok) throw new ApiError(409, 'request_not_possible', verdict.reason)
+  const { rows } = await query<Row>(
+    `insert into requests
+       (kind, collection, project, repository, justification,
+        requested_by, requested_by_name, grantees, access_level)
+     values ('grant_access', $1, $2, $3, $4, $5, $6, $7, $8)
+     returning *`,
+    [
+      input.collection,
+      input.project,
+      input.repository?.trim() || null,
+      input.justification.trim(),
+      actor.uid,
+      actor.name,
+      uniqueNames(input.grantees ?? []),
+      input.accessLevel,
+    ],
+  )
+  return toRecord(rows[0]!)
 }
 
 export async function listMine(uid: string): Promise<RequestRecord[]> {
@@ -269,6 +352,7 @@ export async function recoverInterrupted(): Promise<number> {
  */
 async function execute(request: RequestRecord): Promise<void> {
   try {
+    if (request.kind === 'grant_access') return await executeGrant(request)
     const principals: Principal[] = []
     for (const name of [request.requestedBy, request.teamGroup]) {
       if (name) principals.push(await findIdentity(request.collection, name))
@@ -292,7 +376,7 @@ async function execute(request: RequestRecord): Promise<void> {
       resultUrl = webUrlFor(request.collection, project.name)
       if (!created) await recordCreated(request.id, resultUrl)
       await withContext(`Created ${project.name}, but could not grant access`, () =>
-        addToContributors(request.collection, project.name, principals),
+        addToProjectGroup(request.collection, project.name, 'Contributors', principals),
       )
     }
     await query(
@@ -305,6 +389,33 @@ async function execute(request: RequestRecord): Promise<void> {
     console.error(`request ${request.id} failed:`, message)
     await query(`update requests set status = 'failed', error = $2 where id = $1`, [request.id, message])
   }
+}
+
+/**
+ * Grants access to something that exists. Every grantee is resolved first, so
+ * one unknown name grants nobody rather than half the list. Granting is
+ * idempotent in ADO — a merged ACE, a group someone may already be in — so a
+ * retry simply runs it again.
+ */
+async function executeGrant(request: RequestRecord): Promise<void> {
+  const principals: Principal[] = []
+  for (const name of request.grantees ?? []) principals.push(await findIdentity(request.collection, name))
+  const read = request.accessLevel === 'read'
+
+  let resultUrl: string
+  if (request.repository) {
+    const repo = await existingRepository(request)
+    await grantRepository(request.collection, repo.project.id, repo.id, principals, read ? READER : CONTRIBUTOR)
+    resultUrl = repo.webUrl ?? webUrlFor(request.collection, request.project, repo.name)
+  } else {
+    await addToProjectGroup(request.collection, request.project, read ? 'Readers' : 'Contributors', principals)
+    resultUrl = webUrlFor(request.collection, request.project)
+  }
+  await query(
+    `update requests set status = 'completed', completed_at = now(), result_url = $2, error = null
+      where id = $1`,
+    [request.id, resultUrl],
+  )
 }
 
 async function existingRepository(request: RequestRecord) {
@@ -361,6 +472,8 @@ type Row = {
   description: string | null
   justification: string
   team_group: string | null
+  grantees: string[] | null
+  access_level: AccessLevel | null
   requested_by: string
   requested_by_name: string
   requested_at: Date
@@ -384,6 +497,8 @@ function toRecord(row: Row): RequestRecord {
     description: row.description,
     justification: row.justification,
     teamGroup: row.team_group,
+    grantees: row.grantees,
+    accessLevel: row.access_level,
     requestedBy: row.requested_by,
     requestedByName: row.requested_by_name,
     requestedAt: row.requested_at.toISOString(),

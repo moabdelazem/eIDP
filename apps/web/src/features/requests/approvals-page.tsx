@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { FolderGit2, FolderKanban } from 'lucide-react'
 import { Link } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
@@ -12,7 +11,7 @@ import { requestsApi, targetPath, type PortalRequest } from './api.ts'
 import { decide, rejectRequest } from './decisions.ts'
 import { RejectDialog } from './reject-dialog.tsx'
 import { RequestRow } from './request-row.tsx'
-import { RequestName, since } from './status.tsx'
+import { AccessLine, KIND_ICON, RequestName, since } from './status.tsx'
 import { CardSkeleton, HeaderSkeleton, Loading } from '@/components/skeletons.tsx'
 
 /** Mounted only behind `RequireDevOps` — see app/routes.tsx. */
@@ -125,7 +124,7 @@ export function ApprovalsPage() {
 function PendingCard({ request: r, own, onDecided }: { request: PortalRequest; own: boolean; onDecided: () => void }) {
   const [busy, setBusy] = useState(false)
   const [rejecting, setRejecting] = useState(false)
-  const Icon = r.kind === 'create_repository' ? FolderGit2 : FolderKanban
+  const Icon = KIND_ICON[r.kind]
 
   return (
     <article className="rounded-lg border bg-card p-5">
@@ -143,15 +142,7 @@ function PendingCard({ request: r, own, onDecided }: { request: PortalRequest; o
 
       <blockquote className="mt-3 border-l-2 pl-3 text-sm text-muted-foreground">{r.justification}</blockquote>
       {/* What approving hands out, so it is decided with open eyes. */}
-      <p className="mt-3 text-sm">
-        <span className="text-muted-foreground">Contributor access for </span>
-        {r.requestedByName}
-        {r.teamGroup && (
-          <>
-            {' '}and <code className="text-[13px]">{r.teamGroup}</code>
-          </>
-        )}
-      </p>
+      <AccessLine request={r} className="mt-3" />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {own ? (
@@ -168,7 +159,7 @@ function PendingCard({ request: r, own, onDecided }: { request: PortalRequest; o
               }}
             >
               {busy && <Spinner />}
-              Approve and create
+              {r.kind === 'grant_access' ? 'Approve and grant' : 'Approve and create'}
             </Button>
             <Button size="sm" variant="outline" disabled={busy} onClick={() => setRejecting(true)}>
               Reject

@@ -56,8 +56,9 @@ export function createFakeAdo(options: { failProjects?: boolean; denyServerScope
   function addProject(collection: string, name: string) {
     const project: Project = { id: randomUUID(), name, description: '', state: 'wellFormed' }
     collections.get(collection)!.projects.push(project)
-    // Every project comes with its own Contributors group, as in ADO.
+    // Every project comes with its own Contributors and Readers groups, as in ADO.
     addIdentity('Contributors', `[${name}]\\Contributors`)
+    addIdentity('Readers', `[${name}]\\Readers`)
     return project
   }
   function addRepo(collection: string, project: string, name: string) {

@@ -84,11 +84,32 @@ alter table requests add column if not exists team_group text;
 create index if not exists requests_requested_by_idx on requests (requested_by, requested_at desc);
 create index if not exists requests_status_idx on requests (status, requested_at);
 
--- Two open requests for the same thing would race each other into Azure
--- DevOps. The database refuses the second, whoever gets there first.
-create unique index if not exists requests_one_open_per_target_idx on requests (
+-- Two open requests to *create* the same thing would race each other into
+-- Azure DevOps. The database refuses the second, whoever gets there first.
+-- Access requests are left out: several people asking for access to one
+-- repository at once is normal, and granting twice is harmless.
+drop index if exists requests_one_open_per_target_idx;
+create unique index if not exists requests_one_open_create_idx on requests (
   kind, lower(collection), lower(project), lower(coalesce(repository, ''))
-) where status in ('pending', 'approved');
+) where status in ('pending', 'approved') and kind <> 'grant_access';
+
+-- Access requests: who is to be granted (directory account names) and at what
+-- level. The repository is optional there — without one, the whole project.
+alter table requests add column if not exists grantees text[];
+alter table requests add column if not exists access_level text;
+alter table requests drop constraint if exists requests_kind_check;
+alter table requests add constraint requests_kind_check
+  check (kind in ('create_repository', 'create_project', 'grant_access'));
+alter table requests drop constraint if exists requests_repository_check;
+alter table requests add constraint requests_repository_check check (
+  (kind <> 'create_repository' or repository is not null)
+  and (kind <> 'create_project' or repository is null)
+);
+alter table requests drop constraint if exists requests_grant_check;
+alter table requests add constraint requests_grant_check check (
+  kind <> 'grant_access'
+  or (cardinality(grantees) > 0 and access_level in ('read', 'contribute'))
+);
 
 -- Files the last sync could not read, relative to the repo root. Added after
 -- the table existed, so it is an add-if-missing rather than part of the create.

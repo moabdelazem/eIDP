@@ -17,6 +17,15 @@ const Target = z.discriminatedUnion('kind', [
     project: z.string(),
     description: z.string().max(4000).optional(),
   }),
+  z.object({
+    kind: z.literal('grant_access'),
+    collection: z.string().min(1),
+    project: z.string().min(1),
+    // Absent means the whole project.
+    repository: z.string().max(256).optional(),
+    grantees: z.array(z.string().max(256)).max(100),
+    accessLevel: z.enum(['read', 'contribute']),
+  }),
 ])
 
 const NewRequest = z.intersection(
@@ -25,7 +34,8 @@ const NewRequest = z.intersection(
     justification: z.string().max(4000),
     // The requester's team, granted access with them. Checked against their
     // groups in the directory by the service.
-    teamGroup: z.string().min(1, 'Choose your team.').max(256),
+    // Creations only: checked against the requester's groups by the service.
+    teamGroup: z.string().min(1, 'Choose your team.').max(256).optional(),
   }),
 )
 

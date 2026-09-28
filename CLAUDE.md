@@ -240,8 +240,9 @@ The rules that matter, each tested in `routes/requests.test.ts`:
   can grant it.
 - **Approval claims the row** with `update … where status = 'pending'`. Two
   approvers clicking at once produce one update and one creation.
-- **One open request per target** is a partial unique index, not app code, so
-  two people cannot race into asking for the same repository.
+- **One open creation per target** is a partial unique index, not app code, so
+  two people cannot race into asking for the same repository. Access requests
+  are excluded: several people asking for the same access is normal.
 - **Creation runs after the approve call returns.** A project can take a minute
   in ADO. `recoverInterrupted()` at boot fails anything left `approved`, which
   only a restart mid-creation can leave behind — see its `ponytail:` note
@@ -265,6 +266,18 @@ permissions on repositories and the right to edit project group membership —
 without them requests end `failed` with "Created X, but could not grant
 access", and a retry finishes once that is fixed. Rows filed before teams
 existed have `team_group` null and grant the requester alone.
+
+**Access requests** (`grant_access`) ask for Read or Contribute on something
+that already exists — one repository, or a whole project — for up to 20 people
+by login name. `check()` confirms the project and repository exist and that
+the directory knows every name, so a typo is caught on the form rather than
+after approval. On a repository they are ACEs (`READER` or `CONTRIBUTOR` in
+`access.ts`); on a project, membership of `[Project]\Readers` or
+`[Project]\Contributors`. Every name is resolved in ADO before anything is
+granted, so one unknown name grants nobody rather than half the list, and a
+retry just grants again — both operations are idempotent. The form is its own
+page (`grant-access-page.tsx`); the badge says Granting/Granted, not
+Creating/Created.
 
 `check()` is what the form calls as someone types and what `submit()` runs, so
 the two can never disagree. Name rules are in `request-rules.ts`, from the ADO

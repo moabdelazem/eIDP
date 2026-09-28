@@ -11,7 +11,8 @@ export async function decide(
   request: PortalRequest,
 ): Promise<boolean> {
   const messages = {
-    approve: 'Approved — creating it in Azure DevOps',
+    approve:
+      request.kind === 'grant_access' ? 'Approved — granting access in Azure DevOps' : 'Approved — creating it in Azure DevOps',
     retry: 'Retrying in Azure DevOps',
     cancel: 'Request withdrawn',
   }

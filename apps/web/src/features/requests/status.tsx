@@ -1,5 +1,5 @@
-import { Check, CircleDashed, Loader2, TriangleAlert, X } from 'lucide-react'
-import type { RequestKind, RequestStatus } from './api.ts'
+import { Check, CircleDashed, FolderGit2, FolderKanban, KeyRound, Loader2, TriangleAlert, X, type LucideIcon } from 'lucide-react'
+import type { PortalRequest, RequestKind, RequestStatus } from './api.ts'
 
 const LABEL: Record<RequestStatus, string> = {
   pending: 'Waiting for DevOps',
@@ -13,13 +13,23 @@ const LABEL: Record<RequestStatus, string> = {
 export const KIND_LABEL: Record<RequestKind, string> = {
   create_repository: 'Repository',
   create_project: 'Project',
+  grant_access: 'Access',
 }
+
+export const KIND_ICON: Record<RequestKind, LucideIcon> = {
+  create_repository: FolderGit2,
+  create_project: FolderKanban,
+  grant_access: KeyRound,
+}
+
+/** Nothing is created by an access request, so its badge says what it does. */
+const GRANT_LABEL: Partial<Record<RequestStatus, string>> = { approved: 'Granting', completed: 'Granted' }
 
 /**
  * Red only where someone has to act: a rejection to read, a failure to retry.
  * Everything else stays quiet.
  */
-export function StatusBadge({ status }: { status: RequestStatus }) {
+export function StatusBadge({ status, kind }: { status: RequestStatus; kind?: RequestKind }) {
   const attention = status === 'rejected' || status === 'failed'
   const Icon =
     status === 'approved'
@@ -44,7 +54,7 @@ export function StatusBadge({ status }: { status: RequestStatus }) {
       ].join(' ')}
     >
       <Icon className={`size-3.5 ${status === 'approved' ? 'animate-spin motion-reduce:animate-none' : ''}`} />
-      {LABEL[status]}
+      {(kind === 'grant_access' && GRANT_LABEL[status]) || LABEL[status]}
     </span>
   )
 }
@@ -98,17 +108,47 @@ export function RequestName({
   className?: string
 }) {
   const name = request.repository ?? request.project
-  const where =
-    request.kind === 'create_repository'
-      ? `${request.collection} / ${request.project}`
-      : request.collection
+  const where = request.repository ? `${request.collection} / ${request.project}` : request.collection
+  const label =
+    request.kind === 'grant_access' ? `Access to the ${request.repository ? 'repository' : 'project'}` : KIND_LABEL[request.kind]
   return (
     <div className={`min-w-0 ${className}`}>
       <Tag className={`font-mono font-medium break-words ${Tag === 'h1' ? 'text-lg' : ''}`}>{name}</Tag>
       <p className="mt-0.5 truncate text-xs text-muted-foreground">
-        {KIND_LABEL[request.kind]} in <span className="font-mono">{where}</span>
+        {label} in <span className="font-mono">{where}</span>
       </p>
     </div>
+  )
+}
+
+/**
+ * What approving hands out, in one line: the requester and their team for a
+ * creation, the named people and the level for an access request.
+ */
+export function AccessLine({
+  request: r,
+  own = false,
+  className = '',
+}: {
+  request: PortalRequest
+  own?: boolean
+  className?: string
+}) {
+  const names =
+    r.kind === 'grant_access'
+      ? (r.grantees ?? []).map((name) => ({ name, mono: true }))
+      : [{ name: own ? 'you' : r.requestedByName, mono: false }, ...(r.teamGroup ? [{ name: r.teamGroup, mono: true }] : [])]
+  const level = r.kind === 'grant_access' && r.accessLevel === 'read' ? 'Read' : 'Contributor'
+  return (
+    <p className={`text-sm ${className}`}>
+      <span className="text-muted-foreground">{level} access for </span>
+      {names.map(({ name, mono }, index) => (
+        <span key={name}>
+          {index > 0 && (index === names.length - 1 ? ' and ' : ', ')}
+          {mono ? <code className="text-[13px]">{name}</code> : name}
+        </span>
+      ))}
+    </p>
   )
 }
 

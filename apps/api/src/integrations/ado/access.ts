@@ -29,6 +29,9 @@ const GIT_NAMESPACE = '2e9eb7ed-3c0a-47d4-87c1-0ffdd275fd87'
  */
 export const CONTRIBUTOR = 2 | 4 | 16 | 32 | 64 | 16384
 
+/** Read and clone, nothing more. */
+export const READER = 2
+
 /**
  * The ADO identity for a directory account or group, by its account name
  * (sAMAccountName for a person, the group's name for a group).
@@ -62,31 +65,38 @@ export async function findIdentity(collection: string, name: string): Promise<Pr
   return { name, id, descriptor }
 }
 
-/** Contributor on one repository, for each principal. Merged, so nothing else on the repo changes. */
+/** `allow` on one repository, for each principal. Merged, so nothing else on the repo changes. */
 export async function grantRepository(
   collection: string,
   projectId: string,
   repositoryId: string,
   principals: Principal[],
+  allow: number = CONTRIBUTOR,
 ): Promise<void> {
   await adoPost(
     `accesscontrolentries/${GIT_NAMESPACE}`,
     {
       token: `repoV2/${projectId}/${repositoryId}`,
       merge: true,
-      accessControlEntries: principals.map((p) => ({ descriptor: p.descriptor, allow: CONTRIBUTOR, deny: 0 })),
+      accessControlEntries: principals.map((p) => ({ descriptor: p.descriptor, allow, deny: 0 })),
     },
     { collection },
   )
 }
 
 /**
- * Adds each principal to the project's own Contributors group, which is how
- * ADO means "works on this project": boards, repos and pipelines together.
+ * Adds each principal to one of the project's own groups — Contributors is how
+ * ADO means "works on this project" (boards, repos and pipelines together),
+ * Readers is "can see it".
  */
-export async function addToContributors(collection: string, project: string, principals: Principal[]): Promise<void> {
-  const group = await findIdentity(collection, `[${project}]\\Contributors`)
+export async function addToProjectGroup(
+  collection: string,
+  project: string,
+  group: 'Contributors' | 'Readers',
+  principals: Principal[],
+): Promise<void> {
+  const container = await findIdentity(collection, `[${project}]\\${group}`)
   for (const principal of principals) {
-    await adoPut(`identities/${group.id}/members/${principal.id}`, { collection })
+    await adoPut(`identities/${container.id}/members/${principal.id}`, { collection })
   }
 }

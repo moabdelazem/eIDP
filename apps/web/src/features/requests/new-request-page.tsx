@@ -20,7 +20,9 @@ import { useProfile } from '@/features/auth/profile-context.tsx'
 
 // The title comes from kinds.ts, so the menu, the breadcrumb and this heading
 // cannot drift apart; only the form's own wording lives here.
-const COPY: Record<RequestKind, { lead: string; noun: string; why: string }> = {
+type CreationKind = Exclude<RequestKind, 'grant_access'>
+
+const COPY: Record<CreationKind, { lead: string; noun: string; why: string }> = {
   create_repository: {
     lead: 'A Git repository in an existing project, created once someone in DevOps approves it.',
     noun: 'repository',
@@ -35,7 +37,7 @@ const COPY: Record<RequestKind, { lead: string; noun: string; why: string }> = {
 
 type Verdict = { state: 'idle' } | { state: 'checking' } | { state: 'done'; result: CheckResult }
 
-export function NewRequestPage({ kind }: { kind: RequestKind }) {
+export function NewRequestPage({ kind }: { kind: CreationKind }) {
   const copy = { ...COPY[kind], title: REQUEST_TYPES.find((type) => type.kind === kind)!.title }
   usePageTitle(copy.title)
   const navigate = useNavigate()
@@ -313,7 +315,7 @@ export function NewRequestPage({ kind }: { kind: RequestKind }) {
   )
 }
 
-function Field({
+export function Field({
   label,
   htmlFor,
   hint,

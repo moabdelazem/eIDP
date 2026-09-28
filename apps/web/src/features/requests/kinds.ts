@@ -1,4 +1,4 @@
-import { ClipboardList, FolderGit2, FolderKanban, type LucideIcon } from 'lucide-react'
+import { ClipboardList, FolderGit2, FolderKanban, KeyRound, type LucideIcon } from 'lucide-react'
 import type { RequestKind } from './api.ts'
 
 /**
@@ -50,6 +50,15 @@ export const REQUEST_TYPES: RequestType[] = [
     icon: FolderKanban,
     path: '/requests/new/azure-devops/project',
     kind: 'create_project',
+  },
+  {
+    provider: 'azure-devops',
+    label: 'Access',
+    title: 'Access to Azure DevOps',
+    description: 'Read or contribute on a project or repository',
+    icon: KeyRound,
+    path: '/requests/new/azure-devops/access',
+    kind: 'grant_access',
   },
   {
     provider: 'jira',

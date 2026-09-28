@@ -1,6 +1,7 @@
 import { api } from '@/lib/api-client.ts'
 
-export type RequestKind = 'create_repository' | 'create_project'
+export type RequestKind = 'create_repository' | 'create_project' | 'grant_access'
+export type AccessLevel = 'read' | 'contribute'
 export type RequestStatus = 'pending' | 'approved' | 'rejected' | 'completed' | 'failed' | 'cancelled'
 
 export type PortalRequest = {
@@ -14,6 +15,9 @@ export type PortalRequest = {
   justification: string
   /** The requester's directory group, granted access with them. Null on older requests. */
   teamGroup: string | null
+  /** grant_access only: who is to be granted, and at what level. */
+  grantees: string[] | null
+  accessLevel: AccessLevel | null
   requestedBy: string
   requestedByName: string
   requestedAt: string
@@ -29,6 +33,15 @@ export type PortalRequest = {
 export type Target =
   | { kind: 'create_repository'; collection: string; project: string; repository: string }
   | { kind: 'create_project'; collection: string; project: string; description?: string }
+  | {
+      kind: 'grant_access'
+      collection: string
+      project: string
+      /** Absent means the whole project. */
+      repository?: string
+      grantees: string[]
+      accessLevel: AccessLevel
+    }
 
 export type Check = { ok: true } | { ok: false; reason: string }
 
@@ -41,7 +54,11 @@ export const requestsApi = {
     ),
   check: (target: Target) =>
     api<Check>('/requests/check', { method: 'POST', body: JSON.stringify(target) }),
-  submit: (target: Target, justification: string, teamGroup: string) =>
+  repositories: (collection: string, project: string) =>
+    api<{ name: string; description: string | null }[]>(
+      `/ado/collections/${encodeURIComponent(collection)}/projects/${encodeURIComponent(project)}/repositories`,
+    ),
+  submit: (target: Target, justification: string, teamGroup?: string) =>
     api<PortalRequest>('/requests', {
       method: 'POST',
       body: JSON.stringify({ ...target, justification, teamGroup }),

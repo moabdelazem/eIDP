@@ -4,7 +4,7 @@ import { ApiError } from '../../lib/errors.ts'
 import { bindAsService, first, userFilter, withClient } from './client.ts'
 import { readBindFailure } from './ad-errors.ts'
 
-export { groupFilter, groupsOf, isApprover, isApproverGroup } from './groups.ts'
+export { dnOf, groupFilter, groupsOf, isApprover, isApproverGroup } from './groups.ts'
 export { profileOf, type Profile } from './profile.ts'
 
 /** A person as the directory knows them. */
