@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router'
 import { LoginPage } from '@/features/auth/login-page.tsx'
 import { ProfilePage } from '@/features/auth/profile-page.tsx'
+import { OverviewPage } from '@/features/overview/overview-page.tsx'
 import { ProjectMapPage } from '@/features/projects/map-page.tsx'
 import { ProjectPage } from '@/features/projects/project-page.tsx'
 import { ApprovalsPage } from '@/features/requests/approvals-page.tsx'
@@ -20,7 +21,8 @@ export function AppRoutes() {
 
       <Route element={<RequireSession />}>
         <Route element={<AppShell />}>
-          <Route index element={<ProjectMapPage />} />
+          <Route index element={<OverviewPage />} />
+          <Route path="map" element={<ProjectMapPage />} />
           <Route path="projects/:projectId" element={<ProjectPage />} />
           <Route path="requests" element={<MyRequestsPage />} />
           {/* One route per request type that has a form — see features/requests/kinds.ts. */}

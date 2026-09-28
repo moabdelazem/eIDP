@@ -136,6 +136,54 @@
 }
 
 /*
+ * Motion. Only where it explains a change, and all of it off for anyone who
+ * asked their system for reduced motion — which is why each is declared inside
+ * `no-preference` rather than removed afterwards.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  /* A page arriving: one quiet moment per navigation, not a cascade. */
+  .page-enter {
+    animation: page-enter 180ms ease-out both;
+  }
+  /* Something appearing because of a change the reader caused or is watching:
+     a new timeline step, a node revealed on the map. Opacity only — a
+     transform here would override an SVG node's own position. */
+  .reveal {
+    animation: reveal 240ms ease-out both;
+  }
+  ::view-transition-group(*) {
+    animation-duration: 220ms;
+    animation-timing-function: ease-out;
+  }
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes reveal {
+  from {
+    opacity: 0;
+  }
+}
+
+/*
+ * Chart marks. One hue, eggplant — every chart here is a single series, so
+ * one colour is honest and a legend box would only restate the title. Never
+ * red: red means "act". Both values pass the dataviz validator (lightness
+ * band, chroma floor, 3:1 against the card); the dark one is its own step,
+ * not the light one flipped — #c79ad6 failed as too pale to read as a hue.
+ */
+:root {
+  --chart-1: #6b3a78;
+}
+.dark {
+  --chart-1: #b474d0;
+}
+
+/*
  * Syntax colours for DataView (Shiki's css-variables theme). Drawn from the
  * palette: eggplant for keys, a quiet teal for strings, amber for numbers and
  * booleans. Never red — red means "act", and a string is not asking for that.

@@ -57,7 +57,7 @@ export function ProjectPage() {
       <h1 className="font-mono text-lg font-semibold break-words">{app.name}</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Application in{' '}
-        <Link to={`/?q=${encodeURIComponent(system.projectName)}`} className="underline underline-offset-2">
+        <Link to={`/map?q=${encodeURIComponent(system.projectName)}`} className="underline underline-offset-2">
           {system.projectName}
         </Link>
       </p>

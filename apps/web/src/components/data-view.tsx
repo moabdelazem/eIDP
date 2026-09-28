@@ -3,6 +3,7 @@ import { Check, Copy, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { highlight, type Language } from '@/lib/highlight.ts'
 
 /**
@@ -91,22 +92,16 @@ export function DataView({
   return (
     <div data-slot="data-view" className={`overflow-hidden rounded-lg border bg-card ${className}`}>
       <div className="flex items-center gap-2 border-b px-2 py-1.5">
-        <div className="flex rounded-md bg-muted p-0.5" role="group" aria-label="Format">
-          {(['yaml', 'json'] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={format === option}
-              onClick={() => setFormat(option)}
-              className={[
-                'rounded px-2.5 py-0.5 font-mono text-xs uppercase transition-colors',
-                format === option ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
-              ].join(' ')}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
+        <ToggleGroup
+          type="single"
+          size="sm"
+          value={format}
+          onValueChange={(next) => next && setFormat(next as Language)}
+          aria-label="Format"
+        >
+          <ToggleGroupItem value="yaml" className="h-7 px-2.5 font-mono text-xs">YAML</ToggleGroupItem>
+          <ToggleGroupItem value="json" className="h-7 px-2.5 font-mono text-xs">JSON</ToggleGroupItem>
+        </ToggleGroup>
         {text !== null && (
           <span className="text-xs text-muted-foreground">
             {lines} line{lines === 1 ? '' : 's'}

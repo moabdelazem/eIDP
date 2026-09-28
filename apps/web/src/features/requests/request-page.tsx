@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { ExternalLink, Loader2 } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 import { useParams } from 'react-router'
 import { DataView } from '@/components/data-view.tsx'
 import { EmptyState } from '@/components/empty-state.tsx'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { useSession } from '@/features/auth/session-context.tsx'
@@ -158,7 +159,7 @@ function Actions({
   if (canDecide) {
     actions.push(
       <Button key="approve" disabled={busy} onClick={() => act('approve')}>
-        {busy && <Loader2 className="animate-spin motion-reduce:animate-none" />}
+        {busy && <Spinner />}
         Approve and create
       </Button>,
       <Button key="reject" variant="outline" disabled={busy} onClick={() => setRejecting(true)}>
@@ -225,7 +226,9 @@ function Step({
   children?: React.ReactNode
 }) {
   return (
-    <li className="relative flex gap-4 pb-8 last:pb-0">
+    // Keyed on the title, so a step that changes (waiting → approved) is a new
+    // element and fades in, instead of its text swapping silently.
+    <li key={title} className="reveal relative flex gap-4 pb-8 last:pb-0">
       {!last && <span aria-hidden className="absolute top-5 bottom-0 left-[7px] w-px bg-border" />}
       <span
         aria-hidden

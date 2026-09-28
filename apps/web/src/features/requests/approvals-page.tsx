@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { FolderGit2, FolderKanban, Loader2 } from 'lucide-react'
+import { FolderGit2, FolderKanban } from 'lucide-react'
 import { Link } from 'react-router'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSession } from '@/features/auth/session-context.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
+import { withViewTransition } from '@/lib/view-transition.ts'
 import { useResource } from '@/lib/use-resource.ts'
 import { requestsApi, targetPath, type PortalRequest } from './api.ts'
 import { decide, rejectRequest } from './decisions.ts'
@@ -16,7 +18,10 @@ import { RequestName, since } from './status.tsx'
 export function ApprovalsPage() {
   const { session } = useSession()
   const pool = useResource(() => requestsApi.pool(), [], { pollMs: 10_000 })
-  const pending = pool.data?.open.filter((r) => r.status === 'pending').length ?? 0
+  // Decided here and now, ahead of the reload that confirms it — so the card
+  // can leave the list at once, as its own animated change.
+  const [decided, setDecided] = useState<Set<string>>(() => new Set())
+  const pending = pool.data?.open.filter((r) => r.status === 'pending' && !decided.has(r.id)).length ?? 0
   // The count in the tab lets DevOps leave it open and see when work arrives.
   usePageTitle(pending > 0 ? `(${pending}) Approvals` : 'Approvals')
 
@@ -25,7 +30,17 @@ export function ApprovalsPage() {
   if (pool.error && !pool.data) return <p className="text-sm text-destructive">{pool.error}</p>
   if (!pool.data) return <Skeleton className="h-64 w-full max-w-3xl" />
 
-  const waiting = pool.data.open.filter((r) => r.status === 'pending')
+  const waiting = pool.data.open.filter((r) => r.status === 'pending' && !decided.has(r.id))
+
+  /**
+   * The decided card leaves inside a View Transition: it fades and the cards
+   * below slide up to close the gap, so the list visibly shrinks by one
+   * instead of blinking into a new shape. Then the pool reloads for real.
+   */
+  function onDecided(id: string) {
+    withViewTransition(() => setDecided((current) => new Set(current).add(id)))
+    pool.reload()
+  }
   const attention = pool.data.open.filter((r) => r.status !== 'pending')
 
   return (
@@ -46,8 +61,14 @@ export function ApprovalsPage() {
         ) : (
           <ul className="mt-2 space-y-3">
             {waiting.map((request) => (
-              <li key={request.id}>
-                <PendingCard request={request} own={request.requestedBy === session.uid} onChanged={pool.reload} />
+              // A name per card is what lets the browser track each one across
+              // the change and slide it, rather than cross-fading the whole list.
+              <li key={request.id} style={{ viewTransitionName: `request-${request.id}` }}>
+                <PendingCard
+                  request={request}
+                  own={request.requestedBy === session.uid}
+                  onDecided={() => onDecided(request.id)}
+                />
               </li>
             ))}
           </ul>
@@ -89,7 +110,7 @@ export function ApprovalsPage() {
 }
 
 /** Everything needed to decide, on the card itself — no click-through required. */
-function PendingCard({ request: r, own, onChanged }: { request: PortalRequest; own: boolean; onChanged: () => void }) {
+function PendingCard({ request: r, own, onDecided }: { request: PortalRequest; own: boolean; onDecided: () => void }) {
   const [busy, setBusy] = useState(false)
   const [rejecting, setRejecting] = useState(false)
   const Icon = r.kind === 'create_repository' ? FolderGit2 : FolderKanban
@@ -120,11 +141,11 @@ function PendingCard({ request: r, own, onChanged }: { request: PortalRequest; o
               disabled={busy}
               onClick={async () => {
                 setBusy(true)
-                if (await decide('approve', r)) onChanged()
+                if (await decide('approve', r)) onDecided()
                 setBusy(false)
               }}
             >
-              {busy && <Loader2 className="animate-spin motion-reduce:animate-none" />}
+              {busy && <Spinner />}
               Approve and create
             </Button>
             <Button size="sm" variant="outline" disabled={busy} onClick={() => setRejecting(true)}>
@@ -140,7 +161,7 @@ function PendingCard({ request: r, own, onChanged }: { request: PortalRequest; o
         what={targetPath(r).join(' / ')}
         onReject={async (note) => {
           await rejectRequest(r, note)
-          onChanged()
+          onDecided()
         }}
       />
     </article>

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Check, Loader2, TriangleAlert } from 'lucide-react'
+import { Check, TriangleAlert } from 'lucide-react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -233,7 +234,7 @@ export function NewRequestPage({ kind }: { kind: RequestKind }) {
           </Field>
 
           <Button type="submit" disabled={!canSubmit}>
-            {submitting && <Loader2 className="animate-spin motion-reduce:animate-none" />}
+            {submitting && <Spinner />}
             Send for approval
           </Button>
         </form>
@@ -299,7 +300,7 @@ function NameCheck({ id, verdict, noun }: { id: string; verdict: Verdict; noun: 
   if (verdict.state === 'checking') {
     return (
       <p id={id} className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" /> Checking Azure DevOps…
+        <Spinner className="size-3.5" /> Checking Azure DevOps…
       </p>
     )
   }

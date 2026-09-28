@@ -8,7 +8,8 @@ export type Crumb = {
 }
 
 const sectionLabels: Record<string, string> = {
-  '/': 'Projects map',
+  '/': 'Overview',
+  '/map': 'Projects map',
   '/requests': 'Requests',
 }
 
@@ -21,13 +22,14 @@ const sectionLabels: Record<string, string> = {
  */
 export function crumbsFor(pathname: string, systems: System[] = []): Crumb[] {
   if (pathname === '/') return [{ label: sectionLabels['/']! }]
+  if (pathname === '/map') return [{ label: sectionLabels['/map']! }]
 
   const segments = pathname.split('/').filter(Boolean)
 
   if (segments[0] === 'projects') {
     const found = findApplication(systems, segments[1] ? decodeURIComponent(segments[1]) : undefined)
     return [
-      { label: sectionLabels['/']!, path: '/' },
+      { label: sectionLabels['/map']!, path: '/map' },
       { label: found?.app.name ?? decodeURIComponent(segments[1] ?? 'Unknown application') },
     ]
   }

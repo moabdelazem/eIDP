@@ -157,7 +157,8 @@ export function MindMap({ root, expanded, onToggle, focusId, fitKey }: Props) {
               <path
                 key={link.target.data.id}
                 d={`M${link.source.y},${link.source.x} C${midpoint},${link.source.x} ${midpoint},${link.target.x} ${link.target.y},${link.target.x}`}
-                className="fill-none stroke-border"
+                // Fades in when a branch opens; kept paths keep their key and stay put.
+                className="reveal fill-none stroke-border"
                 strokeWidth={1}
               />
             )
@@ -214,7 +215,7 @@ function Node({
       aria-expanded={hasChildren ? isOpen : undefined}
       aria-label={label}
       tabIndex={0}
-      className="focus:outline-none [&:focus-visible>text]:underline"
+      className="reveal focus:outline-none [&:focus-visible>text]:underline"
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault()

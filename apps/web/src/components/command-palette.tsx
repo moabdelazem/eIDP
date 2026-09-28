@@ -3,6 +3,7 @@ import { AppWindow, Boxes, Search } from 'lucide-react'
 import { useNavigate } from 'react-router'
 import { browseItems, devopsItems, requestItems, type NavItem } from '@/app/nav.ts'
 import { Button } from '@/components/ui/button'
+import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import {
   Command,
   CommandEmpty,
@@ -55,9 +56,10 @@ export function CommandPalette() {
       >
         <Search />
         <span className="hidden sm:inline">Jump to…</span>
-        <kbd className="hidden rounded border bg-muted px-1.5 font-mono text-[10px] sm:inline">
-          {onMac ? '⌘' : 'Ctrl'} K
-        </kbd>
+        <KbdGroup className="hidden sm:inline-flex">
+          <Kbd>{onMac ? '⌘' : 'Ctrl'}</Kbd>
+          <Kbd>K</Kbd>
+        </KbdGroup>
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="overflow-hidden p-0 sm:max-w-xl" showCloseButton={false}>
@@ -169,7 +171,7 @@ function Palette({ onDone }: { onDone: () => void }) {
               <CommandItem
                 key={system.id}
                 value={`system:${system.id}`}
-                onSelect={() => go(`/?q=${encodeURIComponent(system.projectName)}`)}
+                onSelect={() => go(`/map?q=${encodeURIComponent(system.projectName)}`)}
               >
                 <Boxes className="text-muted-foreground" />
                 <span className="truncate">{system.projectName}</span>

@@ -1,11 +1,38 @@
 import type { ReactNode } from 'react'
+import { SearchX, type LucideIcon } from 'lucide-react'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 
-/** A screen with nothing on it yet. Says what will fill it, not just that it is empty. */
-export function EmptyState({ title, children }: { title: string; children: ReactNode }) {
+/**
+ * A page with nothing to show. Says what will fill it, or where to go, not
+ * just that it is empty — built on shadcn's Empty so every empty screen in
+ * the portal looks the same.
+ *
+ * The title stays the page's one h1: EmptyTitle renders a div, and the pages
+ * that use this have no other heading.
+ */
+export function EmptyState({
+  title,
+  children,
+  icon: Icon = SearchX,
+  action,
+}: {
+  title: string
+  children: ReactNode
+  icon?: LucideIcon
+  action?: ReactNode
+}) {
   return (
-    <div className="max-w-prose">
-      <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
-      <p className="mt-2 text-muted-foreground">{children}</p>
-    </div>
+    <Empty className="border border-dashed">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Icon />
+        </EmptyMedia>
+        <EmptyTitle>
+          <h1>{title}</h1>
+        </EmptyTitle>
+        <EmptyDescription>{children}</EmptyDescription>
+      </EmptyHeader>
+      {action && <EmptyContent>{action}</EmptyContent>}
+    </Empty>
   )
 }

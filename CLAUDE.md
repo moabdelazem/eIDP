@@ -48,6 +48,23 @@ pnpm workspace. `apps/*` and `packages/*`.
   use the declarative one. Each page renders exactly one `h1` in its content;
   the header is the trail, not a heading.
 
+  `/` is the Overview (`features/overview/`): headline tiles, two charts and
+  what is waiting on you. The map lives at `/map`; the old `/?q=` links
+  redirect there. Overview composes other features' public pieces and owns no
+  data. Its charts follow three rules: one series, one hue (`--chart-1`,
+  eggplant — never red), top 8 plus "Other"; every chart has an sr-only table;
+  and `charts.tsx` is lazy-loaded, because recharts is ~330 KB that only this
+  page needs — import nothing else from it statically, or it rejoins the main
+  bundle.
+
+  Motion explains a change and nothing more, and all of it lives inside
+  `prefers-reduced-motion: no-preference` (`index.css`), so reduced motion is
+  the default rather than an override. `page-enter` plays once per path, `reveal`
+  (opacity only — a transform would clobber an SVG node's position) fades in
+  new map nodes and timeline steps, and `lib/view-transition.ts` wraps a state
+  change in the native View Transitions API — a decided approval leaves and the
+  cards below slide up. No animation library.
+
   The map has to work at ~207 systems and ~1100 applications. Three rules keep
   it usable there, and breaking any one of them makes it unusable again:
 
@@ -302,7 +319,7 @@ service account's token and rewrites the catalog.
   `Payments_Platform` into `Payments_Pl` / `atform`.
 - **"DevOps" in prose.** `DEVOPS` is the AD group name; it appears only where
   the group itself is meant, on the profile and the access-denied page.
-- **The map's search lives in the URL** (`/?q=`), so links land on a filtered
+- **The map's search lives in the URL** (`/map?q=`), so links land on a filtered
   map and back/forward keep it. Phones open the map on the List view — a tree
   needs width a phone does not have.
 - **`DataView` (`components/data-view.tsx`) shows any object as highlighted

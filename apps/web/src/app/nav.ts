@@ -1,4 +1,4 @@
-import { Boxes, Inbox, ListChecks } from 'lucide-react'
+import { Boxes, Inbox, LayoutDashboard, ListChecks } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 export type NavItem = {
@@ -18,7 +18,8 @@ const REQUEST_DETAIL = /^\/requests\/[0-9a-f-]{36}$/i
 
 /** Things you look at. */
 export const browseItems: NavItem[] = [
-  { path: '/', label: 'Projects map', icon: Boxes, owns: (p) => p.startsWith('/projects') },
+  { path: '/', label: 'Overview', icon: LayoutDashboard },
+  { path: '/map', label: 'Projects map', icon: Boxes, owns: (p) => p.startsWith('/projects') },
 ]
 
 /**

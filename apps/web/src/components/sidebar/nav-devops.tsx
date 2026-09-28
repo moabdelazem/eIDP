@@ -54,8 +54,10 @@ function DevOpsGroup() {
                 {/* Red, because it is exactly what red is for here: people
                     waiting on the person looking at it. */}
                 {item.path === '/approvals' && waiting > 0 && (
+                  // Keyed on the count, so a new arrival pops once and catches the eye.
                   <SidebarMenuBadge
-                    className="rounded-full bg-primary px-1.5 text-primary-foreground peer-hover/menu-button:text-primary-foreground peer-data-[active=true]/menu-button:text-primary-foreground"
+                    key={waiting}
+                    className="animate-in fade-in-0 zoom-in-50 motion-reduce:animate-none rounded-full bg-primary px-1.5 text-primary-foreground peer-hover/menu-button:text-primary-foreground peer-data-[active=true]/menu-button:text-primary-foreground"
                     aria-label={`${waiting} waiting`}
                   >
                     {waiting}

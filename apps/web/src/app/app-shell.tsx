@@ -1,4 +1,4 @@
-import { Outlet } from 'react-router'
+import { Outlet, useLocation } from 'react-router'
 import { AppSidebar } from '@/components/sidebar/app-sidebar.tsx'
 import { CommandPalette } from '@/components/command-palette.tsx'
 import { PageBreadcrumbs } from '@/components/page-breadcrumbs.tsx'
@@ -8,6 +8,7 @@ import { Separator } from '@/components/ui/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 
 export function AppShell() {
+  const { pathname } = useLocation()
   return (
     // SidebarProvider writes sidebar_state but only reads it back server-side
     // in Next, so a plain SPA has to hand the saved value in itself.
@@ -22,9 +23,13 @@ export function AppShell() {
               <PageBreadcrumbs />
               <CommandPalette />
             </header>
-            <main className="p-8">
+            {/* Keyed on the path, so each navigation plays the entrance once.
+                A search-param change (the map's ?q=) keeps the key and the
+                page, rather than replaying it on every keystroke. A div, not a
+                main: SidebarInset is already the page's one <main>. */}
+            <div key={pathname} className="page-enter p-8">
               <Outlet />
-            </main>
+            </div>
           </SidebarInset>
         </CatalogProvider>
       </ProfileProvider>

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Separator } from '@/components/ui/separator'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 type Props = {
   filters: Filters
@@ -80,19 +81,19 @@ export function MapToolbar({
           </>
         )}
 
-        <div className="flex rounded-md border p-0.5">
-          {(['map', 'list'] as const).map((option) => (
-            <Button
-              key={option}
-              size="sm"
-              variant={view === option ? 'secondary' : 'ghost'}
-              onClick={() => onView(option)}
-              className="capitalize"
-            >
-              {option}
-            </Button>
-          ))}
-        </div>
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          value={view}
+          // Radix clears a single group when the active item is clicked again;
+          // a view must always be chosen, so an empty value is ignored.
+          onValueChange={(next) => next && onView(next as 'map' | 'list')}
+          aria-label="View"
+        >
+          <ToggleGroupItem value="map" className="px-3">Map</ToggleGroupItem>
+          <ToggleGroupItem value="list" className="px-3">List</ToggleGroupItem>
+        </ToggleGroup>
       </div>
 
       <p className="text-sm text-muted-foreground">
