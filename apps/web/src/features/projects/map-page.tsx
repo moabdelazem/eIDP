@@ -16,11 +16,13 @@ import {
   hasFilters,
   type Filters,
 } from './tree.ts'
+import { useProfile } from '@/features/auth/profile-context.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 
 export function ProjectMapPage() {
-  usePageTitle('Project map')
+  usePageTitle('Projects map')
   const { status, systems, sync, error, reload } = useCatalog()
+  const { isApprover } = useProfile()
   const [searchParams, setSearchParams] = useSearchParams()
   // A tree needs width a phone does not have; the list reads fine there.
   const [view, setView] = useState<'map' | 'list'>(() =>
@@ -94,7 +96,7 @@ export function ProjectMapPage() {
 
   return (
     <div>
-      <h1 className="text-lg font-semibold tracking-tight">Project map</h1>
+      <h1 className="text-lg font-semibold tracking-tight">Projects map</h1>
 
       <div className="mt-4">
         <MapToolbar
@@ -127,6 +129,26 @@ export function ProjectMapPage() {
           Built from <code>inventories</code> at {sync.commit.slice(0, 8)}
           {sync.finishedAt && ` on ${new Date(sync.finishedAt).toLocaleString()}`}.
         </p>
+      )}
+
+      {/* Files a sync skipped are DevOps's to fix, so only DevOps sees them. */}
+      {isApprover && sync && sync.warnings.length > 0 && (
+        <details className="mt-3 max-w-3xl rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
+          <summary className="cursor-pointer font-medium text-destructive">
+            {sync.warnings.length} file{sync.warnings.length === 1 ? '' : 's'} in inventories could not be
+            read and {sync.warnings.length === 1 ? 'was' : 'were'} skipped
+          </summary>
+          <p className="mt-2 text-muted-foreground">
+            The rest of the map is built without them. Fix the YAML and the next sync picks them up.
+          </p>
+          <ul className="mt-2 space-y-1 font-mono text-xs">
+            {sync.warnings.map((warning) => (
+              <li key={warning} className="break-words">
+                {warning}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
     </div>
   )

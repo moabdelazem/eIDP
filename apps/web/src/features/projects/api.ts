@@ -7,6 +7,27 @@ export type SyncState = {
   commit: string | null
   ok: boolean
   error: string | null
+  /** Files the last sync skipped because they could not be read. */
+  warnings: string[]
+}
+
+/** One row of an application — the base, or one environment's override. */
+export type ApplicationConfig = {
+  id: string
+  name: string
+  group: string
+  environment: string | null
+  repository: string | null
+  buildTechnology: string | null
+  deployPlatform: string | null
+  /** cicd.yml, the technology file and the rest, merged as Ansible merges them. */
+  descriptor: Record<string, unknown>
+}
+
+export function fetchApplication(system: string, name: string): Promise<ApplicationConfig[]> {
+  return api<ApplicationConfig[]>(
+    `/catalog/systems/${encodeURIComponent(system)}/applications/${encodeURIComponent(name)}`,
+  )
 }
 
 type CatalogResponse = {

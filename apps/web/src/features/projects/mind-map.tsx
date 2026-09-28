@@ -145,7 +145,7 @@ export function MindMap({ root, expanded, onToggle, focusId, fitKey }: Props) {
         ref={svgRef}
         className="h-full w-full cursor-grab touch-none active:cursor-grabbing"
         role="tree"
-        aria-label="Project map"
+        aria-label="Projects map"
       >
         <g
           ref={contentRef}

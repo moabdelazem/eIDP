@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import { parseInventories, splitEnvironment, type InventorySystem } from './parse.ts'
 
 const root = fileURLToPath(new URL('./__fixtures__/repo', import.meta.url))
-const systems = await parseInventories(root)
+const { systems, warnings } = await parseInventories(root)
 const byDir = (dir: string): InventorySystem => {
   const found = systems.find((s) => s.dir === dir)
   assert.ok(found, `no system ${dir}`)
@@ -86,9 +86,60 @@ test('cicd fields are typed, and quoted booleans are coerced', () => {
   assert.equal(mobile.microservice, false)
 })
 
-test('unmodelled cicd fields survive in the descriptor', () => {
-  const api = byDir('AgriLand').applications.find((a) => a.name === 'AgriLand-API')!
-  assert.equal(api.descriptor.replicas, 2)
+const agrilandApi = () => byDir('AgriLand').applications.find((a) => a.name === 'AgriLand-API')!
+
+test('the technology file is read, not just cicd.yml', () => {
+  // The images, ports, route and resources live in dotnet.yml. Reading
+  // cicd.yml alone used to throw all of it away.
+  const d = agrilandApi().descriptor as Record<string, any>
+  assert.deepEqual(d.build_image, { name: 'dotnet/sdk', tag: '10.0' })
+  assert.deepEqual(d.deploy_image, { name: 'dotnet/aspnet', tag: '10.0' })
+  assert.equal(d.server.port, 8080)
+  assert.equal(d.ocp_service.expose_nodeport, 30091)
+  assert.equal(d.route.path, '/')
+  assert.equal(d.resources.limits.memory, '2048Mi')
+  assert.equal(d.nuget_name, 'GFN_Portal')
+  // …while cicd.yml still supplies what only it has.
+  assert.equal(agrilandApi().repository, 'agriland-api')
+})
+
+test('files merge in Ansible order: a later filename replaces an earlier one', () => {
+  // dotnet.yml sorts after cicd.yml, so its replicas win.
+  assert.equal(agrilandApi().descriptor.replicas, 1)
+  // Spring.yml sorts BEFORE cicd.yml — capitals first, by code point, as
+  // Python's sorted() does — so there cicd.yml wins.
+  const nfp = byDir('NBFS').applications.find((a) => a.environment === null)!
+  assert.equal(nfp.descriptor.replicas, 2)
+  assert.equal((nfp.descriptor.server as { port: number }).port, 8081)
+})
+
+test('an environment override keeps its own values', () => {
+  const prd = byDir('NBFS').applications.find((a) => a.environment === 'prd')!
+  assert.equal(prd.descriptor.replicas, 3)
+})
+
+test('a duplicate key keeps the last value, as Ansible does, rather than failing', () => {
+  assert.equal(agrilandApi().descriptor.jvm_hint, 'last')
+})
+
+test('a broken file is skipped and named, and the rest of the catalog still builds', () => {
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0]!, /^AgriLand\/group_vars\/AgriLand-API\/logging\.yml: /)
+  // The same application is still there, with everything the good files held.
+  assert.equal(agrilandApi().descriptor.nuget_name, 'GFN_Portal')
+  assert.deepEqual(
+    systems.map((s) => s.dir),
+    ['AgriLand', 'NBFS'],
+  )
+})
+
+test('secrets never leave the parser: plaintext passwords and inline vault values', () => {
+  const d = agrilandApi().descriptor
+  assert.equal(d.db_password, '[hidden]')
+  // Without a !vault handler the ciphertext would be stored as the value.
+  assert.equal(d.api_token, '[hidden]')
+  assert.ok(!JSON.stringify(d).includes('ANSIBLE_VAULT'))
+  assert.ok(!JSON.stringify(d).includes('hunter2'))
 })
 
 test('technologies come from filenames, deduped case- and separator-insensitively', () => {

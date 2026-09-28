@@ -40,7 +40,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
           error:
             err instanceof ApiError
               ? err.message
-              : 'Something went wrong while loading the project map.',
+              : 'Something went wrong while loading the projects map.',
         })
       })
 

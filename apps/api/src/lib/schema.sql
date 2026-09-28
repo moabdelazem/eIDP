@@ -84,3 +84,7 @@ create index if not exists requests_status_idx on requests (status, requested_at
 create unique index if not exists requests_one_open_per_target_idx on requests (
   kind, lower(collection), lower(project), lower(coalesce(repository, ''))
 ) where status in ('pending', 'approved');
+
+-- Files the last sync could not read, relative to the repo root. Added after
+-- the table existed, so it is an add-if-missing rather than part of the create.
+alter table catalog_sync add column if not exists warnings jsonb not null default '[]'::jsonb;

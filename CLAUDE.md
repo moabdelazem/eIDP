@@ -138,6 +138,29 @@ rules and the traps they exist for are in `parse.ts`; `__fixtures__/repo` is a
 small tree covering both layout conventions, so the parser is tested without
 network or checkout.
 
+An application is **every variable file in its group_vars directory**, not
+just `cicd.yml`: the technology file beside it (`dotnet.yml`, `Spring.yml`)
+carries the images, ports, route, resources and replicas. They are merged the
+way Ansible merges a group_vars directory — sorted by filename *by code point*,
+later files replacing earlier top-level keys — so `dotnet.yml` overrides
+`cicd.yml` but `Spring.yml` (capitals sort first) is overridden by it. Don't
+"fix" that to `localeCompare`; it would stop matching what deployments get.
+
+Reading is lenient because the repo is hand-maintained and Ansible is: a
+duplicate key keeps the last value, and a file that still will not parse is
+skipped and named in the sync's `warnings` rather than failing the whole
+catalog. DevOps see those files listed under the map. Before this, one bad
+file among ~4800 took the entire map down.
+
+Secrets never leave the parser. Values under password/token/secret-like keys,
+and inline `!vault` values, become `[hidden]` before anything is stored — the
+portal shows configuration to people who may not have access to the repo.
+
+Configuration is served per application (`GET /catalog/systems/:system/
+applications/:name`), not with the catalog: 1100 descriptors on every map load
+would be waste. An app without environment groups uses its base everywhere —
+the page says "Uses the base", not "Not configured".
+
 ## Running it in containers
 
 `scripts/dev.sh up` runs everything under podman in one pod: Postgres,

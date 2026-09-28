@@ -12,7 +12,7 @@ const fixtures = fileURLToPath(
 )
 
 await ensureSchema()
-await writeCatalog(await parseInventories(fixtures))
+await writeCatalog((await parseInventories(fixtures)).systems)
 const catalog = await readCatalog()
 
 after(async () => {
@@ -55,11 +55,11 @@ test('unmodelled cicd fields are kept in the descriptor column', async () => {
     'select descriptor from catalog_applications where id = $1',
     ['AgriLand/AgriLand-API'],
   )
-  assert.equal(rows[0]?.descriptor.replicas, 2)
+  assert.equal(rows[0]?.descriptor.replicas, 1)
 })
 
 test('a rebuild replaces the catalog rather than doubling it', async () => {
-  await writeCatalog(await parseInventories(fixtures))
+  await writeCatalog((await parseInventories(fixtures)).systems)
   const { rows } = await query<{ count: string }>('select count(*) from catalog_applications')
   assert.equal(rows[0]?.count, '6')
 })

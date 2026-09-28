@@ -18,7 +18,7 @@ const REQUEST_DETAIL = /^\/requests\/[0-9a-f-]{36}$/i
 
 /** Things you look at. */
 export const browseItems: NavItem[] = [
-  { path: '/', label: 'Project map', icon: Boxes, owns: (p) => p.startsWith('/projects') },
+  { path: '/', label: 'Projects map', icon: Boxes, owns: (p) => p.startsWith('/projects') },
 ]
 
 /** Things you ask DevOps for, and where you follow them. */

@@ -6,7 +6,7 @@ export function NotFoundPage() {
   usePageTitle('Not found')
   return (
     <EmptyState title="This page does not exist">
-      Check the address, or go back to the <Link to="/" className="underline">project map</Link>.
+      Check the address, or go back to the <Link to="/" className="underline">projects map</Link>.
     </EmptyState>
   )
 }

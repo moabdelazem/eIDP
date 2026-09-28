@@ -1,0 +1,37 @@
+# The technology file carries the runtime config, as in the real repo.
+build_image:
+  name: "dotnet/sdk"
+  tag: "10.0"
+deploy_image:
+  name: "dotnet/aspnet"
+  tag: "10.0"
+
+nuget_name: GFN_Portal
+
+server:
+  port: 8080
+
+ocp_service:
+  expose_port: 8080
+  expose_nodeport: 30091
+
+route:
+  path: /
+
+### App Config
+
+resources:
+  requests:
+    memory: 256Mi
+    cpu: .25
+  limits:
+    memory: 2048Mi
+    cpu: 1
+
+# dotnet.yml sorts after cicd.yml, so this replaces cicd.yml's `replicas: 2`.
+replicas: 1
+
+db_password: hunter2
+api_token: !vault |
+  $ANSIBLE_VAULT;1.1;AES256
+  6162636465

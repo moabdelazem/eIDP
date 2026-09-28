@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { ApiError } from '../lib/errors.ts'
 import { requireAuth, requireDevOps, type AppEnv } from '../middleware/auth.ts'
-import { readCatalog, readSyncState, syncCatalog } from '../services/catalog.ts'
+import { readApplication, readCatalog, readSyncState, syncCatalog } from '../services/catalog.ts'
 
 export const catalogRoutes = new Hono<AppEnv>()
   .use('*', requireAuth)
@@ -21,8 +21,8 @@ export const catalogRoutes = new Hono<AppEnv>()
         503,
         'catalog_unavailable',
         sync.error
-          ? `The project map could not be built: ${sync.error}`
-          : 'The project map has not been built yet. Run a sync once Azure DevOps is configured.',
+          ? `The projects map could not be built: ${sync.error}`
+          : 'The projects map has not been built yet. Run a sync once Azure DevOps is configured.',
       )
     }
 
@@ -30,6 +30,15 @@ export const catalogRoutes = new Hono<AppEnv>()
   })
 
   .get('/status', async (c) => c.json(await readSyncState()))
+
+  /** One application's full configuration, base and per environment. */
+  .get('/systems/:system/applications/:name', async (c) => {
+    const rows = await readApplication(c.req.param('system'), c.req.param('name'))
+    if (rows.length === 0) {
+      throw new ApiError(404, 'application_not_found', 'There is no such application in the catalog.')
+    }
+    return c.json(rows)
+  })
 
   // A sync clones from Azure DevOps with the service account's token and
   // rewrites the catalog, so it is DevOps's to trigger, not everyone's.

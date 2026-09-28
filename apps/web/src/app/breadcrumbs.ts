@@ -7,7 +7,7 @@ export type Crumb = {
 }
 
 const sectionLabels: Record<string, string> = {
-  '/': 'Project map',
+  '/': 'Projects map',
   '/requests': 'Requests',
 }
 

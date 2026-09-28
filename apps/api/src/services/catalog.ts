@@ -10,6 +10,14 @@ export type SyncState = {
   commit: string | null
   ok: boolean
   error: string | null
+  /** Files the last sync skipped because they could not be read. */
+  warnings: string[]
+}
+
+/** One application in one environment, with its full merged configuration. */
+export type ApplicationDetail = CatalogApplication & {
+  /** Every group_vars file of the app merged as Ansible merges them; secrets hidden. */
+  descriptor: Record<string, unknown>
 }
 
 export type CatalogApplication = {
@@ -62,7 +70,10 @@ export async function syncCatalog(): Promise<SyncState> {
     const checkout = config.INVENTORIES_CHECKOUT
     await cloneOrUpdate(config.INVENTORIES_PROJECT, config.INVENTORIES_REPO, checkout)
     const commit = await headCommit(checkout)
-    const systems = await parseInventories(checkout)
+    const { systems, warnings } = await parseInventories(checkout)
+    if (warnings.length > 0) {
+      console.warn(`catalog sync: skipped ${warnings.length} unreadable file(s):\n  ${warnings.join('\n  ')}`)
+    }
 
     if (systems.length === 0) {
       throw new ApiError(
@@ -75,9 +86,9 @@ export async function syncCatalog(): Promise<SyncState> {
     await writeCatalog(systems)
     await query(
       `update catalog_sync
-          set finished_at = now(), commit_sha = $1, ok = true, error = null
+          set finished_at = now(), commit_sha = $1, ok = true, error = null, warnings = $2
         where id = 1`,
-      [commit],
+      [commit, JSON.stringify(warnings)],
     )
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -148,7 +159,8 @@ export async function readSyncState(): Promise<SyncState> {
     commit_sha: string | null
     ok: boolean
     error: string | null
-  }>('select started_at, finished_at, commit_sha, ok, error from catalog_sync where id = 1')
+    warnings: string[] | null
+  }>('select started_at, finished_at, commit_sha, ok, error, warnings from catalog_sync where id = 1')
 
   const row = rows[0]
   return {
@@ -157,7 +169,48 @@ export async function readSyncState(): Promise<SyncState> {
     commit: row?.commit_sha ?? null,
     ok: row?.ok ?? false,
     error: row?.error ?? null,
+    warnings: row?.warnings ?? [],
   }
+}
+
+/**
+ * One application's rows — the base and each environment override — with the
+ * full configuration the list view leaves out. Base first, then environments.
+ */
+export async function readApplication(system: string, name: string): Promise<ApplicationDetail[]> {
+  const { rows } = await query<{
+    id: string
+    group_name: string
+    name: string
+    environment: string | null
+    repository: string | null
+    build_technology: string | null
+    deploy_technology: string | null
+    deploy_platform: string | null
+    app_type: string | null
+    microservice: boolean | null
+    technologies: string[]
+    descriptor: Record<string, unknown>
+  }>(
+    `select * from catalog_applications
+      where system_dir = $1 and name = $2
+      order by environment nulls first, environment`,
+    [system, name],
+  )
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    group: row.group_name,
+    environment: row.environment,
+    repository: row.repository,
+    buildTechnology: row.build_technology,
+    deployTechnology: row.deploy_technology,
+    deployPlatform: row.deploy_platform,
+    appType: row.app_type,
+    microservice: row.microservice,
+    technologies: row.technologies,
+    descriptor: row.descriptor ?? {},
+  }))
 }
 
 /**
