@@ -6,6 +6,8 @@ export type Session = {
   uid: string
   name: string
   mail: string
+  /** What the UI may offer. The API re-checks every decision against AD. */
+  roles: string[]
 }
 
 /** The session the browser already holds, or null if there is none worth using. */
@@ -36,6 +38,7 @@ export function decode(token: string): Session | null {
       uid: String(claims.sub ?? ''),
       name: String(claims.name ?? ''),
       mail: String(claims.mail ?? ''),
+      roles: Array.isArray(claims.roles) ? claims.roles.map(String) : [],
     }
   } catch {
     return null

@@ -17,3 +17,21 @@ cn: Bob Example
 sn: Example
 mail: bob@eidp.local
 userPassword: bobpw
+
+dn: ou=groups,dc=eidp,dc=local
+objectClass: organizationalUnit
+ou: groups
+
+dn: cn=DEVOPS,ou=groups,dc=eidp,dc=local
+objectClass: groupOfNames
+cn: DEVOPS
+member: uid=alice,ou=people,dc=eidp,dc=local
+member: uid=carol,ou=people,dc=eidp,dc=local
+
+dn: uid=carol,ou=people,dc=eidp,dc=local
+objectClass: inetOrgPerson
+uid: carol
+cn: Carol Example
+sn: Example
+mail: carol@eidp.local
+userPassword: carolpw

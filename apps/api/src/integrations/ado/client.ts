@@ -4,13 +4,23 @@ import { ApiError } from '../../lib/errors.ts'
 /**
  * Azure DevOps Server (on-prem) REST client.
  *
- * URLs are `<base>/<project>/_apis/<area>?api-version=<version>`, where the
- * base already carries the collection. The api-version is pinned to the
- * server release, so it is config rather than a constant.
+ * Three scopes, one URL shape:
+ *   server      <server>/_apis/...                       collections
+ *   collection  <server>/<collection>/_apis/...          projects, processes
+ *   project     <server>/<collection>/<project>/_apis/... repositories
+ *
+ * ADO_BASE_URL is "server + the default collection", which is what the
+ * inventories sync has always used. The api-version is pinned to the server
+ * release, so it is config rather than a constant.
  */
 
 export type AdoConfig = {
+  /** Default collection, as configured: ADO_BASE_URL. */
   baseUrl: string
+  /** The root above every collection. */
+  serverUrl: string
+  /** The collection ADO_BASE_URL names. */
+  defaultCollection: string
   pat: string
   apiVersion: string
 }
@@ -27,10 +37,31 @@ export function adoConfig(): AdoConfig {
       } not set.`,
     )
   }
+  const baseUrl = config.ADO_BASE_URL!.replace(/\/+$/, '')
   return {
-    baseUrl: config.ADO_BASE_URL!.replace(/\/+$/, ''),
+    baseUrl,
+    ...splitCollection(baseUrl, config.ADO_SERVER_URL),
     pat: config.ADO_PAT!,
     apiVersion: config.ADO_API_VERSION,
+  }
+}
+
+/**
+ * The collection is the last path segment of ADO_BASE_URL — that is the
+ * documented contract. ADO_SERVER_URL overrides the server half for servers
+ * mounted somewhere that contract does not describe.
+ */
+export function splitCollection(
+  baseUrl: string,
+  serverOverride?: string,
+): { serverUrl: string; defaultCollection: string } {
+  const url = new URL(baseUrl)
+  const segments = url.pathname.split('/').filter(Boolean)
+  const defaultCollection = decodeURIComponent(segments.pop() ?? '')
+  url.pathname = segments.length ? `/${segments.join('/')}` : '/'
+  return {
+    serverUrl: (serverOverride ?? url.toString()).replace(/\/+$/, ''),
+    defaultCollection,
   }
 }
 
@@ -39,15 +70,23 @@ export function authHeader(pat: string): string {
   return `Basic ${Buffer.from(`:${pat}`).toString('base64')}`
 }
 
-/** Builds a collection- or project-scoped API URL. */
-export function apiUrl(
-  ado: AdoConfig,
-  path: string,
-  options: { project?: string; query?: Record<string, string | number | boolean> } = {},
-): string {
-  const base = ado.baseUrl.replace(/\/+$/, '')
+export type Scope = {
+  /** Omit for the default collection; `null` for the server level. */
+  collection?: string | null
+  project?: string
+  query?: Record<string, string | number | boolean>
+}
+
+/** Builds an API URL at server, collection or project scope. */
+export function apiUrl(ado: AdoConfig, path: string, options: Scope = {}): string {
+  const base =
+    options.collection === null
+      ? ado.serverUrl
+      : options.collection === undefined
+        ? ado.baseUrl
+        : `${ado.serverUrl}/${encodeURIComponent(options.collection)}`
   const scope = options.project ? `/${encodeURIComponent(options.project)}` : ''
-  const url = new URL(`${base}${scope}/_apis/${path.replace(/^\/+/, '')}`)
+  const url = new URL(`${base.replace(/\/+$/, '')}${scope}/_apis/${path.replace(/^\/+/, '')}`)
   url.searchParams.set('api-version', ado.apiVersion)
   for (const [key, value] of Object.entries(options.query ?? {})) {
     url.searchParams.set(key, String(value))
@@ -58,9 +97,19 @@ export function apiUrl(
 /** A page of results. ADO wraps collections in `{ count, value }`. */
 type AdoList<T> = { count: number; value: T[] }
 
-export async function adoGet<T>(
+export function adoGet<T>(path: string, options: Scope = {}): Promise<T> {
+  return adoRequest<T>('GET', path, options)
+}
+
+export function adoPost<T>(path: string, body: unknown, options: Scope = {}): Promise<T> {
+  return adoRequest<T>('POST', path, options, body)
+}
+
+async function adoRequest<T>(
+  method: 'GET' | 'POST',
   path: string,
-  options: { project?: string; query?: Record<string, string | number | boolean> } = {},
+  options: Scope,
+  body?: unknown,
 ): Promise<T> {
   const ado = adoConfig()
   const url = apiUrl(ado, path, options)
@@ -68,7 +117,13 @@ export async function adoGet<T>(
   let res: Response
   try {
     res = await fetch(url, {
-      headers: { authorization: authHeader(ado.pat), accept: 'application/json' },
+      method,
+      headers: {
+        authorization: authHeader(ado.pat),
+        accept: 'application/json',
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
     })
   } catch {
     throw new ApiError(502, 'ado_unreachable', 'Cannot reach Azure DevOps.')
@@ -88,10 +143,7 @@ export async function adoGet<T>(
   return (await res.json()) as T
 }
 
-export async function adoGetList<T>(
-  path: string,
-  options: { project?: string; query?: Record<string, string | number | boolean> } = {},
-): Promise<T[]> {
+export async function adoGetList<T>(path: string, options: Scope = {}): Promise<T[]> {
   return (await adoGet<AdoList<T>>(path, options)).value ?? []
 }
 
@@ -108,6 +160,16 @@ async function adoError(res: Response): Promise<ApiError> {
   }
   if (res.status === 404) {
     return new ApiError(404, 'ado_not_found', detail || 'Not found in Azure DevOps.')
+  }
+  if (res.status === 409) {
+    return new ApiError(409, 'ado_conflict', detail || 'That already exists in Azure DevOps.')
+  }
+  if (res.status === 403) {
+    return new ApiError(
+      502,
+      'ado_forbidden',
+      detail || 'The Azure DevOps service account is not allowed to do that.',
+    )
   }
   return new ApiError(502, 'ado_error', detail || `Azure DevOps returned ${res.status}.`)
 }

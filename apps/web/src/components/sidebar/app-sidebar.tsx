@@ -6,6 +6,7 @@ import {
   SidebarHeader,
 } from '@/components/ui/sidebar'
 import { NavMain } from './nav-main.tsx'
+import { NavRequests } from './nav-requests.tsx'
 import { NavUser } from './nav-user.tsx'
 import logo from '@/assets/logo.png'
 
@@ -28,6 +29,7 @@ export function AppSidebar() {
 
       <SidebarContent>
         <NavMain label="Browse" items={browseItems} />
+        <NavRequests />
       </SidebarContent>
 
       <SidebarFooter>

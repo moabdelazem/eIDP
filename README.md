@@ -13,15 +13,22 @@ and renders the map; it does not own that data.
 
 ## 2. Self-service requests
 
-Developers ask for things instead of filing tickets or pinging platform:
+Developers ask for things instead of filing tickets or pinging platform. Built
+so far:
 
-- create a repo
-- create a pipeline
-- request access to a repo
-- (more to come)
+- **a repository** in an existing Azure DevOps project
+- **a project**, with Git, in any collection on the server
 
-Each request is a tracked object with a lifecycle — submitted, approved,
-executed — not a fire-and-forget script.
+Each request goes to one approval pool. Anyone in the DEVOPS AD group can
+approve or reject it, nobody else can, and nobody can decide their own.
+Approving creates it in Azure DevOps straight away; the requester follows it
+on their request and gets the link and clone command when it exists.
+
+The form checks the name against Azure DevOps as you type — the naming rules,
+whether it already exists, whether someone has already asked for it — with the
+same check the API runs on submit, so what the form says is what will happen.
+
+Still to come: pipelines, and access to a repository.
 
 ## Running it
 
@@ -82,6 +89,14 @@ Things worth knowing:
   arriving: `VITE_POLLING=1 ./scripts/dev.sh restart`.
 - Dependencies are installed inside the image, so the host's `node_modules` is
   never used and `.env` is never copied into a layer.
+
+### Without Azure DevOps
+
+`pnpm --filter @eidp/api ado:fake` runs a small stand-in for Azure DevOps Server
+on :4010 with two collections and a few projects. Point `ADO_BASE_URL` at
+`http://localhost:4010/tfs/DefaultCollection` with any `ADO_PAT`, and the whole
+request flow works locally. In the bundled LDAP, `alice` and `carol` are in
+DEVOPS and `bob` is not.
 
 ## When a login fails
 

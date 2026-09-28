@@ -34,19 +34,28 @@ const schema = z.object({
    * cannot express — Active Directory wants objectCategory=person to keep
    * computer accounts out. `{username}` is replaced, already escaped.
    */
-  LDAP_USER_FILTER: z
-    .string()
-    .trim()
-    // An empty value in .env means "fall back to the schema settings", not an
-    // empty filter that would match nothing.
-    .transform((value) => value || undefined)
-    .optional(),
+  /**
+   * Finds the groups an account belongs to. `{dn}` is the account's DN, escaped.
+   * The OpenLDAP default matches direct membership; Active Directory should use
+   * the in-chain rule (1.2.840.113556.1.4.1941), which also follows nested
+   * groups — someone in a team that is itself inside DEVOPS still counts.
+   */
+  LDAP_GROUP_FILTER: z.string().min(1).default('(&(objectClass=groupOfNames)(member={dn}))'),
+  /** Members of this group decide requests, and nobody else can. */
+  APPROVER_GROUP: z.string().min(1).default('DEVOPS'),
+
+  LDAP_USER_FILTER: z.string().min(1).optional(),
 
   // Azure DevOps Server (on-prem). Optional so the API still boots without
   // them; the integration reports what is missing when something asks it to
   // work. ADO_BASE_URL includes the collection, e.g.
   // https://tfs.example.com/tfs/DefaultCollection
   ADO_BASE_URL: z.string().url().optional(),
+  /**
+   * The server root, above any collection, for discovering collections.
+   * Defaults to ADO_BASE_URL minus its last segment — the collection.
+   */
+  ADO_SERVER_URL: z.string().url().optional(),
   ADO_PAT: z.string().min(1).optional(),
   /** Pinned to the server release — it decides which endpoints exist. */
   ADO_API_VERSION: z.string().default('6.0'),
@@ -63,7 +72,13 @@ export type Config = z.infer<typeof schema>
 export const config: Config = load()
 
 function load(): Config {
-  const parsed = schema.safeParse(process.env)
+  // `KEY=` in .env means "not set yet", and .env.example ships several that
+  // way. Read as an empty string it fails validation and stops the boot, so
+  // blanks are dropped and defaults and optionals apply as if it were absent.
+  const present = Object.fromEntries(
+    Object.entries(process.env).filter(([, value]) => value !== undefined && value.trim() !== ''),
+  )
+  const parsed = schema.safeParse(present)
   if (parsed.success) return parsed.data
 
   const problems = parsed.error.issues.map((i) => `  ${i.path.join('.')}: ${i.message}`)

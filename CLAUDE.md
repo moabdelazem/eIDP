@@ -169,6 +169,49 @@ failed.
 is no migration tool — see the `ponytail:` note in `lib/db.ts` for when that
 stops being enough.
 
+## Requests
+
+`services/requests.ts` owns the lifecycle: pending → approved → completed or
+failed, or pending → rejected or cancelled. Rows are never deleted; the row is
+the history.
+
+The rules that matter, each tested in `routes/requests.test.ts`:
+
+- **Only the approver group decides**, and it is checked against the directory
+  at the moment of deciding — `isApprover` in `integrations/ldap/groups.ts`.
+  The `approver` role in the JWT is a UI hint only: a role in a token outlives
+  a removal from the group by up to eight hours.
+- **Nobody decides their own request.** A DEVOPS member's request needs a
+  second DEVOPS member, or approval means nothing for exactly the people who
+  can grant it.
+- **Approval claims the row** with `update … where status = 'pending'`. Two
+  approvers clicking at once produce one update and one creation.
+- **One open request per target** is a partial unique index, not app code, so
+  two people cannot race into asking for the same repository.
+- **Creation runs after the approve call returns.** A project can take a minute
+  in ADO. `recoverInterrupted()` at boot fails anything left `approved`, which
+  only a restart mid-creation can leave behind — see its `ponytail:` note
+  before running more than one API process.
+- **ADO project creation is asynchronous.** The POST returns a queued
+  operation; `createProject` polls it to the end rather than reporting success
+  for something the server might still fail to create.
+
+`check()` is what the form calls as someone types and what `submit()` runs, so
+the two can never disagree. Name rules are in `request-rules.ts`, from the ADO
+Server naming restrictions.
+
+`integrations/ado/fake-server.ts` stands in for ADO Server in tests and local
+development — including the sign-in page ADO returns instead of a 401, and the
+queued operation behind project creation.
+
+`LDAP_GROUP_FILTER` finds group membership. On Active Directory it uses the
+in-chain matching rule, because `memberOf` misses nested groups — someone in a
+team that is itself inside DEVOPS would otherwise not count.
+
+Blank values in `.env` (`KEY=`) are treated as unset in `lib/config.ts`. Before
+that, a `.env` copied from `.env.example` failed to boot on its blank
+`ADO_PAT`.
+
 ## Talking to the API
 
 `lib/api-client.ts` is the only thing that calls `fetch`. It attaches the
@@ -214,7 +257,8 @@ wrong. Only the last is a 401 — the rest are 503s naming the setting at fault,
 because a broken deployment must never be reported as the user's mistake.
 `ldap:doctor` reports which one.
 
-Test users live in `ldap/seed.ldif` (alice/alicepw, bob/bobpw), mounted into
+Test users live in `ldap/seed.ldif` (alice/alicepw, bob/bobpw, carol/carolpw;
+alice and carol are in the DEVOPS group), mounted into
 the container's bootstrap dir so a fresh volume gets them. `pnpm --filter
 @eidp/api test` runs against the live container.
 

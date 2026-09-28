@@ -1,36 +1,74 @@
-import type { NavItem } from '@/app/nav.ts'
+import { NavLink, useLocation } from 'react-router'
+import { approvalsItem, isItemActive, requestItems, type NavItem } from '@/app/nav.ts'
 import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
+import { useSession } from '@/features/auth/session-context.tsx'
+import { requestsApi } from '@/features/requests/api.ts'
+import { useResource } from '@/lib/use-resource.ts'
 
-/**
- * The things people can ask for. Each one is disabled until it is built —
- * a dim item that says what is coming beats a link that goes nowhere.
- *
- * Disabled buttons swallow pointer events, so no tooltip can name them in the
- * icon rail; the whole group sits out collapsed mode until they work.
- */
-export function NavRequests({ items }: { items: NavItem[] }) {
+export function NavRequests() {
+  const { pathname } = useLocation()
+  const { session } = useSession()
+  const approver = session?.roles.includes('approver') ?? false
+
   return (
-    <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-      <SidebarGroupLabel>Ask for</SidebarGroupLabel>
+    <SidebarGroup>
+      <SidebarGroupLabel>Requests</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
-          {items.map(({ path, label, icon: Icon }) => (
-            <SidebarMenuItem key={path}>
-              <SidebarMenuButton disabled={true}>
-                <Icon />
-                <span>{label}</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+          {requestItems.map((item) => (
+            <Item key={item.path} item={item} active={isItemActive(item, pathname)} />
           ))}
+          {approver && <ApprovalsItem active={isItemActive(approvalsItem, pathname)} />}
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>
+  )
+}
+
+function Item({ item, active, badge }: { item: NavItem; active: boolean; badge?: React.ReactNode }) {
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
+        <NavLink to={item.path} end>
+          <item.icon />
+          <span>{item.label}</span>
+        </NavLink>
+      </SidebarMenuButton>
+      {badge}
+    </SidebarMenuItem>
+  )
+}
+
+/**
+ * The count is red because it is exactly what red is for here: people waiting
+ * on the person looking at it.
+ */
+function ApprovalsItem({ active }: { active: boolean }) {
+  const pool = useResource(() => requestsApi.pool(), [], { pollMs: 30_000 })
+  const waiting = pool.data?.open.filter((r) => r.status === 'pending').length ?? 0
+
+  return (
+    <Item
+      item={approvalsItem}
+      active={active}
+      badge={
+        waiting > 0 && (
+          <SidebarMenuBadge
+            className="rounded-full bg-primary px-1.5 text-primary-foreground peer-hover/menu-button:text-primary-foreground peer-data-[active=true]/menu-button:text-primary-foreground"
+            aria-label={`${waiting} waiting`}
+          >
+            {waiting}
+          </SidebarMenuBadge>
+        )
+      }
+    />
   )
 }

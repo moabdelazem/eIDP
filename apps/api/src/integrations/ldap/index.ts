@@ -4,6 +4,8 @@ import { ApiError } from '../../lib/errors.ts'
 import { bindAsService, first, userFilter, withClient } from './client.ts'
 import { readBindFailure } from './ad-errors.ts'
 
+export { groupsOf, isApprover } from './groups.ts'
+
 /** A person as the directory knows them. */
 export type DirectoryUser = {
   uid: string

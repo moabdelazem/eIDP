@@ -32,8 +32,15 @@ export function crumbsFor(pathname: string, systems: System[] = []): Crumb[] {
   }
 
   if (segments[0] === 'requests') {
-    return [{ label: sectionLabels['/requests']! }]
+    const mine = { label: 'My requests', path: '/requests' }
+    if (segments[1] === 'new') {
+      return [mine, { label: segments[2] === 'project' ? 'Ask for a project' : 'Ask for a repository' }]
+    }
+    if (segments[1]) return [mine, { label: 'Request' }]
+    return [{ label: 'My requests' }]
   }
+
+  if (segments[0] === 'approvals') return [{ label: 'Approvals' }]
 
   return [{ label: 'Not found' }]
 }

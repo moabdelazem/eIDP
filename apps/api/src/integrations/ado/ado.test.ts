@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { adoConfig, apiUrl, authHeader } from './client.ts'
+import { adoConfig, apiUrl, authHeader, splitCollection } from './client.ts'
 
-const ado = { baseUrl: 'https://tfs.example.com/tfs/DefaultCollection', pat: 'tok', apiVersion: '6.0' }
+const ado = {
+  baseUrl: 'https://tfs.example.com/tfs/DefaultCollection',
+  serverUrl: 'https://tfs.example.com/tfs',
+  defaultCollection: 'DefaultCollection',
+  pat: 'tok',
+  apiVersion: '6.0',
+}
 
 test('a PAT authenticates as an empty username', () => {
   assert.equal(authHeader('tok'), `Basic ${Buffer.from(':tok').toString('base64')}`)
@@ -42,4 +48,39 @@ test('missing settings are named, not hidden behind a generic failure', () => {
     assert.match(err.message, /ADO_BASE_URL and ADO_PAT/)
     return true
   })
+})
+
+test('the server and default collection are read off ADO_BASE_URL', () => {
+  assert.deepEqual(splitCollection('https://tfs.example.com/tfs/DefaultCollection'), {
+    serverUrl: 'https://tfs.example.com/tfs',
+    defaultCollection: 'DefaultCollection',
+  })
+})
+
+test('a collection at the root of the host still splits', () => {
+  assert.deepEqual(splitCollection('https://tfs.example.com/EfinanceCollection/'), {
+    serverUrl: 'https://tfs.example.com',
+    defaultCollection: 'EfinanceCollection',
+  })
+})
+
+test('ADO_SERVER_URL overrides the derived server', () => {
+  assert.equal(
+    splitCollection('https://tfs.example.com/tfs/Coll', 'https://other.example.com/tfs/').serverUrl,
+    'https://other.example.com/tfs',
+  )
+})
+
+test('server scope sits above every collection', () => {
+  assert.equal(
+    apiUrl(ado, 'projectCollections', { collection: null }),
+    'https://tfs.example.com/tfs/_apis/projectCollections?api-version=6.0',
+  )
+})
+
+test('a named collection replaces the default one', () => {
+  assert.equal(
+    apiUrl(ado, 'git/repositories', { collection: 'Other Coll', project: 'AgriLand' }),
+    'https://tfs.example.com/tfs/Other%20Coll/AgriLand/_apis/git/repositories?api-version=6.0',
+  )
 })
