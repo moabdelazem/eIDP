@@ -3,8 +3,6 @@ import { FolderGit2, FolderKanban, Loader2 } from 'lucide-react'
 import { Link } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { EmptyState } from '@/components/empty-state.tsx'
-import { useProfile } from '@/features/auth/profile-context.tsx'
 import { useSession } from '@/features/auth/session-context.tsx'
 import { useResource } from '@/lib/use-resource.ts'
 import { requestsApi, targetPath, type PortalRequest } from './api.ts'
@@ -13,26 +11,11 @@ import { RejectDialog } from './reject-dialog.tsx'
 import { RequestRow } from './request-row.tsx'
 import { KIND_LABEL, since, TargetPath } from './status.tsx'
 
+/** Mounted only behind `RequireDevOps` — see app/routes.tsx. */
 export function ApprovalsPage() {
   const { session } = useSession()
-  const { isApprover, profile } = useProfile()
-  const pool = useResource(() => requestsApi.pool(), [isApprover], { pollMs: 10_000 })
+  const pool = useResource(() => requestsApi.pool(), [], { pollMs: 10_000 })
 
-  if (!isApprover) {
-    return (
-      <EmptyState title={`Approvals are for ${profile?.approverGroup ?? 'DEVOPS'}`}>
-        Requests are decided by that team. You can follow your own in{' '}
-        <Link to="/requests" className="underline">
-          My requests
-        </Link>
-        . If you are in the team and still see this,{' '}
-        <Link to="/me" className="underline">
-          your profile
-        </Link>{' '}
-        shows what the directory reports about you.
-      </EmptyState>
-    )
-  }
   if (!session) return null
 
   if (pool.error && !pool.data) return <p className="text-sm text-destructive">{pool.error}</p>

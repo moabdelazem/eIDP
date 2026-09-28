@@ -9,6 +9,7 @@ import { NewRequestPage } from '@/features/requests/new-request-page.tsx'
 import { RequestPage } from '@/features/requests/request-page.tsx'
 import { AppShell } from './app-shell.tsx'
 import { NotFoundPage } from './not-found-page.tsx'
+import { RequireDevOps } from './require-devops.tsx'
 import { RequireSession } from './require-session.tsx'
 
 export function AppRoutes() {
@@ -24,8 +25,13 @@ export function AppRoutes() {
           <Route path="requests/new/repository" element={<NewRequestPage key="repo" kind="create_repository" />} />
           <Route path="requests/new/project" element={<NewRequestPage key="project" kind="create_project" />} />
           <Route path="requests/:requestId" element={<RequestPage />} />
-          <Route path="approvals" element={<ApprovalsPage />} />
           <Route path="me" element={<ProfilePage />} />
+
+          {/* DevOps only. Every path in `devopsItems` belongs in here. */}
+          <Route element={<RequireDevOps />}>
+            <Route path="approvals" element={<ApprovalsPage />} />
+          </Route>
+
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>

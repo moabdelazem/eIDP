@@ -224,6 +224,32 @@ Blank values in `.env` (`KEY=`) are treated as unset in `lib/config.ts`. Before
 that, a `.env` copied from `.env.example` failed to boot on its blank
 `ADO_PAT`.
 
+## DevOps-only access
+
+Some pages and actions belong to the DevOps team (`APPROVER_GROUP`) alone.
+Three layers enforce it, and only the last one is security — the other two keep
+the UI honest:
+
+1. **Sidebar** — `components/sidebar/nav-devops.tsx` renders the DevOps group,
+   below a separator, only once the directory confirms membership.
+2. **Route** — `app/require-devops.tsx` wraps those routes, so opening one by
+   link shows a refusal and nothing behind it mounts or fetches.
+3. **API** — `requireDevOps` in `middleware/auth.ts` on every DevOps-only
+   endpoint. This is the one that actually protects anything.
+
+Every layer asks the directory, live. None trusts the token's `roles` claim:
+a validly signed token claiming `approver` for someone outside DevOps gets 403
+everywhere, which `routes/rbac.test.ts` checks.
+
+**Adding an admin page means four edits, or it leaks:** the item in
+`devopsItems` (`app/nav.ts`), its route inside `<RequireDevOps>`
+(`app/routes.tsx`), `requireDevOps` on its API endpoints, and those endpoints
+in the `DEVOPS_ONLY` list in `routes/rbac.test.ts`. `grep -rn requireDevOps
+apps/api/src/routes` lists the whole admin surface.
+
+`POST /catalog/sync` is DevOps-only: a sync clones from Azure DevOps with the
+service account's token and rewrites the catalog.
+
 ## Talking to the API
 
 `lib/api-client.ts` is the only thing that calls `fetch`. It attaches the

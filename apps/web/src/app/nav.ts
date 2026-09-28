@@ -28,5 +28,11 @@ export const requestItems: NavItem[] = [
   { path: '/requests', label: 'My requests', icon: Inbox, owns: (p) => REQUEST_DETAIL.test(p) },
 ]
 
-/** Only offered to members of the approver group. */
-export const approvalsItem: NavItem = { path: '/approvals', label: 'Approvals', icon: ListChecks }
+/**
+ * The DevOps-only pages. The sidebar shows this group only to DevOps, and
+ * `app/routes.tsx` puts every one of these paths behind `RequireDevOps` —
+ * a new admin page goes in both places, or it is reachable by link.
+ */
+export const devopsItems: NavItem[] = [
+  { path: '/approvals', label: 'Approvals', icon: ListChecks },
+]

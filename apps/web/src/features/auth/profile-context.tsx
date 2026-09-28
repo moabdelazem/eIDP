@@ -22,10 +22,13 @@ export type Profile = {
 type ProfileValue = {
   profile: Profile | undefined
   /**
-   * From the directory once loaded. Until then the token's hint stands in, so
-   * DEVOPS does not watch Approvals flicker into the sidebar on every load.
+   * Only ever from the directory. False until the profile has loaded — the
+   * token's role is deliberately not used as a stand-in, because someone just
+   * removed from DevOps would otherwise see the DevOps section until it did.
    */
   isApprover: boolean
+  /** Whether `isApprover` is an answer yet, rather than the default. */
+  loaded: boolean
   error: string | null
   reload: () => void
 }
@@ -44,11 +47,12 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   const value = useMemo<ProfileValue>(
     () => ({
       profile: profile.data,
-      isApprover: profile.data?.isApprover ?? session?.roles.includes('approver') ?? false,
+      isApprover: profile.data?.isApprover ?? false,
+      loaded: profile.data !== undefined || profile.error !== null,
       error: profile.error,
       reload: profile.reload,
     }),
-    [profile.data, profile.error, profile.reload, session?.roles],
+    [profile.data, profile.error, profile.reload],
   )
 
   return <ProfileContext value={value}>{children}</ProfileContext>

@@ -1,9 +1,7 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { validate } from '../lib/validate.ts'
-import { requireAuth, type AppEnv } from '../middleware/auth.ts'
-import { isApprover } from '../integrations/ldap/index.ts'
-import { ApiError } from '../lib/errors.ts'
+import { requireAuth, requireDevOps, type AppEnv } from '../middleware/auth.ts'
 import * as requests from '../services/requests.ts'
 
 const Target = z.discriminatedUnion('kind', [
@@ -38,26 +36,27 @@ export const requestRoutes = new Hono<AppEnv>()
 
   .get('/mine', async (c) => c.json(await requests.listMine(actor(c).uid)))
 
-  .get('/pool', async (c) => {
-    if (!(await isApprover(actor(c).uid))) {
-      throw new ApiError(403, 'not_an_approver', 'Only DEVOPS can see the approval pool.')
-    }
-    return c.json(await requests.listPool())
-  })
+  // ---- DevOps only ------------------------------------------------------
+
+  .get('/pool', requireDevOps, async (c) => c.json(await requests.listPool()))
+
+  .post('/:id/approve', requireDevOps, validate('json', Decision), async (c) =>
+    c.json(await requests.approve(c.req.param('id'), actor(c), c.req.valid('json').note)),
+  )
+
+  .post('/:id/reject', requireDevOps, validate('json', Decision), async (c) =>
+    c.json(await requests.reject(c.req.param('id'), actor(c), c.req.valid('json').note ?? '')),
+  )
+
+  .post('/:id/retry', requireDevOps, async (c) =>
+    c.json(await requests.retry(c.req.param('id'), actor(c))),
+  )
+
+  // ---- the requester's own, or DevOps ------------------------------------
 
   .get('/:id', async (c) => c.json(await requests.get(c.req.param('id'), actor(c))))
 
   .post('/:id/cancel', async (c) => c.json(await requests.cancel(c.req.param('id'), actor(c))))
-
-  .post('/:id/approve', validate('json', Decision), async (c) =>
-    c.json(await requests.approve(c.req.param('id'), actor(c), c.req.valid('json').note)),
-  )
-
-  .post('/:id/reject', validate('json', Decision), async (c) =>
-    c.json(await requests.reject(c.req.param('id'), actor(c), c.req.valid('json').note ?? '')),
-  )
-
-  .post('/:id/retry', async (c) => c.json(await requests.retry(c.req.param('id'), actor(c))))
 
 function actor(c: { get: (key: 'jwtPayload') => { sub: string; name: string } }) {
   const claims = c.get('jwtPayload')

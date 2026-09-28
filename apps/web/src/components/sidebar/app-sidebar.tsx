@@ -5,15 +5,17 @@ import {
   SidebarFooter,
   SidebarHeader,
 } from '@/components/ui/sidebar'
+import { NavDevOps } from './nav-devops.tsx'
 import { NavMain } from './nav-main.tsx'
 import { NavRequests } from './nav-requests.tsx'
 import { NavUser } from './nav-user.tsx'
 import logo from '@/assets/logo.png'
 
 /**
- * Grouped by what you are doing: browsing what exists, then asking for
- * something new. Each group is its own component — a new group is a new file
- * mounted here, not another branch inside one long component.
+ * Grouped by what you are doing: browsing what exists, asking for something
+ * new, and — below a separator, for DevOps only — deciding and administering.
+ * Each group is its own component — a new group is a new file mounted here,
+ * not another branch inside one long component.
  */
 export function AppSidebar() {
   return (
@@ -30,6 +32,7 @@ export function AppSidebar() {
       <SidebarContent>
         <NavMain label="Browse" items={browseItems} />
         <NavRequests />
+        <NavDevOps />
       </SidebarContent>
 
       <SidebarFooter>

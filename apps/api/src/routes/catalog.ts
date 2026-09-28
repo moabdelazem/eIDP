@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { ApiError } from '../lib/errors.ts'
-import { requireAuth, type AppEnv } from '../middleware/auth.ts'
+import { requireAuth, requireDevOps, type AppEnv } from '../middleware/auth.ts'
 import { readCatalog, readSyncState, syncCatalog } from '../services/catalog.ts'
 
 export const catalogRoutes = new Hono<AppEnv>()
@@ -31,4 +31,6 @@ export const catalogRoutes = new Hono<AppEnv>()
 
   .get('/status', async (c) => c.json(await readSyncState()))
 
-  .post('/sync', async (c) => c.json(await syncCatalog()))
+  // A sync clones from Azure DevOps with the service account's token and
+  // rewrites the catalog, so it is DevOps's to trigger, not everyone's.
+  .post('/sync', requireDevOps, async (c) => c.json(await syncCatalog()))
