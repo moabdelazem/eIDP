@@ -14,6 +14,7 @@ import { isInFlight, requestsApi, targetPath, type PortalRequest } from './api.t
 import { decide, rejectRequest } from './decisions.ts'
 import { RejectDialog } from './reject-dialog.tsx'
 import { RequestName, since, StatusBadge, WrappingUrl } from './status.tsx'
+import { HeaderSkeleton, Loading, TimelineSkeleton } from '@/components/skeletons.tsx'
 
 export function RequestPage() {
   const { requestId = '' } = useParams()
@@ -35,7 +36,21 @@ export function RequestPage() {
   if (request.error && !request.data) {
     return <EmptyState title="Request not found">{request.error}</EmptyState>
   }
-  if (!request.data) return <Skeleton className="h-64 w-full max-w-2xl" />
+  if (!request.data) {
+    return (
+      <Loading label="Loading the request…" className="max-w-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1">
+            <HeaderSkeleton />
+          </div>
+          <Skeleton className="h-5 w-20 rounded-full" />
+        </div>
+        <div className="mt-8">
+          <TimelineSkeleton />
+        </div>
+      </Loading>
+    )
+  }
 
   const r = request.data
   const own = r.requestedBy === session?.uid

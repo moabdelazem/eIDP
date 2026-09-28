@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useProfile, type Profile } from './profile-context.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
+import { FactsSkeleton, HeaderSkeleton, Loading } from '@/components/skeletons.tsx'
 
 const GROUPS_SHOWN = 24
 
@@ -25,7 +26,19 @@ export function ProfilePage() {
       </div>
     )
   }
-  if (!profile) return <Skeleton className="h-72 w-full max-w-2xl" />
+  if (!profile) {
+    return (
+      <Loading label="Loading your profile…" className="max-w-2xl">
+        <div className="flex items-center gap-4">
+          <Skeleton className="size-14 rounded-lg" />
+          <div className="flex-1">
+            <HeaderSkeleton />
+          </div>
+        </div>
+        <FactsSkeleton rows={6} />
+      </Loading>
+    )
+  }
 
   // Department and team are always listed, empty or not — they are what people
   // come here to check. The rest appear only when the directory has them, so a

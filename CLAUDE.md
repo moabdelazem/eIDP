@@ -334,6 +334,13 @@ service account's token and rewrites the catalog.
   never red. Output goes in via `dangerouslySetInnerHTML`, which is safe only
   because Shiki escapes every token; keep it that way. The effect keys on the
   serialised text, not the `data` object, because callers build it inline.
+- **Loading looks like what is loading.** `components/skeletons.tsx` has
+  placeholders shaped like the real layouts (header, facts, request rows,
+  approval cards, timeline, bar chart), each wrapped in `Loading` so screen
+  readers hear one "Loading…" instead of a run of empty divs. Use them, not one
+  big block. shadcn's `Skeleton` paints with `--accent` — dark eggplant here —
+  so `index.css` repoints `[data-slot=skeleton]` at `--skeleton`, and stops its
+  pulse under reduced motion.
 - **Ctrl/⌘ K opens a jump-to palette** (`components/command-palette.tsx`)
   over applications, systems and pages. It filters itself and renders only the
   top matches, because cmdk's own filtering mounts every item — 1100 hidden

@@ -10,6 +10,7 @@ import { differences, keySettings } from './config.ts'
 import { DataView } from '@/components/data-view.tsx'
 import { useCatalog } from './catalog-context.tsx'
 import { CatalogUnavailable } from './catalog-error.tsx'
+import { FactsSkeleton, HeaderSkeleton, Loading } from '@/components/skeletons.tsx'
 
 /** The environments every system is described against, in promotion order. */
 const PROMOTION: Environment[] = ['dev', 'qc', 'uat', 'prd']
@@ -26,7 +27,14 @@ export function ProjectPage() {
   )
 
   if (status === 'error') return <CatalogUnavailable error={error!} onRetry={reload} />
-  if (status === 'loading') return <Skeleton className="h-64 w-full max-w-2xl" />
+  if (status === 'loading') {
+    return (
+      <Loading className="max-w-2xl">
+        <HeaderSkeleton />
+        <FactsSkeleton />
+      </Loading>
+    )
+  }
 
   if (!found) {
     return (
@@ -156,7 +164,14 @@ function Configuration({ rows, error }: { rows: ApplicationConfig[] | undefined;
   if (error && !rows) {
     return <p className="mt-10 text-sm text-destructive">Could not load the configuration: {error}</p>
   }
-  if (!rows) return <Skeleton className="mt-10 h-48 w-full" />
+  if (!rows) {
+    return (
+      <Loading label="Loading configuration…" className="mt-10">
+        <Skeleton className="h-4 w-20" />
+        <FactsSkeleton rows={5} className="mt-4" />
+      </Loading>
+    )
+  }
   if (rows.length === 0) return null
 
   // The unprefixed group is the base; an app defined only per environment has

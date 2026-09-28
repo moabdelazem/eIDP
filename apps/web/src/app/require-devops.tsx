@@ -1,8 +1,8 @@
 import { ShieldX } from 'lucide-react'
 import { Link, Outlet } from 'react-router'
-import { Skeleton } from '@/components/ui/skeleton'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
+import { HeaderSkeleton, Loading } from '@/components/skeletons.tsx'
 
 /**
  * Guards DevOps-only pages against being opened by link. Waits for the
@@ -15,7 +15,13 @@ import { usePageTitle } from '@/lib/use-page-title.ts'
 export function RequireDevOps() {
   const { isApprover, loaded, profile } = useProfile()
 
-  if (!loaded) return <Skeleton className="h-40 w-full max-w-3xl" />
+  if (!loaded) {
+    return (
+      <Loading className="max-w-3xl">
+        <HeaderSkeleton />
+      </Loading>
+    )
+  }
   if (isApprover) return <Outlet />
   return <Denied approverGroup={profile?.approverGroup} />
 }

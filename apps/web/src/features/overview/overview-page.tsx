@@ -16,6 +16,7 @@ import { since } from '@/features/requests/status.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
 import type { Datum } from './charts.tsx'
+import { BarsSkeleton, Loading, RowsSkeleton } from '@/components/skeletons.tsx'
 
 // Recharts is most of the weight of this page and none of the others, so it
 // loads with the charts rather than with the app.
@@ -101,11 +102,11 @@ function Overview() {
         ) : (
           <>
             <ChartCard title="Applications by technology" description="From each application’s build_technology.">
-              {status === 'loading' ? <Skeleton className="h-64" /> : <RankedBars data={stats.technologies} label="Applications by technology" />}
+              {status === 'loading' ? <BarsSkeleton /> : <RankedBars data={stats.technologies} label="Applications by technology" />}
             </ChartCard>
             <ChartCard title="Largest systems" description="By number of applications. Select one to open it on the map.">
               {status === 'loading' ? (
-                <Skeleton className="h-64" />
+                <BarsSkeleton />
               ) : (
                 <RankedBars
                   data={stats.largest}
@@ -131,7 +132,9 @@ function Overview() {
             )}
           </CardHeader>
           {!mine.data ? (
-            <Skeleton className="m-4 h-24" />
+            <Loading label="Loading your requests…">
+              <RowsSkeleton bordered={false} />
+            </Loading>
           ) : mine.data.length === 0 ? (
             <Empty className="rounded-none border-t border-solid py-10">
               <EmptyHeader>
@@ -251,7 +254,7 @@ function ChartCard({ title, description, children }: { title: string; descriptio
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
-        <Suspense fallback={<Skeleton className="h-64" />}>{children}</Suspense>
+        <Suspense fallback={<BarsSkeleton />}>{children}</Suspense>
       </CardContent>
     </Card>
   )

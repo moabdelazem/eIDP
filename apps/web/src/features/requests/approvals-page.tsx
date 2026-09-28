@@ -13,6 +13,7 @@ import { decide, rejectRequest } from './decisions.ts'
 import { RejectDialog } from './reject-dialog.tsx'
 import { RequestRow } from './request-row.tsx'
 import { RequestName, since } from './status.tsx'
+import { CardSkeleton, HeaderSkeleton, Loading } from '@/components/skeletons.tsx'
 
 /** Mounted only behind `RequireDevOps` — see app/routes.tsx. */
 export function ApprovalsPage() {
@@ -28,7 +29,18 @@ export function ApprovalsPage() {
   if (!session) return null
 
   if (pool.error && !pool.data) return <p className="text-sm text-destructive">{pool.error}</p>
-  if (!pool.data) return <Skeleton className="h-64 w-full max-w-3xl" />
+  if (!pool.data) {
+    return (
+      <Loading label="Loading approvals…" className="max-w-3xl">
+        <HeaderSkeleton />
+        <Skeleton className="mt-8 h-4 w-40" />
+        <div className="mt-2 space-y-3">
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
+      </Loading>
+    )
+  }
 
   const waiting = pool.data.open.filter((r) => r.status === 'pending' && !decided.has(r.id))
 

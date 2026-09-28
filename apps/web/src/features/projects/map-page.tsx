@@ -18,6 +18,7 @@ import {
 } from './tree.ts'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
+import { HeaderSkeleton, Loading } from '@/components/skeletons.tsx'
 
 export function ProjectMapPage() {
   usePageTitle('Projects map')
@@ -173,11 +174,14 @@ function matchesList(name: string, repository: string | null, filters: Filters):
 
 function MapSkeleton() {
   return (
-    <div>
-      <Skeleton className="h-7 w-40" />
-      <Skeleton className="mt-4 h-10 w-full" />
-      <Skeleton className="mt-4 h-96 w-full" />
-    </div>
+    <Loading label="Loading the projects map…">
+      <HeaderSkeleton />
+      <div className="mt-6 flex gap-2">
+        <Skeleton className="h-9 flex-1" />
+        <Skeleton className="h-9 w-32" />
+      </div>
+      <Skeleton className="mt-4 h-[28rem] w-full rounded-lg" />
+    </Loading>
   )
 }
 

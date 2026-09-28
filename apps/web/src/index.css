@@ -157,6 +157,28 @@
   }
 }
 
+/*
+ * shadcn's Skeleton paints with --accent, which in this palette is the dark
+ * eggplant of a selected item — loading blocks came out as solid purple bars.
+ * Overridden here rather than in the generated file, so a regenerated
+ * skeleton.tsx keeps it. Unlayered, so it outranks the bg-accent utility.
+ */
+[data-slot='skeleton'] {
+  background-color: var(--skeleton);
+}
+:root {
+  --skeleton: #ece3ee;
+}
+.dark {
+  --skeleton: #2c1e31;
+}
+/* The pulse is motion too. */
+@media (prefers-reduced-motion: reduce) {
+  [data-slot='skeleton'] {
+    animation: none;
+  }
+}
+
 @keyframes page-enter {
   from {
     opacity: 0;

@@ -7,6 +7,7 @@ import { useResource } from '@/lib/use-resource.ts'
 import { isInFlight, requestsApi } from './api.ts'
 import { RequestRow } from './request-row.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
+import { Loading, RowsSkeleton } from '@/components/skeletons.tsx'
 
 export function MyRequestsPage() {
   usePageTitle('My requests')
@@ -26,7 +27,12 @@ export function MyRequestsPage() {
         {mine.error && !mine.data ? (
           <p className="text-sm text-destructive">{mine.error}</p>
         ) : !mine.data ? (
-          <Skeleton className="h-40 w-full" />
+          <Loading label="Loading your requests…">
+            <Skeleton className="h-4 w-24" />
+            <div className="mt-2">
+              <RowsSkeleton rows={4} />
+            </div>
+          </Loading>
         ) : mine.data.length === 0 ? (
           <div className="rounded-lg border border-dashed p-8 text-center">
             <p className="font-medium">You haven’t asked for anything yet</p>
