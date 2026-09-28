@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { adoConfig, apiUrl, authHeader, splitCollection } from './client.ts'
+import { adoConfig, apiUrl, authHeader, isPreviewRefusal, splitCollection } from './client.ts'
 
 const ado = {
   baseUrl: 'https://tfs.example.com/tfs/DefaultCollection',
@@ -83,4 +83,16 @@ test('a named collection replaces the default one', () => {
     apiUrl(ado, 'git/repositories', { collection: 'Other Coll', project: 'AgriLand' }),
     'https://tfs.example.com/tfs/Other%20Coll/AgriLand/_apis/git/repositories?api-version=6.0',
   )
+})
+
+test('a per-call api-version replaces the pinned one', () => {
+  const url = new URL(apiUrl(ado, 'identities', { apiVersion: '6.0-preview' }))
+  assert.equal(url.searchParams.get('api-version'), '6.0-preview')
+})
+
+test('the server refusing a preview API is recognised, and nothing else is', () => {
+  assert.ok(isPreviewRefusal({ typeKey: 'VssInvalidPreviewVersionException', message: '' }))
+  assert.ok(isPreviewRefusal({ message: 'The requested version "6.0" of the resource is under preview.' }))
+  assert.ok(!isPreviewRefusal({ message: 'TF400948: A Git repository with the name x already exists.' }))
+  assert.ok(!isPreviewRefusal(null))
 })

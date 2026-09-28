@@ -75,6 +75,8 @@ export type Scope = {
   collection?: string | null
   project?: string
   query?: Record<string, string | number | boolean>
+  /** Overrides the configured api-version for one call. */
+  apiVersion?: string
 }
 
 /** Builds an API URL at server, collection or project scope. */
@@ -87,7 +89,7 @@ export function apiUrl(ado: AdoConfig, path: string, options: Scope = {}): strin
         : `${ado.serverUrl}/${encodeURIComponent(options.collection)}`
   const scope = options.project ? `/${encodeURIComponent(options.project)}` : ''
   const url = new URL(`${base.replace(/\/+$/, '')}${scope}/_apis/${path.replace(/^\/+/, '')}`)
-  url.searchParams.set('api-version', ado.apiVersion)
+  url.searchParams.set('api-version', options.apiVersion ?? ado.apiVersion)
   for (const [key, value] of Object.entries(options.query ?? {})) {
     url.searchParams.set(key, String(value))
   }
@@ -133,7 +135,16 @@ async function adoRequest<T>(
     throw new ApiError(502, 'ado_unreachable', 'Cannot reach Azure DevOps.')
   }
 
-  if (!res.ok) throw await adoError(res)
+  if (!res.ok) {
+    // Which APIs are still "preview" differs by server release — on 6.0 the
+    // identity and security APIs are. The server says so in a 400 of its own;
+    // ask once more with -preview rather than hardcoding a list per release.
+    const version = options.apiVersion ?? ado.apiVersion
+    if (res.status === 400 && !version.includes('-preview') && isPreviewRefusal(await res.clone().json().catch(() => null))) {
+      return adoRequest<T>(method, path, { ...options, apiVersion: `${version}-preview` }, body)
+    }
+    throw await adoError(res)
+  }
   // Adding a group member answers with no body at all on some releases.
   if (res.status === 204) return undefined as T
 
@@ -147,6 +158,13 @@ async function adoRequest<T>(
     )
   }
   return (await res.json()) as T
+}
+
+/** ADO's answer to a plain api-version on an API that is still in preview. */
+export function isPreviewRefusal(body: unknown): boolean {
+  if (!body || typeof body !== 'object') return false
+  const { typeKey, message } = body as { typeKey?: unknown; message?: unknown }
+  return typeKey === 'VssInvalidPreviewVersionException' || /is under preview/i.test(String(message ?? ''))
 }
 
 export async function adoGetList<T>(path: string, options: Scope = {}): Promise<T[]> {

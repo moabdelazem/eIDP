@@ -10,7 +10,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { serve } from '@hono/node-server'
-import { Hono } from 'hono'
+import { Hono, type Context, type Next } from 'hono'
 
 type Project = { id: string; name: string; description: string; state: 'wellFormed' }
 type Repo = { id: string; name: string; project: { id: string; name: string } }
@@ -171,6 +171,27 @@ export function createFakeAdo(options: { failProjects?: boolean; denyServerScope
     coll.repos.push(repo)
     return c.json(repo, 201)
   })
+
+  // On ADO Server 6.0 the identity and security APIs are preview-only, and a
+  // plain api-version is refused with this exact shape.
+  const previewOnly = async (c: Context, next: Next) => {
+    const version = c.req.query('api-version') ?? ''
+    if (!version.includes('-preview')) {
+      return c.json(
+        {
+          $id: '1',
+          message: `The requested version "${version}" of the resource is under preview. The -preview flag must be supplied in the api-version for such requests. For example: "${version}-preview"`,
+          typeKey: 'VssInvalidPreviewVersionException',
+          errorCode: 0,
+        },
+        400,
+      )
+    }
+    await next()
+  }
+  app.use('/:collection/_apis/identities', previewOnly)
+  app.use('/:collection/_apis/identities/*', previewOnly)
+  app.use('/:collection/_apis/accesscontrolentries/*', previewOnly)
 
   app.get('/:collection/_apis/identities', (c) => {
     const filter = (c.req.query('filterValue') ?? '').toLowerCase()
