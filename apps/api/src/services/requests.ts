@@ -442,12 +442,9 @@ async function assertCanDecide(id: string, actor: Actor): Promise<void> {
   if (!(await isApprover(actor.uid))) {
     throw new ApiError(403, 'not_an_approver', 'Only DEVOPS can approve or reject requests.')
   }
-  const request = await find(id)
-  // Separation of duties: a DEVOPS member's own request needs a second pair of
-  // eyes, or "approval" means nothing for exactly the people who can grant it.
-  if (request.requestedBy === actor.uid) {
-    throw new ApiError(403, 'own_request', 'Someone else in DEVOPS has to decide your own request.')
-  }
+  // DEVOPS may decide their own requests too: the team chose speed over a
+  // second pair of eyes. decided_by still records who approved what.
+  await find(id) // 404 when it does not exist
 }
 
 async function find(id: string): Promise<RequestRecord> {

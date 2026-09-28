@@ -170,7 +170,7 @@ function Actions({
     setBusy(false)
   }
 
-  const canDecide = approver && !own && r.status === 'pending'
+  const canDecide = approver && r.status === 'pending'
   const actions = []
 
   if (canDecide) {
@@ -201,15 +201,8 @@ function Actions({
 
   return (
     <>
-      {(actions.length > 0 || (approver && own && r.status === 'pending')) && (
-        <div className="mt-8 flex flex-wrap items-center gap-2 border-t pt-6">
-          {actions}
-          {approver && own && r.status === 'pending' && (
-            <p className="text-sm text-muted-foreground">
-              This is your own request, so someone else in DevOps has to decide it.
-            </p>
-          )}
-        </div>
+      {actions.length > 0 && (
+        <div className="mt-8 flex flex-wrap items-center gap-2 border-t pt-6">{actions}</div>
       )}
       <RejectDialog
         open={rejecting}

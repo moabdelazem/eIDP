@@ -235,9 +235,9 @@ The rules that matter, each tested in `routes/requests.test.ts`:
   at the moment of deciding — `isApprover` in `integrations/ldap/groups.ts`.
   The `approver` role in the JWT is a UI hint only: a role in a token outlives
   a removal from the group by up to eight hours.
-- **Nobody decides their own request.** A DEVOPS member's request needs a
-  second DEVOPS member, or approval means nothing for exactly the people who
-  can grant it.
+- **DEVOPS may decide their own requests.** This was once refused (a second
+  member had to approve), and was dropped on purpose for speed; `decided_by`
+  still records who approved what. Don't reintroduce it without asking.
 - **Approval claims the row** with `update … where status = 'pending'`. Two
   approvers clicking at once produce one update and one creation.
 - **One open creation per target** is a partial unique index, not app code, so

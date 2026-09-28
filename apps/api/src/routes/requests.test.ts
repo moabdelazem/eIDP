@@ -217,14 +217,13 @@ test('two approvers clicking at once create it exactly once', async () => {
   assert.equal(copies.length, 1)
 })
 
-test('DEVOPS cannot approve their own request; a colleague can', async () => {
+test('DEVOPS can approve their own request, and it records who did', async () => {
   const own = await json<{ id: string }>(await call('alice', 'POST', '/requests', repoRequest('alice-tool')))
   const self = await call('alice', 'POST', `/requests/${own.id}/approve`, {})
-  assert.equal(self.status, 403)
-  assert.equal((await json<{ error: { code: string } }>(self)).error.code, 'own_request')
-
-  assert.equal((await call('carol', 'POST', `/requests/${own.id}/approve`, {})).status, 200)
-  assert.equal((await settled(own.id, 'carol')).status, 'completed')
+  assert.equal(self.status, 200)
+  const done = await settled(own.id)
+  assert.equal(done.status, 'completed')
+  assert.equal(done.decidedByName, 'Alice Example')
 })
 
 test('a rejection needs a reason, and the requester sees it', async () => {

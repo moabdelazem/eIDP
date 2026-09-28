@@ -77,7 +77,6 @@ export function ApprovalsPage() {
               <li key={request.id} style={{ viewTransitionName: `request-${request.id}` }}>
                 <PendingCard
                   request={request}
-                  own={request.requestedBy === session.uid}
                   onDecided={() => onDecided(request.id)}
                 />
               </li>
@@ -121,7 +120,7 @@ export function ApprovalsPage() {
 }
 
 /** Everything needed to decide, on the card itself — no click-through required. */
-function PendingCard({ request: r, own, onDecided }: { request: PortalRequest; own: boolean; onDecided: () => void }) {
+function PendingCard({ request: r, onDecided }: { request: PortalRequest; onDecided: () => void }) {
   const [busy, setBusy] = useState(false)
   const [rejecting, setRejecting] = useState(false)
   const Icon = KIND_ICON[r.kind]
@@ -145,27 +144,21 @@ function PendingCard({ request: r, own, onDecided }: { request: PortalRequest; o
       <AccessLine request={r} className="mt-3" />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        {own ? (
-          <p className="text-sm text-muted-foreground">Your own request — someone else in DevOps decides it.</p>
-        ) : (
-          <>
-            <Button
-              size="sm"
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true)
-                if (await decide('approve', r)) onDecided()
-                setBusy(false)
-              }}
-            >
-              {busy && <Spinner />}
-              {r.kind === 'grant_access' ? 'Approve and grant' : 'Approve and create'}
-            </Button>
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => setRejecting(true)}>
-              Reject
-            </Button>
-          </>
-        )}
+        <Button
+          size="sm"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true)
+            if (await decide('approve', r)) onDecided()
+            setBusy(false)
+          }}
+        >
+          {busy && <Spinner />}
+          {r.kind === 'grant_access' ? 'Approve and grant' : 'Approve and create'}
+        </Button>
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => setRejecting(true)}>
+          Reject
+        </Button>
       </div>
 
       <RejectDialog
