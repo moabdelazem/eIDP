@@ -32,6 +32,7 @@ export type Permission =
   | 'requests.decide'
   | 'requests.decide_access'
   | 'rbac.manage'
+  | 'rbac.view_as'
 export type ScopeType = 'global' | 'team' | 'project'
 
 type ProfileValue = {

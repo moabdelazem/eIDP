@@ -30,6 +30,7 @@ const DEVOPS_ONLY: [method: string, path: string][] = [
   ['DELETE', '/rbac/bindings/00000000-0000-0000-0000-000000000000'],
   ['GET', '/rbac/explain/bob'],
   ['GET', '/rbac/audit'],
+  ['POST', '/auth/assume'],
 ]
 
 async function login(username: string): Promise<string> {
@@ -62,6 +63,7 @@ const ids: string[] = []
 async function clearDave() {
   await query(`delete from rbac_bindings where lower(subject) = 'dave' and subject_type = 'user'`)
   await query(`delete from rbac_audit where lower(binding->>'subject') = 'dave' and binding->>'subjectType' = 'user'`)
+  await query(`delete from rbac_audit where action = 'assume' and (actor = 'dave' or (actor = 'alice' and target = 'bob'))`)
 }
 
 /** A request row straight into the table — these tests are about who may decide it, not ADO. */
@@ -291,4 +293,62 @@ VALID_USERS = {
   assert.match(why['DT-Tech:login']!, /everyone/)
   assert.match(why['QC:doc_chat']!, /no e-IDP feature/)
   assert.ok(plan.add.filter((b) => b.subjectType === 'user').every((b) => b.reason))
+})
+
+// ---- viewing as someone else -------------------------------------------------
+
+async function assume(token: string, uid: string) {
+  return call(token, 'POST', '/auth/assume', { uid })
+}
+
+test('an admin views the portal as someone else, and sees what they see', async () => {
+  const res = await assume(alice, 'bob')
+  assert.equal(res.status, 200)
+  const asBob = (await json<{ token: string }>(res)).token
+
+  const profile = await json<{ uid: string; isApprover: boolean }>(await call(asBob, 'GET', '/auth/profile'))
+  assert.equal(profile.uid, 'bob')
+  assert.equal(profile.isApprover, false)
+  // bob cannot open the queue, so neither can alice while she looks as bob.
+  assert.equal((await call(asBob, 'GET', '/requests/pool')).status, 403)
+  assert.equal((await call(asBob, 'GET', '/requests/mine')).status, 200)
+
+  const audit = await json<{ action: string; actor: string; target: string | null }[]>(await call(alice, 'GET', '/rbac/audit'))
+  assert.ok(audit.some((e) => e.action === 'assume' && e.actor === 'alice' && e.target === 'bob'))
+})
+
+test('viewing as someone is read-only, and cannot nest', async () => {
+  const asBob = (await json<{ token: string }>(await assume(alice, 'bob'))).token
+  for (const [method, path, body] of [
+    ['POST', '/requests', { kind: 'grant_access', collection: 'DefaultCollection', project: 'X', grantees: ['bob'], justification: 'x' }],
+    ['POST', '/requests/00000000-0000-0000-0000-000000000000/cancel', {}],
+    ['POST', '/auth/assume', { uid: 'carol' }],
+    ['DELETE', '/rbac/bindings/00000000-0000-0000-0000-000000000000', undefined],
+  ] as const) {
+    const res = await call(asBob, method, path, body)
+    assert.equal(res.status, 403, `${method} ${path}`)
+    assert.equal((await json<{ error: { code: string } }>(res)).error.code, 'viewing_as')
+  }
+})
+
+test('only someone with view-as may assume, and never as themselves or nobody', async () => {
+  assert.equal((await assume(bob, 'carol')).status, 403)
+  assert.equal((await assume(alice, 'ALICE')).status, 400)
+  assert.equal((await assume(alice, 'nobody-here')).status, 404)
+})
+
+test('a view already handed out ends when the admin loses the permission', async () => {
+  const binding = await json<{ id: string }>(
+    await call(alice, 'POST', '/rbac/bindings', {
+      subjectType: 'user', subject: 'dave', role: 'devops-admin', scopeType: 'global', reason: 'testing view-as',
+    }),
+  )
+  const asBob = (await json<{ token: string }>(await assume(dave, 'bob'))).token
+  assert.equal((await call(asBob, 'GET', '/requests/mine')).status, 200)
+
+  await call(alice, 'DELETE', `/rbac/bindings/${binding.id}`)
+  const res = await call(asBob, 'GET', '/requests/mine')
+  assert.equal(res.status, 401)
+  assert.equal((await json<{ error: { code: string } }>(res)).error.code, 'view_as_revoked')
+  await clearDave()
 })

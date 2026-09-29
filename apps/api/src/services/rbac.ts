@@ -24,6 +24,7 @@ export const PERMISSIONS = {
   'requests.decide': 'Approve, reject and retry any request, and see every request',
   'requests.decide_access': 'Approve or reject access requests — only within the binding’s scope',
   'rbac.manage': 'Grant and revoke roles, and read the audit log',
+  'rbac.view_as': 'See the portal as someone else would, read-only',
 } as const
 
 export type Permission = keyof typeof PERMISSIONS
@@ -258,18 +259,25 @@ export async function removeBinding(id: string, actor: string): Promise<void> {
   await audit(actor, 'revoke', toBinding(rows[0]))
 }
 
-export type AuditEntry = { id: string; at: string; actor: string; action: 'grant' | 'revoke'; binding: Binding }
+export type AuditEntry =
+  | { id: string; at: string; actor: string; action: 'grant' | 'revoke'; binding: Binding; target: null }
+  | { id: string; at: string; actor: string; action: 'assume'; binding: null; target: string }
 
 export async function listAudit(limit = 100): Promise<AuditEntry[]> {
-  const { rows } = await query<{ id: string; at: Date; actor: string; action: 'grant' | 'revoke'; binding: Binding }>(
+  const { rows } = await query<{ id: string; at: Date; actor: string; action: AuditEntry['action']; binding: Binding | null; target: string | null }>(
     'select * from rbac_audit order by at desc, id desc limit $1',
     [limit],
   )
-  return rows.map((r) => ({ id: String(r.id), at: r.at.toISOString(), actor: r.actor, action: r.action, binding: r.binding }))
+  return rows.map((r) => ({ id: String(r.id), at: r.at.toISOString(), actor: r.actor, action: r.action, binding: r.binding, target: r.target }) as AuditEntry)
 }
 
 async function audit(actor: string, action: 'grant' | 'revoke', binding: Binding): Promise<void> {
   await query('insert into rbac_audit (actor, action, binding) values ($1, $2, $3)', [actor, action, binding])
+}
+
+/** Viewing as someone is recorded like a grant: who, whom, when. */
+export async function auditAssume(actor: string, target: string): Promise<void> {
+  await query(`insert into rbac_audit (actor, action, target) values ($1, 'assume', $2)`, [actor, target])
 }
 
 /**

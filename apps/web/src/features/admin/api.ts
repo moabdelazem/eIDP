@@ -33,7 +33,9 @@ export type Explanation = {
   }[]
 }
 
-export type AuditEntry = { id: string; at: string; actor: string; action: 'grant' | 'revoke'; binding: Binding }
+export type AuditEntry =
+  | { id: string; at: string; actor: string; action: 'grant' | 'revoke'; binding: Binding; target: null }
+  | { id: string; at: string; actor: string; action: 'assume'; binding: null; target: string }
 
 export const rbacApi = {
   catalogue: () => api<Catalogue>('/rbac/roles'),
@@ -42,4 +44,6 @@ export const rbacApi = {
   remove: (id: string) => api<void>(`/rbac/bindings/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   explain: (uid: string) => api<Explanation>(`/rbac/explain/${encodeURIComponent(uid)}`),
   audit: () => api<AuditEntry[]>('/rbac/audit'),
+  /** A read-only session as `uid`. Needs `rbac.view_as`; audited. */
+  assume: (uid: string) => api<{ token: string; expiresAt: number }>('/auth/assume', { method: 'POST', body: JSON.stringify({ uid }) }),
 }

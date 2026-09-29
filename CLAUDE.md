@@ -365,6 +365,20 @@ has been deleted from code grants nothing and is listed on the page as such.
   becomes a `team-lead` binding scoped to team X; roles for features e-IDP does
   not have are left out rather than carried as dead names.
 
+**Viewing as someone else** (`rbac.view_as`, DevOps admins): `POST
+/auth/assume` returns a one-hour session as the target whose token carries an
+`act` claim (RFC 8693's actor) naming the admin. `requireAuth` holds such a
+session to two rules on every request: anything but GET/HEAD is refused
+(`viewing_as`), and it dies (`view_as_revoked`, 401) the moment the admin no
+longer holds `rbac.view_as`. It is read-only by design — seeing what someone
+sees, never acting as them; a request form's live check is a POST, so forms
+cannot even be submitted. Each use is audited (`rbac_audit.action = 'assume'`,
+with `target`). The browser keeps the admin's own token aside
+(`tokenStore.assume`); a 401 during a view returns to it instead of signing
+out, and switching either way reloads from `/`, because every cached resource
+belonged to the other identity. `ViewingAsBanner` stays across the top in red
+the whole time.
+
 Three layers enforce it, and only the last one is security:
 
 1. **Sidebar** — `components/sidebar/nav-manage.tsx` lists each `manageItems`

@@ -21,5 +21,5 @@ export async function login(username: string, password: string): Promise<Session
 }
 
 export function logout(): void {
-  tokenStore.clear()
+  tokenStore.clearAll()
 }

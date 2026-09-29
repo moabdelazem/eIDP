@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import { Check, Minus, Trash2, User, Users } from 'lucide-react'
+import { Check, Eye, Minus, Trash2, User, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { PAGE, PageHeader, Section, Split } from '@/components/page-layout.tsx'
 import { Loading, RowsSkeleton } from '@/components/skeletons.tsx'
@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import type { ScopeType } from '@/features/auth/profile-context.tsx'
+import { useProfile, type ScopeType } from '@/features/auth/profile-context.tsx'
+import { useSession } from '@/features/auth/session-context.tsx'
 import { ApiError } from '@/lib/api-client.ts'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
@@ -74,13 +75,22 @@ export function AccessPage() {
               {audit.data.map((entry) => (
                 <li key={entry.id} className="flex flex-wrap items-baseline gap-x-2 px-4 py-2.5">
                   <span className="font-medium">{entry.actor}</span>
-                  <span className={entry.action === 'grant' ? '' : 'text-muted-foreground'}>
-                    {entry.action === 'grant' ? 'granted' : 'removed'}
-                  </span>
-                  <span>{roleLabel(catalogue.data, entry.binding.role)}</span>
-                  <span className="text-muted-foreground">{entry.action === 'grant' ? 'to' : 'from'}</span>
-                  <Subject binding={entry.binding} />
-                  {entry.binding.scope && <ScopeBadge binding={entry.binding} />}
+                  {entry.action === 'assume' ? (
+                    <>
+                      <span className="text-muted-foreground">viewed the portal as</span>
+                      <Subject binding={{ subjectType: 'user', subject: entry.target }} />
+                    </>
+                  ) : (
+                    <>
+                      <span className={entry.action === 'grant' ? '' : 'text-muted-foreground'}>
+                        {entry.action === 'grant' ? 'granted' : 'removed'}
+                      </span>
+                      <span>{roleLabel(catalogue.data, entry.binding.role)}</span>
+                      <span className="text-muted-foreground">{entry.action === 'grant' ? 'to' : 'from'}</span>
+                      <Subject binding={entry.binding} />
+                      {entry.binding.scope && <ScopeBadge binding={entry.binding} />}
+                    </>
+                  )}
                   <span className="ml-auto text-xs text-muted-foreground">{when(entry.at)}</span>
                 </li>
               ))}
@@ -394,6 +404,7 @@ function CheckSomeone() {
       {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
       {result && (
         <div className="mt-4 space-y-4 text-sm">
+          <ViewAsButton uid={result.uid} />
           <div>
             <p className="text-xs text-muted-foreground">Directory groups</p>
             {result.groups.length === 0 ? (
@@ -433,6 +444,34 @@ function CheckSomeone() {
         </div>
       )}
     </Section>
+  )
+}
+
+/**
+ * Opens the portal as this person, read-only, for as long as it takes to see
+ * what they see. The API refuses anything that is not a read, and records it.
+ */
+function ViewAsButton({ uid }: { uid: string }) {
+  const { can } = useProfile()
+  const { session, viewAs } = useSession()
+  const [busy, setBusy] = useState(false)
+  if (!can('rbac.view_as') || uid.toLowerCase() === session?.uid.toLowerCase()) return null
+
+  async function start() {
+    setBusy(true)
+    try {
+      viewAs((await rbacApi.assume(uid)).token)
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not view as them. Try again.')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Button size="sm" variant="outline" disabled={busy} onClick={start}>
+      {busy ? <Spinner /> : <Eye />}
+      View the portal as {uid}
+    </Button>
   )
 }
 

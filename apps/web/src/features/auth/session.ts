@@ -8,6 +8,8 @@ export type Session = {
   mail: string
   /** What the UI may offer. The API re-checks every decision against AD. */
   roles: string[]
+  /** Set while an admin views the portal as `uid`: who is really looking. Read-only. */
+  actor: { uid: string; name: string } | null
 }
 
 /** The session the browser already holds, or null if there is none worth using. */
@@ -39,6 +41,10 @@ export function decode(token: string): Session | null {
       name: String(claims.name ?? ''),
       mail: String(claims.mail ?? ''),
       roles: Array.isArray(claims.roles) ? claims.roles.map(String) : [],
+      actor:
+        claims.act && typeof claims.act === 'object'
+          ? { uid: String((claims.act as Record<string, unknown>).sub ?? ''), name: String((claims.act as Record<string, unknown>).name ?? '') }
+          : null,
     }
   } catch {
     return null

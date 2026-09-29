@@ -5,6 +5,7 @@ import { PageBreadcrumbs } from '@/components/page-breadcrumbs.tsx'
 import { ProfileProvider } from '@/features/auth/profile-context.tsx'
 import { CatalogProvider } from '@/features/projects/catalog-context.tsx'
 import { Separator } from '@/components/ui/separator'
+import { ViewingAsBanner } from './viewing-as-banner.tsx'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 
 export function AppShell() {
@@ -17,6 +18,7 @@ export function AppShell() {
         <CatalogProvider>
           <AppSidebar />
           <SidebarInset>
+            <ViewingAsBanner />
             <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
               <SidebarTrigger />
               <Separator orientation="vertical" className="mr-1 h-4" />

@@ -13,11 +13,41 @@ export type SessionClaims = {
    */
   roles: string[]
   exp: number
+  /**
+   * Set when an admin is viewing the portal as `sub` (RFC 8693's actor claim):
+   * who is really behind the session. Such a session is read-only, and ends
+   * the moment the actor loses `rbac.view_as` — see middleware/auth.ts.
+   */
+  act?: { sub: string; name: string }
 }
 
 export type IssuedSession = {
   token: string
   expiresAt: number
+}
+
+/** How long a "view as" session lasts: long enough to look around, not to forget it. */
+const ASSUMED_TTL_SECONDS = 3600
+
+/**
+ * A read-only session as `target`, carrying `actor` so every request knows who
+ * is really looking. No roles claim: what the target may do is worked out from
+ * the directory, the same as for them.
+ */
+export async function issueAssumedSession(
+  target: { uid: string; name: string; mail: string },
+  actor: { uid: string; name: string },
+): Promise<IssuedSession> {
+  const expiresAt = Math.floor(Date.now() / 1000) + ASSUMED_TTL_SECONDS
+  const claims: SessionClaims = {
+    sub: target.uid,
+    name: target.name,
+    mail: target.mail,
+    roles: [],
+    exp: expiresAt,
+    act: { sub: actor.uid, name: actor.name },
+  }
+  return { token: await sign(claims, config.JWT_SECRET), expiresAt }
 }
 
 export async function issueSession(user: DirectoryUser): Promise<IssuedSession> {

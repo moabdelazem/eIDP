@@ -14,8 +14,32 @@ export type AppEnv = {
   }
 }
 
-/** Rejects the request with 401 unless it carries a valid session token. */
-export const requireAuth = jwt({ secret: config.JWT_SECRET, alg: 'HS256' })
+const verifyToken = jwt({ secret: config.JWT_SECRET, alg: 'HS256' })
+
+/**
+ * Rejects the request with 401 unless it carries a valid session token — and
+ * holds a "view as" session to what it is: read-only, and only while the
+ * admin behind it still may view as others. Checked on every request, so
+ * revoking the permission ends a session already handed out.
+ */
+export const requireAuth = createMiddleware<AppEnv>((c, next) =>
+  verifyToken(c, async () => {
+    const actor = c.get('jwtPayload').act
+    if (actor) {
+      if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
+        throw new ApiError(
+          403,
+          'viewing_as',
+          `You’re viewing the portal as ${c.get('jwtPayload').name}, which is read-only. Return to your own account to make changes.`,
+        )
+      }
+      if (!can(await accessOf(actor.sub), 'rbac.view_as')) {
+        throw new ApiError(401, 'view_as_revoked', 'You can no longer view the portal as someone else. Sign in again.')
+      }
+    }
+    await next()
+  }),
+)
 
 /**
  * Refuses unless the caller holds `permission`. Every guarded route declares

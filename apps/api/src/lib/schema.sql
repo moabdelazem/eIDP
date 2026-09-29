@@ -147,3 +147,10 @@ create table if not exists rbac_audit (
   action   text not null check (action in ('grant', 'revoke')),
   binding  jsonb not null
 );
+
+-- Viewing the portal as someone else (read-only) is audited beside grants.
+-- Such a row names a target instead of a binding.
+alter table rbac_audit add column if not exists target text;
+alter table rbac_audit alter column binding drop not null;
+alter table rbac_audit drop constraint if exists rbac_audit_action_check;
+alter table rbac_audit add constraint rbac_audit_action_check check (action in ('grant', 'revoke', 'assume'));
