@@ -8,12 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useSession } from '@/features/auth/session-context.tsx'
 import { ApiError } from '@/lib/api-client.ts'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
-import { requestsApi, type AccessLevel, type Check as CheckResult, type Target } from './api.ts'
+import { requestsApi, type Check as CheckResult, type Target } from './api.ts'
 import { REQUEST_TYPES } from './kinds.ts'
 import { Field } from './new-request-page.tsx'
 import { ProjectPicker } from './project-picker.tsx'
@@ -21,13 +20,9 @@ import { TargetPath } from './status.tsx'
 
 type Verdict = { state: 'idle' } | { state: 'checking' } | { state: 'done'; result: CheckResult }
 
-const LEVELS: Record<AccessLevel, { label: string; detail: string }> = {
-  read: { label: 'Read', detail: 'See and clone. Nothing can be pushed.' },
-  contribute: {
-    label: 'Contribute',
-    detail: 'Push, branch, tag and work on pull requests. Not force-push, policies or permissions.',
-  },
-}
+/** Fixed, not chosen: what an access request always grants. */
+const GRANTS =
+  'Contribute on the whole project — its repositories, boards and pipelines, as a member of its Contributors group.'
 
 /** Login names, however they were typed: commas, spaces, one per line. */
 function parseNames(text: string): string[] {
@@ -39,8 +34,9 @@ function parseNames(text: string): string[] {
 }
 
 /**
- * Asking for access to something that already exists — a whole project, or
- * one repository in it — for yourself or for people you work with.
+ * Asking for access to an existing project, for yourself or people you work
+ * with. It is always Contribute on the whole project; the only choices are
+ * which project and who.
  */
 export function GrantAccessPage() {
   const title = REQUEST_TYPES.find((type) => type.kind === 'grant_access')!.title
@@ -51,9 +47,6 @@ export function GrantAccessPage() {
 
   const [collection, setCollection] = useState('')
   const [project, setProject] = useState('')
-  const [scope, setScope] = useState<'project' | 'repository'>('repository')
-  const [repository, setRepository] = useState('')
-  const [level, setLevel] = useState<AccessLevel>('contribute')
   // Most people ask for themselves; start there and let them add others.
   const [people, setPeople] = useState(session?.uid ?? '')
   const [justification, setJustification] = useState('')
@@ -68,24 +61,12 @@ export function GrantAccessPage() {
     () => (collection ? requestsApi.projects(collection) : Promise.resolve([])),
     [collection],
   )
-  const repositories = useResource(
-    () => (collection && project ? requestsApi.repositories(collection, project) : Promise.resolve([])),
-    [collection, project],
-  )
 
   const grantees = useMemo(() => parseNames(people), [people])
-  const target: Target | null = useMemo(() => {
-    if (!collection || !project || grantees.length === 0) return null
-    if (scope === 'repository' && !repository) return null
-    return {
-      kind: 'grant_access',
-      collection,
-      project,
-      ...(scope === 'repository' ? { repository } : {}),
-      grantees,
-      accessLevel: level,
-    }
-  }, [collection, project, scope, repository, grantees, level])
+  const target: Target | null = useMemo(
+    () => (collection && project && grantees.length > 0 ? { kind: 'grant_access', collection, project, grantees } : null),
+    [collection, project, grantees],
+  )
 
   // The same rules the API applies on submit, asked as they type.
   const checkKey = target ? JSON.stringify(target) : ''
@@ -149,13 +130,11 @@ export function GrantAccessPage() {
     )
   }
 
-  const pathParts = [collection || '…', project || '…', ...(scope === 'repository' ? [repository || '…'] : [])]
-
   return (
     <div>
       <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
       <p className="mt-1 text-muted-foreground">
-        Access to a project or repository that already exists, granted once someone in DevOps approves it.
+        Contribute access to a project that already exists, granted once someone in DevOps approves it.
       </p>
 
       <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]">
@@ -173,7 +152,6 @@ export function GrantAccessPage() {
                 onValueChange={(value) => {
                   setCollection(value)
                   setProject('')
-                  setRepository('')
                 }}
               >
                 <SelectTrigger id="collection" className="w-full">
@@ -190,60 +168,14 @@ export function GrantAccessPage() {
             )}
           </Field>
 
-          <Field label="Project" htmlFor="project">
+          <Field label="Project" htmlFor="project" hint={GRANTS}>
             <ProjectPicker
               id="project"
               projects={projects.data ?? []}
               value={project}
-              onChange={(value) => {
-                setProject(value)
-                setRepository('')
-              }}
+              onChange={setProject}
               loading={!collection || projects.loading}
             />
-          </Field>
-
-          <Field label="Access to" htmlFor="scope">
-            <ToggleGroup
-              id="scope"
-              type="single"
-              variant="outline"
-              value={scope}
-              // Clicking the pressed item would clear it; one is always chosen.
-              onValueChange={(value) => value && setScope(value as typeof scope)}
-            >
-              <ToggleGroupItem value="repository">One repository</ToggleGroupItem>
-              <ToggleGroupItem value="project">The whole project</ToggleGroupItem>
-            </ToggleGroup>
-          </Field>
-
-          {scope === 'repository' && (
-            <Field label="Repository" htmlFor="repository">
-              <ProjectPicker
-                id="repository"
-                noun="repository"
-                projects={repositories.data ?? []}
-                value={repository}
-                onChange={setRepository}
-                loading={!project || repositories.loading}
-              />
-            </Field>
-          )}
-
-          <Field label="Level" htmlFor="level" hint={LEVELS[level].detail}>
-            <ToggleGroup
-              id="level"
-              type="single"
-              variant="outline"
-              value={level}
-              onValueChange={(value) => value && setLevel(value as AccessLevel)}
-            >
-              {(Object.keys(LEVELS) as AccessLevel[]).map((key) => (
-                <ToggleGroupItem key={key} value={key}>
-                  {LEVELS[key].label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
           </Field>
 
           <Field
@@ -288,8 +220,8 @@ export function GrantAccessPage() {
         <aside className="lg:sticky lg:top-8 lg:self-start">
           <div className="rounded-lg border bg-card p-5">
             <p className="text-sm text-muted-foreground">You’re asking for</p>
-            <p className="mt-1 text-[15px] font-medium">{LEVELS[level].label} access to</p>
-            <TargetPath parts={pathParts} className="mt-1 block text-[15px]" />
+            <p className="mt-1 text-[15px] font-medium">Contribute access to</p>
+            <TargetPath parts={[collection || '…', project || '…']} className="mt-1 block text-[15px]" />
             <p className="mt-5 text-sm text-muted-foreground">For</p>
             {grantees.length === 0 ? (
               <p className="mt-1 text-sm text-muted-foreground">Nobody yet</p>

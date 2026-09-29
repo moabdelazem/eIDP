@@ -33,15 +33,8 @@ export type PortalRequest = {
 export type Target =
   | { kind: 'create_repository'; collection: string; project: string; repository: string }
   | { kind: 'create_project'; collection: string; project: string; description?: string }
-  | {
-      kind: 'grant_access'
-      collection: string
-      project: string
-      /** Absent means the whole project. */
-      repository?: string
-      grantees: string[]
-      accessLevel: AccessLevel
-    }
+  /** Always Contribute on the whole project; neither is the requester's choice. */
+  | { kind: 'grant_access'; collection: string; project: string; grantees: string[] }
 
 export type Check = { ok: true } | { ok: false; reason: string }
 
@@ -54,10 +47,6 @@ export const requestsApi = {
     ),
   check: (target: Target) =>
     api<Check>('/requests/check', { method: 'POST', body: JSON.stringify(target) }),
-  repositories: (collection: string, project: string) =>
-    api<{ name: string; description: string | null }[]>(
-      `/ado/collections/${encodeURIComponent(collection)}/projects/${encodeURIComponent(project)}/repositories`,
-    ),
   submit: (target: Target, justification: string, teamGroup?: string) =>
     api<PortalRequest>('/requests', {
       method: 'POST',

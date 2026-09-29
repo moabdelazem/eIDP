@@ -267,13 +267,16 @@ without them requests end `failed` with "Created X, but could not grant
 access", and a retry finishes once that is fixed. Rows filed before teams
 existed have `team_group` null and grant the requester alone.
 
-**Access requests** (`grant_access`) ask for Read or Contribute on something
-that already exists — one repository, or a whole project — for up to 20 people
-by login name. `check()` confirms the project and repository exist and that
-the directory knows every name, so a typo is caught on the form rather than
-after approval. On a repository they are ACEs (`READER` or `CONTRIBUTOR` in
-`access.ts`); on a project, membership of `[Project]\Readers` or
-`[Project]\Contributors`. Every name is resolved in ADO before anything is
+**Access requests** (`grant_access`) give up to 20 people, by login name,
+Contribute on a whole existing project — membership of `[Project]\Contributors`.
+Scope and level are fixed, not chosen: the API does not accept a repository or
+a level for them and `submitGrant` stores `null` and `contribute` regardless.
+Rows filed before that was fixed may carry a repository or Read, and
+`executeGrant` still honours them (ACEs via `READER`/`CONTRIBUTOR` in
+`access.ts`, or `[Project]\Readers`), so don't delete that branch while such
+rows can be pending. `check()` confirms the project exists and that the
+directory knows every name, so a typo is caught on the form rather than after
+approval. Every name is resolved in ADO before anything is
 granted, so one unknown name grants nobody rather than half the list, and a
 retry just grants again — both operations are idempotent. The form is its own
 page (`grant-access-page.tsx`); the badge says Granting/Granted, not

@@ -197,27 +197,28 @@ export async function submit(input: NewRequest, actor: Actor): Promise<RequestRe
   }
 }
 
+/**
+ * An access request is Contribute on the whole project — fixed, not chosen.
+ * Rows filed before that was fixed may name a repository or Read, and
+ * `executeGrant` still honours them.
+ */
 async function submitGrant(input: NewRequest, actor: Actor): Promise<RequestRecord> {
-  if (input.accessLevel !== 'read' && input.accessLevel !== 'contribute') {
-    throw new ApiError(400, 'invalid_request', 'Choose read or contribute access.')
-  }
+  input = { ...input, repository: undefined, accessLevel: 'contribute' }
   const verdict = await check(input)
   if (!verdict.ok) throw new ApiError(409, 'request_not_possible', verdict.reason)
   const { rows } = await query<Row>(
     `insert into requests
        (kind, collection, project, repository, justification,
         requested_by, requested_by_name, grantees, access_level)
-     values ('grant_access', $1, $2, $3, $4, $5, $6, $7, $8)
+     values ('grant_access', $1, $2, null, $3, $4, $5, $6, 'contribute')
      returning *`,
     [
       input.collection,
       input.project,
-      input.repository?.trim() || null,
       input.justification.trim(),
       actor.uid,
       actor.name,
       uniqueNames(input.grantees ?? []),
-      input.accessLevel,
     ],
   )
   return toRecord(rows[0]!)

@@ -21,10 +21,9 @@ const Target = z.discriminatedUnion('kind', [
     kind: z.literal('grant_access'),
     collection: z.string().min(1),
     project: z.string().min(1),
-    // Absent means the whole project.
-    repository: z.string().max(256).optional(),
+    // Always the whole project, always Contribute — neither is the
+    // requester's choice, so neither is accepted.
     grantees: z.array(z.string().max(256)).max(100),
-    accessLevel: z.enum(['read', 'contribute']),
   }),
 ])
 

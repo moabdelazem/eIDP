@@ -317,30 +317,42 @@ const grantRequest = (extra: Record<string, unknown> = {}) => ({
   kind: 'grant_access',
   collection: 'DefaultCollection',
   project: 'AgriLand',
-  repository: 'agriland-api',
   grantees: ['bob', 'carol'],
-  accessLevel: 'read',
   justification: 'Joining the AgriLand work.',
   ...extra,
 })
+
+/** Account names in a project group, by the group's short name. */
+function membersOf(project: string, group: string): string[] {
+  const container = fake.identities.find((i) => i.providerDisplayName === `[${project}]\\${group}`)!
+  return [...(fake.members.get(container.id) ?? [])].map(
+    (id) => fake.identities.find((i) => i.id === id)!.properties.Account.$value,
+  )
+}
 
 test('an access request is checked against what exists and who the directory knows', async () => {
   const check = async (body: unknown) => json(await call('bob', 'POST', '/requests/check', body))
   assert.deepEqual(await check(grantRequest()), { ok: true })
   assert.match(String((await check(grantRequest({ grantees: ['bob', 'nobody'] }))).reason), /no account called nobody/)
-  assert.match(String((await check(grantRequest({ repository: 'missing' }))).reason), /no repository called missing/)
   assert.match(String((await check(grantRequest({ project: 'Nope' }))).reason), /There is no project Nope/)
   assert.match(String((await check(grantRequest({ grantees: [' '] }))).reason), /at least one person/)
 })
 
-test('approving read access to a repository grants read, and only read, to each person', async () => {
-  const { READER } = await import('../integrations/ado/index.ts')
-  const created = await json<{ id: string; grantees: string[]; teamGroup: null }>(
-    await call('bob', 'POST', '/requests', grantRequest({ grantees: ['bob', 'carol', 'BOB'] })),
+test('an access request is Contribute on the whole project, whatever the body asks for', async () => {
+  const created = await json<{ id: string; grantees: string[]; teamGroup: null; repository: null; accessLevel: string }>(
+    await call(
+      'bob',
+      'POST',
+      '/requests',
+      // A repository and a lower level are not the requester's to choose.
+      grantRequest({ grantees: ['bob', 'carol', 'BOB'], repository: 'agriland-api', accessLevel: 'read' }),
+    ),
   )
   // Duplicates by case are folded; no team is involved in an access request.
   assert.deepEqual(created.grantees, ['bob', 'carol'])
   assert.equal(created.teamGroup, null)
+  assert.equal(created.repository, null)
+  assert.equal(created.accessLevel, 'contribute')
 
   // A second person asking for the same access at the same time is fine.
   assert.equal((await call('carol', 'POST', '/requests', grantRequest({ grantees: ['carol'] }))).status, 201)
@@ -348,22 +360,8 @@ test('approving read access to a repository grants read, and only read, to each 
   await call('alice', 'POST', `/requests/${created.id}/approve`, {})
   const done = await settled(created.id)
   assert.equal(done.status, 'completed')
-  assert.match(done.resultUrl!, /\/_git\/agriland-api$/)
-  assert.equal(accessOn('agriland-api', 'bob'), READER)
-  assert.equal(accessOn('agriland-api', 'carol'), READER)
-})
-
-test('contribute access to a whole project joins its Contributors group', async () => {
-  const created = await json<{ id: string }>(
-    await call('bob', 'POST', '/requests', grantRequest({ repository: undefined, grantees: ['carol'], accessLevel: 'contribute' })),
-  )
-  await call('alice', 'POST', `/requests/${created.id}/approve`, {})
-  assert.equal((await settled(created.id)).status, 'completed')
-  const group = fake.identities.find((i) => i.providerDisplayName === '[AgriLand]\\Contributors')!
-  const carol = fake.identities.find((i) => i.properties.Account.$value === 'carol')!
-  assert.ok(fake.members.get(group.id)?.has(carol.id))
-})
-
-test('an access request needs a level', async () => {
-  assert.equal((await call('bob', 'POST', '/requests', grantRequest({ accessLevel: 'admin' }))).status, 400)
+  assert.match(done.resultUrl!, /\/DefaultCollection\/AgriLand$/)
+  assert.deepEqual(membersOf('AgriLand', 'Contributors').sort(), ['bob', 'carol'])
+  assert.deepEqual(membersOf('AgriLand', 'Readers'), [])
+  assert.equal(accessOn('agriland-api', 'carol'), undefined)
 })

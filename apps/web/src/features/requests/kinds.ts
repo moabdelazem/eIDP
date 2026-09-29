@@ -55,7 +55,7 @@ export const REQUEST_TYPES: RequestType[] = [
     provider: 'azure-devops',
     label: 'Access',
     title: 'Access to Azure DevOps',
-    description: 'Read or contribute on a project or repository',
+    description: 'Contribute on an existing project',
     icon: KeyRound,
     path: '/requests/new/azure-devops/access',
     kind: 'grant_access',
