@@ -19,6 +19,7 @@ const app = createApp()
  */
 const DEVOPS_ONLY: [method: string, path: string][] = [
   ['GET', '/requests/pool'],
+  ['GET', '/requests/history'],
   ['POST', '/requests/00000000-0000-0000-0000-000000000000/approve'],
   ['POST', '/requests/00000000-0000-0000-0000-000000000000/reject'],
   ['POST', '/requests/00000000-0000-0000-0000-000000000000/retry'],
@@ -238,6 +239,11 @@ test('a team lead decides access requests for their scope, and nothing else', as
   const rejected = await call(dave, 'POST', `/requests/${inScope}/reject`, { note: 'Ask your manager first.' })
   assert.equal(rejected.status, 200)
   assert.equal((await json<{ decidedBy: string }>(rejected)).decidedBy, 'dave')
+
+  // The history holds the same scope: dave's decided request, not the others.
+  const history = (await json<{ id: string }[]>(await call(dave, 'GET', '/requests/history'))).map((r) => r.id)
+  assert.ok(history.includes(inScope))
+  assert.ok(!history.includes(otherProject) && !history.includes(creation))
 
   // DevOps still decide everything.
   assert.equal((await call(alice, 'POST', `/requests/${otherProject}/reject`, { note: 'no' })).status, 200)

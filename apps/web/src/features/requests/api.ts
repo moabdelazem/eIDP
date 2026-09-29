@@ -56,6 +56,8 @@ export const requestsApi = {
     }),
   mine: () => api<PortalRequest[]>('/requests/mine'),
   pool: () => api<{ open: PortalRequest[]; recent: PortalRequest[] }>('/requests/pool'),
+  /** Every request the viewer may decide, newest first — capped at the API's HISTORY_LIMIT. */
+  history: () => api<PortalRequest[]>('/requests/history'),
   get: (id: string) => api<PortalRequest>(`/requests/${encodeURIComponent(id)}`),
   cancel: (id: string) => api<PortalRequest>(`/requests/${id}/cancel`, { method: 'POST' }),
   approve: (id: string) =>

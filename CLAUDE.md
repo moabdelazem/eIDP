@@ -418,6 +418,14 @@ can overlap, and two fetches into one checkout fight over git's lock.
   never red. Output goes in via `dangerouslySetInnerHTML`, which is safe only
   because Shiki escapes every token; keep it that way. The effect keys on the
   serialised text, not the `data` object, because callers build it inline.
+- **Requests can be read as cards or as a table.** `RequestStats` is a row of
+  counts per status; each tile is a filter. `RequestsTable` (shadcn `Table`)
+  searches, filters, sorts and pages — in the browser, over what the API sent
+  (see the `ponytail:` note there). My requests switches with `?view=table`;
+  Approvals has Queue and History tabs (`?tab=history`), the history coming
+  from `GET /requests/history`, scoped like the queue. Tiles and the table's
+  status filter share `STATUS_NAME` ("Done"), which is not the badge's wording
+  ("Created"/"Granted") on purpose: a filter names the state, not the kind.
 - **Pages use the width.** `components/page-layout.tsx` holds the shapes:
   `PAGE` (the one width cap, shared with the Overview), `PageHeader`,
   `Split` (a main column plus a 20–22rem side column that stacks under it

@@ -255,6 +255,23 @@ export async function listPool(access: Access): Promise<{ open: RequestRecord[];
   return { open: all.open.filter((r) => decidable.has(r.id)), recent: all.recent.filter((r) => decidable.has(r.id)) }
 }
 
+/**
+ * Every request `access` may decide, newest first — the approvals history.
+ * DevOps see all of them; a team lead, only access requests in their scope.
+ *
+ * ponytail: the newest `HISTORY_LIMIT`, filtered in the browser. Past that,
+ * page it here with the filters as query parameters.
+ */
+export async function listHistory(access: Access): Promise<RequestRecord[]> {
+  const { rows } = await query<Row>('select * from requests order by requested_at desc limit $1', [HISTORY_LIMIT])
+  const all = rows.map(toRecord)
+  if (can(access, 'requests.decide')) return all
+  const decidable = await decidableBy(access, all)
+  return all.filter((r) => decidable.has(r.id))
+}
+
+export const HISTORY_LIMIT = 1000
+
 /** A request, if this person may see it: their own, or one they may decide — and whether they may. */
 export async function get(id: string, actor: Actor, access: Access): Promise<RequestRecord & { canDecide: boolean }> {
   const request = await find(id)

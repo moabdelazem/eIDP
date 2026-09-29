@@ -1,12 +1,16 @@
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
-import { Link } from 'react-router'
+import { useState } from 'react'
+import { ChevronDown, ChevronRight, LayoutList, Plus, Table2 } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Facts, PAGE, PageHeader, Section, Split } from '@/components/page-layout.tsx'
+import { PAGE, PageHeader, Section, Split } from '@/components/page-layout.tsx'
 import { Loading, RowsSkeleton } from '@/components/skeletons.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
-import { isInFlight, requestsApi, type PortalRequest } from './api.ts'
+import { isInFlight, requestsApi, type PortalRequest, type RequestStatus } from './api.ts'
+import { RequestStats } from './request-stats.tsx'
+import { RequestsTable } from './requests-table.tsx'
 import { isAvailable, typesByProvider } from './kinds.ts'
 import { NewRequestMenuContent } from './new-request-menu.tsx'
 import { RequestRow } from './request-row.tsx'
@@ -14,41 +18,110 @@ import { RequestRow } from './request-row.tsx'
 export function MyRequestsPage() {
   usePageTitle('My requests')
   const mine = useResource(() => requestsApi.mine(), [], { pollMs: 10_000 })
+  const [view, setView] = useView()
+  const [status, setStatus] = useState<RequestStatus | 'all'>('all')
+  const has = mine.data && mine.data.length > 0
 
   return (
     <div className={PAGE}>
       <PageHeader
         title="My requests"
         description="Everything you have asked DevOps for, newest first."
-        actions={<NewButton />}
-      />
-
-      <Split
-        aside={
+        actions={
           <>
-            {mine.data && mine.data.length > 0 && <Summary requests={mine.data} />}
-            <AskFor />
+            {has && <ViewToggle view={view} onView={setView} />}
+            <NewButton />
           </>
         }
-      >
-        {mine.error && !mine.data ? (
-          <p className="text-sm text-destructive">{mine.error}</p>
-        ) : !mine.data ? (
-          <Loading label="Loading your requests…">
-            <RowsSkeleton rows={5} />
-          </Loading>
-        ) : mine.data.length === 0 ? (
-          <div className="rounded-xl border border-dashed p-10 text-center">
-            <p className="font-medium">You haven’t asked for anything yet</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Pick something from the list beside this, and follow it here until it exists.
-            </p>
-          </div>
-        ) : (
-          <Sections requests={mine.data} />
-        )}
-      </Split>
+      />
+
+      {has && (
+        <div className="mt-6">
+          <RequestStats
+            requests={mine.data!}
+            active={status}
+            onPick={(next) => {
+              setStatus(next)
+              // A count is a question about history; the table answers it.
+              if (next !== 'all') setView('table')
+            }}
+          />
+        </div>
+      )}
+
+      {has && view === 'table' ? (
+        <div className="mt-6">
+          <RequestsTable requests={mine.data!} status={status} onStatus={setStatus} />
+        </div>
+      ) : (
+        <Split
+          aside={
+            <>
+              <AskFor />
+            </>
+          }
+        >
+          {mine.error && !mine.data ? (
+            <p className="text-sm text-destructive">{mine.error}</p>
+          ) : !mine.data ? (
+            <Loading label="Loading your requests…">
+              <RowsSkeleton rows={5} />
+            </Loading>
+          ) : mine.data.length === 0 ? (
+            <div className="rounded-xl border border-dashed p-10 text-center">
+              <p className="font-medium">You haven’t asked for anything yet</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Pick something from the list beside this, and follow it here until it exists.
+              </p>
+            </div>
+          ) : (
+            <Sections requests={mine.data} />
+          )}
+        </Split>
+      )}
     </div>
+  )
+}
+
+type View = 'list' | 'table'
+
+/** The view lives in the URL, so a reload or a shared link keeps it. */
+export function useView(): [View, (view: View) => void] {
+  const [params, setParams] = useSearchParams()
+  const view: View = params.get('view') === 'table' ? 'table' : 'list'
+  return [
+    view,
+    (next) =>
+      setParams(
+        (current) => {
+          const copy = new URLSearchParams(current)
+          if (next === 'list') copy.delete('view')
+          else copy.set('view', next)
+          return copy
+        },
+        { replace: true },
+      ),
+  ]
+}
+
+export function ViewToggle({ view, onView }: { view: View; onView: (view: View) => void }) {
+  return (
+    <ToggleGroup
+      type="single"
+      variant="outline"
+      size="sm"
+      value={view}
+      aria-label="View"
+      // Clicking the pressed item would clear it; one view is always chosen.
+      onValueChange={(value) => value && onView(value as View)}
+    >
+      <ToggleGroupItem value="list" aria-label="List">
+        <LayoutList /> List
+      </ToggleGroupItem>
+      <ToggleGroupItem value="table" aria-label="Table">
+        <Table2 /> Table
+      </ToggleGroupItem>
+    </ToggleGroup>
   )
 }
 
@@ -73,25 +146,6 @@ function Group({ title, requests }: { title: string; requests: PortalRequest[] }
           </li>
         ))}
       </ul>
-    </Section>
-  )
-}
-
-/** How things stand, counted — what someone scans the page for first. */
-function Summary({ requests }: { requests: PortalRequest[] }) {
-  const count = (test: (r: PortalRequest) => boolean) => requests.filter(test).length
-  const failed = count((r) => r.status === 'failed')
-  return (
-    <Section title="At a glance">
-      <Facts
-        items={[
-          ['Waiting', count((r) => r.status === 'pending')],
-          ['Done', count((r) => r.status === 'completed')],
-          ['Rejected', count((r) => r.status === 'rejected')],
-          // Red only when DevOps has something to retry.
-          ['Failed', <span className={failed > 0 ? 'font-medium text-destructive' : ''}>{failed}</span>],
-        ]}
-      />
     </Section>
   )
 }

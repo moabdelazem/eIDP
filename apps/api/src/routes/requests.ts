@@ -62,6 +62,8 @@ export const requestRoutes = new Hono<AppEnv>()
 
   .get('/pool', decider, async (c) => c.json(await requests.listPool(await accessFrom(c))))
 
+  .get('/history', decider, async (c) => c.json(await requests.listHistory(await accessFrom(c))))
+
   .post('/:id/approve', decider, validate('json', Decision), async (c) =>
     c.json(await requests.approve(c.req.param('id'), actor(c), await accessFrom(c), c.req.valid('json').note)),
   )

@@ -1,7 +1,8 @@
 import { Check, CircleDashed, FolderGit2, FolderKanban, KeyRound, Loader2, TriangleAlert, X, type LucideIcon } from 'lucide-react'
 import type { PortalRequest, RequestKind, RequestStatus } from './api.ts'
 
-const LABEL: Record<RequestStatus, string> = {
+/** What each status is called in a badge. Access requests say Granting/Granted instead. */
+const STATUS_LABEL: Record<RequestStatus, string> = {
   pending: 'Waiting for DevOps',
   approved: 'Creating',
   completed: 'Created',
@@ -54,7 +55,7 @@ export function StatusBadge({ status, kind }: { status: RequestStatus; kind?: Re
       ].join(' ')}
     >
       <Icon className={`size-3.5 ${status === 'approved' ? 'animate-spin motion-reduce:animate-none' : ''}`} />
-      {(kind === 'grant_access' && GRANT_LABEL[status]) || LABEL[status]}
+      {(kind === 'grant_access' && GRANT_LABEL[status]) || STATUS_LABEL[status]}
     </span>
   )
 }
