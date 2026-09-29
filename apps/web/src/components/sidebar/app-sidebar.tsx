@@ -23,8 +23,9 @@ export function AppSidebar() {
       <SidebarHeader>
         <div className="flex items-center gap-2 px-2 py-1.5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
           <img src={logo} alt="" className="size-6 shrink-0" />
-          <span className="font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-            e-IDP
+          <span className="grid leading-tight group-data-[collapsible=icon]:hidden">
+            <span className="font-semibold tracking-tight">e-IDP</span>
+            <span className="text-xs text-rail-muted">DEVOPS Portal</span>
           </span>
         </div>
       </SidebarHeader>

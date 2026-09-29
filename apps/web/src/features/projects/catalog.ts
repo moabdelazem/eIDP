@@ -21,7 +21,11 @@ export type System = {
   id: string
   projectName: string
   company: string | null
-  teams: Partial<Record<Environment, string>>
+  /**
+   * Environment to owning team, from every `<env>_team` key in group_vars/all
+   * — including stress and preprod, which no application deploys to by name.
+   */
+  teams: Record<string, string>
   applications: Application[]
 }
 

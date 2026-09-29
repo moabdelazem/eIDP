@@ -24,7 +24,7 @@ test('systems land with their ownership intact', () => {
   const agriland = catalog.find((s) => s.id === 'AgriLand')
   assert.ok(agriland)
   assert.equal(agriland.company, 'eFinance')
-  assert.deepEqual(agriland.teams, { dev: 'DEVdotNET', qc: 'QC', uat: 'DEVOPS', prd: 'DEVOPS' })
+  assert.deepEqual(agriland.teams, { dev: 'DEVdotNET', qc: 'QC', stress: 'QC', uat: 'DEVOPS', preprod: 'DEVOPS', prd: 'DEVOPS' })
   assert.deepEqual(catalog.find((s) => s.id === 'NBFS')?.approvers, ['DEVOPS', 'SECURITY'])
 })
 

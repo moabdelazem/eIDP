@@ -101,7 +101,7 @@ function foldEnvironments(system: ApiSystem): System {
     id: system.id,
     projectName: system.projectName,
     company: system.company,
-    teams: system.teams as System['teams'],
+    teams: system.teams,
     applications: [...byName.values()].sort((a, b) => a.name.localeCompare(b.name)),
   }
 }

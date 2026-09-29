@@ -54,6 +54,8 @@ export function ProjectPage() {
   // so a gap — built for dev and qc, never promoted — is visible at a glance.
   const environments = app.environments.includes('prd_dr') ? [...PROMOTION, 'prd_dr' as const] : PROMOTION
 
+  const otherTeams = Object.entries(system.teams).filter(([env]) => !(environments as string[]).includes(env))
+
   const facts: [string, React.ReactNode][] = [
     ['System', <Link to={`/map?q=${encodeURIComponent(system.projectName)}`} className="underline underline-offset-2">{system.projectName}</Link>],
     ['Repository', app.repository ? <code>{app.repository}</code> : null],
@@ -117,6 +119,13 @@ export function ProjectPage() {
                   })}
                 </tbody>
               </table>
+              {otherTeams.length > 0 && (
+                // Owned stages no application group is named after — stress,
+                // preprod. Listed so the page shows every owner team.yml names.
+                <div className="mt-3 border-t pt-3">
+                  <Facts items={otherTeams.map(([env, team]) => [env, team])} />
+                </div>
+              )}
             </Section>
 
             {siblings.length > 0 && (

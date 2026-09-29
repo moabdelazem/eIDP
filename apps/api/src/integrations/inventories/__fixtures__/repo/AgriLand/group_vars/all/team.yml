@@ -1,0 +1,19 @@
+# The real repo's layout: ownership in team.yml, beside project.yml.
+company: eFinance
+automatic_deploy_to_qc: "false"
+dev_team: DEVdotNET
+qc_team: QC
+stress_team: QC
+uat_team: DEVOPS
+preprod_team: DEVOPS
+prd_team: DEVOPS
+dev_team_list:
+  -
+ops_team_list:
+  - DEVOPS
+prd_approvers:
+  - DEVOPS
+preprod_approvers:
+  - DEVOPS
+project_managers:
+  - DEVOPS

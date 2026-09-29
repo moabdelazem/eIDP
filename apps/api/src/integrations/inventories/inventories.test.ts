@@ -18,12 +18,22 @@ test('a directory without group_vars is not a system', () => {
   )
 })
 
-test('system metadata comes from group_vars/all/project.yml', () => {
+test('system metadata is every file in group_vars/all, merged — team.yml included', () => {
+  // AgriLand keeps ownership in team.yml beside project.yml, as the real repo
+  // does; NBFS keeps it all in project.yml. Both must read the same way.
   const agriland = byDir('AgriLand')
   assert.equal(agriland.projectName, 'AgriLand')
   assert.equal(agriland.company, 'eFinance')
-  assert.deepEqual(agriland.teams, { dev: 'DEVdotNET', qc: 'QC', uat: 'DEVOPS', prd: 'DEVOPS' })
+  assert.deepEqual(agriland.teams, {
+    dev: 'DEVdotNET',
+    qc: 'QC',
+    stress: 'QC',
+    uat: 'DEVOPS',
+    preprod: 'DEVOPS',
+    prd: 'DEVOPS',
+  })
   assert.deepEqual(agriland.approvers, ['DEVOPS'])
+  assert.deepEqual(byDir('NBFS').teams, { prd: 'DEVOPS' })
   assert.deepEqual(byDir('NBFS').approvers, ['DEVOPS', 'SECURITY'])
 })
 

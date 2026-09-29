@@ -163,6 +163,13 @@ later files replacing earlier top-level keys — so `dotnet.yml` overrides
 `cicd.yml` but `Spring.yml` (capitals sort first) is overridden by it. Don't
 "fix" that to `localeCompare`; it would stop matching what deployments get.
 
+A **system** is read the same way: every file in `group_vars/all`, merged.
+Ownership lives in `team.yml` there, beside `project.yml` — `<env>_team` for
+each stage (stress and preprod included), `prd_approvers`,
+`project_managers`, `ops_team_list`. Reading `project.yml` alone left every
+system without teams, which also left team-scoped access bindings matching
+nothing.
+
 Reading is lenient because the repo is hand-maintained and Ansible is: a
 duplicate key keeps the last value, and a file that still will not parse is
 skipped and named in the sync's `warnings` rather than failing the whole

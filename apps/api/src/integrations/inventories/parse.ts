@@ -38,8 +38,11 @@ export type InventorySystem = {
   dir: string
   projectName: string
   company: string | null
-  /** Environment to owning team, from project.yml's `<env>_team` keys. */
-  teams: Partial<Record<Environment, string>>
+  /**
+   * Environment to owning team, from every `<env>_team` key in group_vars/all —
+   * stress and preprod included, not only the environments applications use.
+   */
+  teams: Record<string, string>
   approvers: string[]
   managers: string[]
   opsTeams: string[]
@@ -119,12 +122,15 @@ async function readSystemMeta(
   dir: string,
   walk: Walk,
 ): Promise<Omit<InventorySystem, 'applications'>> {
-  const project = await readYaml(join(groupVars, 'all', 'project.yml'), walk)
+  // Every file in group_vars/all, merged as Ansible merges it: the teams live
+  // in team.yml beside project.yml, and reading project.yml alone left every
+  // system ownerless — which also left team-scoped access rules matching nothing.
+  const project = await readGroupVars(join(groupVars, 'all'), walk)
 
-  const teams: Partial<Record<Environment, string>> = {}
-  for (const env of ENVIRONMENTS) {
-    const team = project[`${env}_team`]
-    if (typeof team === 'string' && team.trim()) teams[env] = team.trim()
+  const teams: Record<string, string> = {}
+  for (const [key, value] of Object.entries(project)) {
+    const env = /^(.+)_team$/.exec(key)?.[1]
+    if (env && typeof value === 'string' && value.trim()) teams[env] = value.trim()
   }
 
   const policy = { ...project }
