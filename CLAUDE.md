@@ -141,6 +141,11 @@ two paths is not worth it). They draw in their product blues by default, the
 one place colour comes from outside the palette, because that is how people
 recognise them; pass `tone="current"` where colour would be noise. Each
 provider in `kinds.ts` carries its mark, so a new provider brings its own.
+Jenkins is the exception: its brand colour is red, and red here means "act",
+so `JenkinsIcon` defaults to the text colour.
+
+The Jenkins **pipeline** request is listed as Soon (`kind: null`) — what it
+does is still to be specified, so it has no form, route or API kind yet.
 
 Archivo for UI, JetBrains Mono for identifiers the user can copy (repo paths,
 DNs, pipeline ids) and nothing else.

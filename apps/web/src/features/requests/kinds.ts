@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react'
-import { ClipboardList, FolderGit2, FolderKanban, KeyRound, type LucideIcon } from 'lucide-react'
-import { AzureDevOpsIcon, JiraIcon } from '@/components/brand-icons.tsx'
+import { ClipboardList, FolderGit2, FolderKanban, KeyRound, Workflow, type LucideIcon } from 'lucide-react'
+import { AzureDevOpsIcon, JenkinsIcon, JiraIcon } from '@/components/brand-icons.tsx'
 import type { RequestKind } from './api.ts'
 
 /**
@@ -10,11 +10,12 @@ import type { RequestKind } from './api.ts'
  * form, not six scattered edits.
  */
 
-export type ProviderId = 'azure-devops' | 'jira'
+export type ProviderId = 'azure-devops' | 'jira' | 'jenkins'
 
 export const PROVIDERS: { id: ProviderId; label: string; icon: ComponentType<{ className?: string; tone?: 'brand' | 'current' }> }[] = [
   { id: 'azure-devops', label: 'Azure DevOps', icon: AzureDevOpsIcon },
   { id: 'jira', label: 'Jira', icon: JiraIcon },
+  { id: 'jenkins', label: 'Jenkins', icon: JenkinsIcon },
 ]
 
 export type RequestType = {
@@ -71,6 +72,16 @@ export const REQUEST_TYPES: RequestType[] = [
     path: '/requests/new/jira/project',
     // Shown so the menu's shape is honest about what is coming, but not
     // offered until the integration exists.
+    kind: null,
+  },
+  {
+    provider: 'jenkins',
+    label: 'Pipeline',
+    title: 'New Jenkins pipeline',
+    description: 'A build and deploy pipeline for an application',
+    icon: Workflow,
+    path: '/requests/new/jenkins/pipeline',
+    // Soon: what creating one involves is still to be specified.
     kind: null,
   },
 ]
