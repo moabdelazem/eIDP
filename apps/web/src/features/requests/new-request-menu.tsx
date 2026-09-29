@@ -20,7 +20,10 @@ export function NewRequestMenuContent(props: React.ComponentProps<typeof Dropdow
       {typesByProvider().map(({ provider, types }, index) => (
         <Fragment key={provider.id}>
           {index > 0 && <DropdownMenuSeparator />}
-          <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">{provider.label}</DropdownMenuLabel>
+          <DropdownMenuLabel className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+            <provider.icon className="size-3.5" />
+            {provider.label}
+          </DropdownMenuLabel>
           <DropdownMenuGroup>
             {types.map((type) =>
               isAvailable(type) ? (

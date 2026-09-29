@@ -1,4 +1,6 @@
+import type { ComponentType } from 'react'
 import { ClipboardList, FolderGit2, FolderKanban, KeyRound, type LucideIcon } from 'lucide-react'
+import { AzureDevOpsIcon, JiraIcon } from '@/components/brand-icons.tsx'
 import type { RequestKind } from './api.ts'
 
 /**
@@ -10,9 +12,9 @@ import type { RequestKind } from './api.ts'
 
 export type ProviderId = 'azure-devops' | 'jira'
 
-export const PROVIDERS: { id: ProviderId; label: string }[] = [
-  { id: 'azure-devops', label: 'Azure DevOps' },
-  { id: 'jira', label: 'Jira' },
+export const PROVIDERS: { id: ProviderId; label: string; icon: ComponentType<{ className?: string; tone?: 'brand' | 'current' }> }[] = [
+  { id: 'azure-devops', label: 'Azure DevOps', icon: AzureDevOpsIcon },
+  { id: 'jira', label: 'Jira', icon: JiraIcon },
 ]
 
 export type RequestType = {

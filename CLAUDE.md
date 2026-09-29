@@ -127,6 +127,13 @@ Light is the only theme in use — `<html>` carries no `dark` class. The `.dark`
 token block in `src/index.css` is kept and works, but nothing switches to it
 yet. Design and check against light.
 
+Azure DevOps and Jira appear by their own marks (`components/brand-icons.tsx`,
+paths from Simple Icons, CC0 — Lucide has no brand icons, and a package for
+two paths is not worth it). They draw in their product blues by default, the
+one place colour comes from outside the palette, because that is how people
+recognise them; pass `tone="current"` where colour would be noise. Each
+provider in `kinds.ts` carries its mark, so a new provider brings its own.
+
 Archivo for UI, JetBrains Mono for identifiers the user can copy (repo paths,
 DNs, pipeline ids) and nothing else.
 

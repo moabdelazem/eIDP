@@ -3,6 +3,7 @@ import { ExternalLink } from 'lucide-react'
 import { useParams } from 'react-router'
 import { DataView } from '@/components/data-view.tsx'
 import { EmptyState } from '@/components/empty-state.tsx'
+import { AzureDevOpsIcon } from '@/components/brand-icons.tsx'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -143,7 +144,7 @@ function OutcomeStep({ request: r }: { request: PortalRequest }) {
         {r.resultUrl && (
           <Button asChild variant="outline" size="sm" className="mt-3">
             <a href={r.resultUrl} target="_blank" rel="noreferrer">
-              Open in Azure DevOps <ExternalLink />
+              <AzureDevOpsIcon /> Open in Azure DevOps <ExternalLink />
             </a>
           </Button>
         )}

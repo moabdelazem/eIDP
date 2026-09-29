@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Check, TriangleAlert } from 'lucide-react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
+import { AzureDevOpsIcon } from '@/components/brand-icons.tsx'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -118,7 +119,10 @@ export function GrantAccessPage() {
   if (collections.error) {
     return (
       <div className="max-w-prose">
-        <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
+        <h1 className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
+          <AzureDevOpsIcon className="size-5" />
+          {title}
+        </h1>
         <p className="mt-2 text-muted-foreground">
           Azure DevOps can’t be reached right now, so there is nothing to choose from.
         </p>
@@ -132,7 +136,10 @@ export function GrantAccessPage() {
 
   return (
     <div>
-      <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
+      <h1 className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
+          <AzureDevOpsIcon className="size-5" />
+          {title}
+        </h1>
       <p className="mt-1 text-muted-foreground">
         Contribute access to a project that already exists, granted once someone in DevOps approves it.
       </p>

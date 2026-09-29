@@ -159,7 +159,10 @@ function AskFor() {
     <Section title="Ask for something" flush>
       {typesByProvider().map(({ provider, types }) => (
         <div key={provider.id} className="border-b last:border-b-0">
-          <p className="px-4 pt-3 pb-1 text-xs font-medium text-muted-foreground">{provider.label}</p>
+          <p className="flex items-center gap-2 px-4 pt-3 pb-1 text-xs font-medium text-muted-foreground">
+            <provider.icon className="size-3.5" />
+            {provider.label}
+          </p>
           <ul>
             {types.map((type) => (
               <li key={type.path}>

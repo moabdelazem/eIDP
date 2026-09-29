@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Check, TriangleAlert } from 'lucide-react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
+import { AzureDevOpsIcon } from '@/components/brand-icons.tsx'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { Input } from '@/components/ui/input'
@@ -128,7 +129,10 @@ export function NewRequestPage({ kind }: { kind: CreationKind }) {
   if (collections.error) {
     return (
       <div className="max-w-prose">
-        <h1 className="text-lg font-semibold tracking-tight">{copy.title}</h1>
+        <h1 className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
+          <AzureDevOpsIcon className="size-5" />
+          {copy.title}
+        </h1>
         <p className="mt-2 text-muted-foreground">
           Azure DevOps can’t be reached right now, so there is nothing to choose from.
         </p>
@@ -151,7 +155,10 @@ export function NewRequestPage({ kind }: { kind: CreationKind }) {
 
   return (
     <div>
-      <h1 className="text-lg font-semibold tracking-tight">{copy.title}</h1>
+      <h1 className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
+          <AzureDevOpsIcon className="size-5" />
+          {copy.title}
+        </h1>
       <p className="mt-1 text-muted-foreground">{copy.lead}</p>
 
       <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]">
