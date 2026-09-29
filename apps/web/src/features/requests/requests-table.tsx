@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Search } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Eye, Search } from 'lucide-react'
 import { Link } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { PortalRequest, RequestKind, RequestStatus } from './api.ts'
 import { STATUS_NAME } from './request-stats.tsx'
+import { RequestPreview } from './request-preview.tsx'
 import { KIND_ICON, KIND_LABEL, StatusBadge } from './status.tsx'
 
 const PAGE_SIZE = 20
@@ -38,6 +39,7 @@ export function RequestsTable({
   const [kind, setKind] = useState<RequestKind | 'all'>('all')
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'requested', desc: true })
   const [page, setPage] = useState(0)
+  const [previewing, setPreviewing] = useState<PortalRequest | null>(null)
 
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -128,12 +130,15 @@ export function RequestsTable({
             {showRequester && <SortHead label="Requested by" sortKey="requester" sort={sort} onSort={setSort} className="hidden lg:table-cell" />}
             <SortHead label="Requested" sortKey="requested" sort={sort} onSort={setSort} className="hidden sm:table-cell" />
             <SortHead label="Decided" sortKey="decided" sort={sort} onSort={setSort} className="hidden xl:table-cell" />
+            <TableHead className="w-12">
+              <span className="sr-only">Preview</span>
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {shown.length === 0 ? (
             <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+              <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                 No requests match.
               </TableCell>
             </TableRow>
@@ -171,6 +176,17 @@ export function RequestsTable({
                       '—'
                     )}
                   </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-8"
+                      aria-label={`Preview ${r.repository ?? r.project}`}
+                      onClick={() => setPreviewing(r)}
+                    >
+                      <Eye className="size-4" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               )
             })
@@ -193,6 +209,8 @@ export function RequestsTable({
           </Button>
         </div>
       </div>
+
+      <RequestPreview request={previewing} onClose={() => setPreviewing(null)} />
     </div>
   )
 }

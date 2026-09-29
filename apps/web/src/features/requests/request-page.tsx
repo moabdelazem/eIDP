@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ExternalLink } from 'lucide-react'
 import { useParams } from 'react-router'
-import { DataView } from '@/components/data-view.tsx'
+import { DataDialog } from '@/components/data-dialog.tsx'
 import { EmptyState } from '@/components/empty-state.tsx'
 import { AzureDevOpsIcon } from '@/components/brand-icons.tsx'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,7 @@ import { useResource } from '@/lib/use-resource.ts'
 import { isInFlight, requestsApi, targetPath, type PortalRequest } from './api.ts'
 import { decide, rejectRequest } from './decisions.ts'
 import { RejectDialog } from './reject-dialog.tsx'
+import { ApproveDialog, WithdrawDialog } from './decision-dialogs.tsx'
 import { AccessLine, KIND_LABEL, RequestName, since, StatusBadge, WrappingUrl } from './status.tsx'
 import { HeaderSkeleton, Loading, TimelineSkeleton } from '@/components/skeletons.tsx'
 import { Facts, PAGE, PageHeader, Section, Split } from '@/components/page-layout.tsx'
@@ -57,7 +58,20 @@ export function RequestPage() {
 
   return (
     <div className={PAGE}>
-      <PageHeader title={<RequestName request={r} as="h1" />} actions={<StatusBadge status={r.status} kind={r.kind} />} />
+      <PageHeader
+        title={<RequestName request={r} as="h1" />}
+        actions={
+          <>
+            <StatusBadge status={r.status} kind={r.kind} />
+            <DataDialog
+              data={r}
+              filename={`request-${r.repository ?? r.project}`}
+              title="Request data"
+              description="Everything stored for this request, as the API returns it."
+            />
+          </>
+        }
+      />
 
       <Split aside={<Details request={r} own={own} />}>
         <Section title="What happened">
@@ -78,9 +92,6 @@ export function RequestPage() {
           <Actions request={r} own={own} onChanged={request.reload} />
         </Section>
 
-        <Section title="Request data" description="Everything stored for this request, as the API returns it.">
-          <DataView data={r} filename={`request-${r.repository ?? r.project}`} />
-        </Section>
       </Split>
     </div>
   )
@@ -181,8 +192,10 @@ function Actions({
 }) {
   const [busy, setBusy] = useState(false)
   const [rejecting, setRejecting] = useState(false)
+  const [approving, setApproving] = useState(false)
+  const [withdrawing, setWithdrawing] = useState(false)
 
-  async function act(action: 'approve' | 'retry' | 'cancel') {
+  async function act(action: 'retry') {
     setBusy(true)
     if (await decide(action, r)) onChanged()
     setBusy(false)
@@ -196,8 +209,7 @@ function Actions({
 
   if (canDecide) {
     actions.push(
-      <Button key="approve" disabled={busy} onClick={() => act('approve')}>
-        {busy && <Spinner />}
+      <Button key="approve" disabled={busy} onClick={() => setApproving(true)}>
         {r.kind === 'grant_access' ? 'Approve and grant' : 'Approve and create'}
       </Button>,
       <Button key="reject" variant="outline" disabled={busy} onClick={() => setRejecting(true)}>
@@ -208,13 +220,14 @@ function Actions({
   if (approver && r.status === 'failed') {
     actions.push(
       <Button key="retry" disabled={busy} onClick={() => act('retry')}>
+        {busy && <Spinner />}
         Retry
       </Button>,
     )
   }
   if (own && r.status === 'pending') {
     actions.push(
-      <Button key="cancel" variant="ghost" disabled={busy} onClick={() => act('cancel')}>
+      <Button key="cancel" variant="ghost" disabled={busy} onClick={() => setWithdrawing(true)}>
         Withdraw request
       </Button>,
     )
@@ -229,11 +242,14 @@ function Actions({
         open={rejecting}
         onOpenChange={setRejecting}
         what={targetPath(r).join(' / ')}
+        granting={r.kind === 'grant_access'}
         onReject={async (note) => {
           await rejectRequest(r, note)
           onChanged()
         }}
       />
+      <ApproveDialog request={r} open={approving} onOpenChange={setApproving} onApproved={onChanged} />
+      <WithdrawDialog request={r} open={withdrawing} onOpenChange={setWithdrawing} onWithdrawn={onChanged} />
     </>
   )
 }

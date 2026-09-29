@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ShieldCheck } from 'lucide-react'
 import { Link } from 'react-router'
-import { DataView } from '@/components/data-view.tsx'
+import { DataDialog } from '@/components/data-dialog.tsx'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -73,6 +73,15 @@ export function ProfilePage() {
             </div>
           </div>
         }
+        actions={
+          <DataDialog
+            data={profile}
+            filename={`profile-${profile.uid}`}
+            title="What the directory returned"
+            description="The whole profile, as the API reads it — useful when a group or a field is not what you expected."
+            label="Directory data"
+          />
+        }
       />
 
       <Split
@@ -94,9 +103,6 @@ export function ProfilePage() {
           <Facts items={organisation} empty="Not set in the directory" />
         </Section>
         <Groups profile={profile} />
-        <Section title="What the directory returned" description="The whole profile, as the API reads it.">
-          <DataView data={profile} filename={`profile-${profile.uid}`} />
-        </Section>
       </Split>
     </div>
   )

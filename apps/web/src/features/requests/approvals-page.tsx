@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSession } from '@/features/auth/session-context.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
@@ -14,6 +13,7 @@ import { RequestStats } from './request-stats.tsx'
 import { RequestsTable } from './requests-table.tsx'
 import { decide, rejectRequest } from './decisions.ts'
 import { RejectDialog } from './reject-dialog.tsx'
+import { ApproveDialog } from './decision-dialogs.tsx'
 import { RequestRow } from './request-row.tsx'
 import { AccessLine, KIND_ICON, RequestName, since } from './status.tsx'
 import { CardSkeleton, HeaderSkeleton, Loading, RowsSkeleton } from '@/components/skeletons.tsx'
@@ -197,7 +197,7 @@ export function ApprovalsPage() {
 
 /** Everything needed to decide, on the card itself — no click-through required. */
 function PendingCard({ request: r, onDecided }: { request: PortalRequest; onDecided: () => void }) {
-  const [busy, setBusy] = useState(false)
+  const [approving, setApproving] = useState(false)
   const [rejecting, setRejecting] = useState(false)
   const Icon = KIND_ICON[r.kind]
 
@@ -220,27 +220,21 @@ function PendingCard({ request: r, onDecided }: { request: PortalRequest; onDeci
       <AccessLine request={r} className="mt-3" />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true)
-            if (await decide('approve', r)) onDecided()
-            setBusy(false)
-          }}
-        >
-          {busy && <Spinner />}
+        <Button size="sm" onClick={() => setApproving(true)}>
           {r.kind === 'grant_access' ? 'Approve and grant' : 'Approve and create'}
         </Button>
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => setRejecting(true)}>
+        <Button size="sm" variant="outline" onClick={() => setRejecting(true)}>
           Reject
         </Button>
       </div>
+
+      <ApproveDialog request={r} open={approving} onOpenChange={setApproving} onApproved={onDecided} />
 
       <RejectDialog
         open={rejecting}
         onOpenChange={setRejecting}
         what={targetPath(r).join(' / ')}
+        granting={r.kind === 'grant_access'}
         onReject={async (note) => {
           await rejectRequest(r, note)
           onDecided()

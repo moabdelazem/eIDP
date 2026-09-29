@@ -17,6 +17,10 @@ import {
   type Filters,
 } from './tree.ts'
 import { PageHeader } from '@/components/page-layout.tsx'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { TriangleAlert } from 'lucide-react'
 import { RefreshCatalogButton } from './refresh-catalog-button.tsx'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
@@ -134,25 +138,8 @@ export function ProjectMapPage() {
         </p>
       )}
 
-      {/* Files a sync skipped are DevOps's to fix, so only DevOps sees them. */}
-      {can('catalog.sync') && sync && sync.warnings.length > 0 && (
-        <details className="mt-3 max-w-3xl rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
-          <summary className="cursor-pointer font-medium text-destructive">
-            {sync.warnings.length} file{sync.warnings.length === 1 ? '' : 's'} in inventories could not be
-            read and {sync.warnings.length === 1 ? 'was' : 'were'} skipped
-          </summary>
-          <p className="mt-2 text-muted-foreground">
-            The rest of the map is built without them. Fix the YAML and the next sync picks them up.
-          </p>
-          <ul className="mt-2 space-y-1 font-mono text-xs">
-            {sync.warnings.map((warning) => (
-              <li key={warning} className="break-words">
-                {warning}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
+      {/* Files a sync skipped are DevOps's to fix, so only those who sync see them. */}
+      {can('catalog.sync') && sync && sync.warnings.length > 0 && <SkippedFiles files={sync.warnings} />}
     </div>
   )
 
@@ -224,5 +211,46 @@ function CatalogList({ systems }: { systems: System[] }) {
         </section>
       ))}
     </div>
+  )
+}
+
+/**
+ * The files the last sync could not read, as a one-line alert with the list in
+ * a dialog — a sync can skip dozens, and the map should not scroll past them.
+ */
+function SkippedFiles({ files }: { files: string[] }) {
+  const n = files.length
+  return (
+    <Alert variant="destructive" className="mt-3">
+      <TriangleAlert />
+      <AlertTitle>
+        {n} file{n === 1 ? '' : 's'} in inventories could not be read and {n === 1 ? 'was' : 'were'} skipped
+      </AlertTitle>
+      <AlertDescription>
+        <p>The rest of the map is built without them. Fix the YAML and the next sync picks them up.</p>
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button size="sm" variant="outline" className="mt-2">
+              Show the file{n === 1 ? '' : 's'}
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Skipped by the last sync</DialogTitle>
+              <DialogDescription>
+                Paths in <code>inventories</code>, with why each could not be read.
+              </DialogDescription>
+            </DialogHeader>
+            <ul className="divide-y rounded-md border font-mono text-xs">
+              {files.map((file) => (
+                <li key={file} className="px-3 py-2 break-words">
+                  {file}
+                </li>
+              ))}
+            </ul>
+          </DialogContent>
+        </Dialog>
+      </AlertDescription>
+    </Alert>
   )
 }

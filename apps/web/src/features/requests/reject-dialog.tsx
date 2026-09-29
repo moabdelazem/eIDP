@@ -16,11 +16,14 @@ export function RejectDialog({
   open,
   onOpenChange,
   what,
+  granting = false,
   onReject,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   what: string
+  /** An access request: nothing is created, access is not granted. */
+  granting?: boolean
   onReject: (note: string) => Promise<void>
 }) {
   const [note, setNote] = useState('')
@@ -38,7 +41,16 @@ export function RejectDialog({
         <DialogHeader>
           <DialogTitle>Reject this request?</DialogTitle>
           <DialogDescription>
-            <span className="font-mono">{what}</span> will not be created. Your reason is shown to the
+            {granting ? (
+              <>
+                Access to <span className="font-mono">{what}</span> will not be granted.
+              </>
+            ) : (
+              <>
+                <span className="font-mono">{what}</span> will not be created.
+              </>
+            )}{' '}
+            Your reason is shown to the
             person who asked, so they can fix it and ask again.
           </DialogDescription>
         </DialogHeader>

@@ -461,6 +461,15 @@ can overlap, and two fetches into one checkout fight over git's lock.
   from `GET /requests/history`, scoped like the queue. Tiles and the table's
   status filter share `STATUS_NAME` ("Done"), which is not the badge's wording
   ("Created"/"Granted") on purpose: a filter names the state, not the kind.
+- **Dialogs for two jobs, and only those.** An `AlertDialog`
+  (`components/confirm-dialog.tsx`) before anything that acts outside the
+  portal or cannot be undone — approving (`ApproveDialog` says what will be
+  created and who will get access), withdrawing, removing a binding — and it
+  stays open until the action settles, so a failure is not hidden by the close.
+  A `Dialog` to glance without leaving the page — a request previewed from a
+  table (`RequestPreview`), raw data (`DataDialog`), the files a sync skipped.
+  Forms that are the page's purpose stay pages; retry and reject keep their
+  own shape (reject already asks for a reason in a dialog).
 - **Pages use the width.** `components/page-layout.tsx` holds the shapes:
   `PAGE` (the one width cap, shared with the Overview), `PageHeader`,
   `Split` (a main column plus a 20–22rem side column that stacks under it
