@@ -16,6 +16,8 @@ import {
   hasFilters,
   type Filters,
 } from './tree.ts'
+import { PageHeader } from '@/components/page-layout.tsx'
+import { RefreshCatalogButton } from './refresh-catalog-button.tsx'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { HeaderSkeleton, Loading } from '@/components/skeletons.tsx'
@@ -97,7 +99,7 @@ export function ProjectMapPage() {
 
   return (
     <div>
-      <h1 className="text-lg font-semibold tracking-tight">Projects map</h1>
+      <PageHeader title="Projects map" actions={<RefreshCatalogButton />} />
 
       <div className="mt-4">
         <MapToolbar

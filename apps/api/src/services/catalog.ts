@@ -55,7 +55,21 @@ export type CatalogSystem = {
  * sync starts running often enough that the write amplification matters, move
  * to upsert-and-prune keyed on id.
  */
-export async function syncCatalog(): Promise<SyncState> {
+let inFlight: Promise<SyncState> | null = null
+
+/**
+ * Pulls inventories and rebuilds the catalog. A sync already running is joined
+ * rather than started twice: the timer and a DevOps click can overlap, and two
+ * fetches into the same checkout fight over git's lock.
+ */
+export function syncCatalog(): Promise<SyncState> {
+  inFlight ??= runSync().finally(() => {
+    inFlight = null
+  })
+  return inFlight
+}
+
+async function runSync(): Promise<SyncState> {
   if (!config.INVENTORIES_PROJECT) {
     throw new ApiError(
       503,

@@ -5,7 +5,7 @@ import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { parseInventories } from '../integrations/inventories/parse.ts'
 import { closeDb, ensureSchema, query } from '../lib/db.ts'
-import { readCatalog, writeCatalog } from './catalog.ts'
+import { readCatalog, syncCatalog, writeCatalog } from './catalog.ts'
 
 const fixtures = fileURLToPath(
   new URL('../integrations/inventories/__fixtures__/repo', import.meta.url),
@@ -62,4 +62,18 @@ test('a rebuild replaces the catalog rather than doubling it', async () => {
   await writeCatalog((await parseInventories(fixtures)).systems)
   const { rows } = await query<{ count: string }>('select count(*) from catalog_applications')
   assert.equal(rows[0]?.count, '6')
+})
+
+test('a sync already running is joined, not started twice', async () => {
+  // The timer and a Refresh click can overlap; two fetches into one checkout
+  // would fight over git's lock. Here INVENTORIES_PROJECT is unset, so the
+  // run fails at once without touching the checkout or the database.
+  const first = syncCatalog()
+  const second = syncCatalog()
+  assert.equal(first, second)
+  await assert.rejects(first, /INVENTORIES_PROJECT is not set/)
+  // Once it has settled, the next call is a fresh run.
+  const third = syncCatalog()
+  assert.notEqual(third, first)
+  await assert.rejects(third)
 })

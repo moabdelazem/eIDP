@@ -60,6 +60,11 @@ type ApiSystem = {
   applications: ApiApplication[]
 }
 
+/** Pulls inventories and rebuilds the catalog now. Needs `catalog.sync`. */
+export function syncCatalog(): Promise<SyncState> {
+  return api<SyncState>('/catalog/sync', { method: 'POST' })
+}
+
 export async function fetchCatalog(): Promise<{ systems: System[]; sync: SyncState }> {
   const body = await api<CatalogResponse>('/catalog')
   return { systems: body.systems.map(foldEnvironments), sync: body.sync }

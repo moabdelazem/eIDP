@@ -382,7 +382,11 @@ is a new entry in `PERMISSIONS` (and in `Permission` in
 surface.
 
 `POST /catalog/sync` needs `catalog.sync`: a sync clones from Azure DevOps with
-the service account's token and rewrites the catalog.
+the service account's token and rewrites the catalog. The map's **Refresh from
+inventories** button (`refresh-catalog-button.tsx`, also on the map's
+unavailable page) calls it and shows only to holders. `syncCatalog()` is
+single-flight — a call while one runs joins it — because the timer and a click
+can overlap, and two fetches into one checkout fight over git's lock.
 
 ## UI conventions
 
