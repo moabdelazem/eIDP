@@ -12,7 +12,8 @@ import { GrantAccessPage } from '@/features/requests/grant-access-page.tsx'
 import { RequestPage } from '@/features/requests/request-page.tsx'
 import { AppShell } from './app-shell.tsx'
 import { NotFoundPage } from './not-found-page.tsx'
-import { RequireDevOps } from './require-devops.tsx'
+import { RequirePermission } from './require-permission.tsx'
+import { AccessPage } from '@/features/admin/access-page.tsx'
 import { RequireSession } from './require-session.tsx'
 
 export function AppRoutes() {
@@ -46,9 +47,12 @@ export function AppRoutes() {
           <Route path="requests/:requestId" element={<RequestPage />} />
           <Route path="me" element={<ProfilePage />} />
 
-          {/* DevOps only. Every path in `devopsItems` belongs in here. */}
-          <Route element={<RequireDevOps />}>
+          {/* Every path in `manageItems` belongs here, behind the same permission. */}
+          <Route element={<RequirePermission permission="requests.decide_access" scoped />}>
             <Route path="approvals" element={<ApprovalsPage />} />
+          </Route>
+          <Route element={<RequirePermission permission="rbac.manage" />}>
+            <Route path="access" element={<AccessPage />} />
           </Route>
 
           <Route path="*" element={<NotFoundPage />} />

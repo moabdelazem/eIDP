@@ -1,10 +1,12 @@
 import { Hono } from 'hono'
 import { ApiError } from '../lib/errors.ts'
-import { requireAuth, requireDevOps, type AppEnv } from '../middleware/auth.ts'
+import { requireAuth, requirePermission, type AppEnv } from '../middleware/auth.ts'
 import { readApplication, readCatalog, readSyncState, syncCatalog } from '../services/catalog.ts'
 
 export const catalogRoutes = new Hono<AppEnv>()
   .use('*', requireAuth)
+  // Sync carries its own, stronger guard below; reading needs this one.
+  .use('*', async (c, next) => (c.req.method === 'GET' ? requirePermission('catalog.view')(c, next) : next()))
 
   /**
    * The catalog, with the state of the last sync beside it.
@@ -42,4 +44,4 @@ export const catalogRoutes = new Hono<AppEnv>()
 
   // A sync clones from Azure DevOps with the service account's token and
   // rewrites the catalog, so it is DevOps's to trigger, not everyone's.
-  .post('/sync', requireDevOps, async (c) => c.json(await syncCatalog()))
+  .post('/sync', requirePermission('catalog.sync'), async (c) => c.json(await syncCatalog()))

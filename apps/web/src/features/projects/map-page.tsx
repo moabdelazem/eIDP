@@ -23,7 +23,7 @@ import { HeaderSkeleton, Loading } from '@/components/skeletons.tsx'
 export function ProjectMapPage() {
   usePageTitle('Projects map')
   const { status, systems, sync, error, reload } = useCatalog()
-  const { isApprover } = useProfile()
+  const { can } = useProfile()
   const [searchParams, setSearchParams] = useSearchParams()
   // A tree needs width a phone does not have; the list reads fine there.
   const [view, setView] = useState<'map' | 'list'>(() =>
@@ -133,7 +133,7 @@ export function ProjectMapPage() {
       )}
 
       {/* Files a sync skipped are DevOps's to fix, so only DevOps sees them. */}
-      {isApprover && sync && sync.warnings.length > 0 && (
+      {can('catalog.sync') && sync && sync.warnings.length > 0 && (
         <details className="mt-3 max-w-3xl rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
           <summary className="cursor-pointer font-medium text-destructive">
             {sync.warnings.length} file{sync.warnings.length === 1 ? '' : 's'} in inventories could not be

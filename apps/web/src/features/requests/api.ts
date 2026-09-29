@@ -28,6 +28,8 @@ export type PortalRequest = {
   completedAt: string | null
   resultUrl: string | null
   error: string | null
+  /** On a single request only: whether the viewer may decide it. */
+  canDecide?: boolean
 }
 
 export type Target =

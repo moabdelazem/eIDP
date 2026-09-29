@@ -1,14 +1,16 @@
 import { createMiddleware } from 'hono/factory'
 import { jwt } from 'hono/jwt'
-import { isApprover } from '../integrations/ldap/index.ts'
 import { config } from '../lib/config.ts'
 import { ApiError } from '../lib/errors.ts'
+import { accessOf, can, canSomewhere, describe, type Access, type Permission } from '../services/rbac.ts'
 import type { SessionClaims } from '../services/session.ts'
 
 /** The context every route sees. Extend `Variables` as middleware is added. */
 export type AppEnv = {
   Variables: {
     jwtPayload: SessionClaims
+    /** Set by `requirePermission`; read it with `accessFrom`. */
+    access?: Access
   }
 }
 
@@ -16,17 +18,26 @@ export type AppEnv = {
 export const requireAuth = jwt({ secret: config.JWT_SECRET, alg: 'HS256' })
 
 /**
- * DevOps-only. Every route that is DevOps-only declares this, so
- * `grep -rn requireDevOps routes/` lists the whole admin surface.
+ * Refuses unless the caller holds `permission`. Every guarded route declares
+ * it, so `grep -rn requirePermission routes/` lists who may reach what.
  *
- * Membership is asked of the directory on every call, never read from the
- * token: a role in a token outlives a removal from the group by the length
- * of the session. Services that act for DevOps check again as well, so a
- * route that forgets this guard still cannot act.
+ * `scoped: true` lets through anyone who holds it *somewhere* — a team lead on
+ * the approvals queue — and leaves the per-item decision to the service,
+ * which knows the target. Access is worked out from the directory and the
+ * bindings on every call, never read from the token.
  */
-export const requireDevOps = createMiddleware<AppEnv>(async (c, next) => {
-  if (!(await isApprover(c.get('jwtPayload').sub))) {
-    throw new ApiError(403, 'devops_only', `Only the ${config.APPROVER_GROUP} team can do that.`)
-  }
-  await next()
-})
+export function requirePermission(permission: Permission, { scoped = false } = {}) {
+  return createMiddleware<AppEnv>(async (c, next) => {
+    const access = await accessOf(c.get('jwtPayload').sub)
+    c.set('access', access)
+    if (!(scoped ? canSomewhere(access, permission) : can(access, permission))) {
+      throw new ApiError(403, 'forbidden', `You don’t have permission to ${describe(permission)}.`)
+    }
+    await next()
+  })
+}
+
+/** The caller's access: from the guard when it ran, worked out now when it did not. */
+export async function accessFrom(c: { get(key: 'access'): Access | undefined; get(key: 'jwtPayload'): SessionClaims }): Promise<Access> {
+  return c.get('access') ?? (await accessOf(c.get('jwtPayload').sub))
+}

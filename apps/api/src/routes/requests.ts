@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { validate } from '../lib/validate.ts'
-import { requireAuth, requireDevOps, type AppEnv } from '../middleware/auth.ts'
+import { accessFrom, requireAuth, requirePermission, type AppEnv } from '../middleware/auth.ts'
 import * as requests from '../services/requests.ts'
 
 const Target = z.discriminatedUnion('kind', [
@@ -40,38 +40,41 @@ const NewRequest = z.intersection(
 
 const Decision = z.object({ note: z.string().max(4000).optional() })
 
+/** Everyone who may decide at least one request: DevOps hold it everywhere. */
+const decider = requirePermission('requests.decide_access', { scoped: true })
+
 export const requestRoutes = new Hono<AppEnv>()
   .use('*', requireAuth)
 
   /** The form's live check: the same rules `POST /` enforces. */
-  .post('/check', validate('json', Target), async (c) => c.json(await requests.check(c.req.valid('json'))))
+  .post('/check', requirePermission('requests.create'), validate('json', Target), async (c) => c.json(await requests.check(c.req.valid('json'))))
 
-  .post('/', validate('json', NewRequest), async (c) => {
+  .post('/', requirePermission('requests.create'), validate('json', NewRequest), async (c) => {
     const request = await requests.submit(c.req.valid('json'), actor(c))
     return c.json(request, 201)
   })
 
   .get('/mine', async (c) => c.json(await requests.listMine(actor(c).uid)))
 
-  // ---- DevOps only ------------------------------------------------------
+  // ---- deciding ---------------------------------------------------------
+  // Reachable by anyone who may decide something — DevOps everywhere, a team
+  // lead within their teams. Which requests is the service's call.
 
-  .get('/pool', requireDevOps, async (c) => c.json(await requests.listPool()))
+  .get('/pool', decider, async (c) => c.json(await requests.listPool(await accessFrom(c))))
 
-  .post('/:id/approve', requireDevOps, validate('json', Decision), async (c) =>
-    c.json(await requests.approve(c.req.param('id'), actor(c), c.req.valid('json').note)),
+  .post('/:id/approve', decider, validate('json', Decision), async (c) =>
+    c.json(await requests.approve(c.req.param('id'), actor(c), await accessFrom(c), c.req.valid('json').note)),
   )
 
-  .post('/:id/reject', requireDevOps, validate('json', Decision), async (c) =>
-    c.json(await requests.reject(c.req.param('id'), actor(c), c.req.valid('json').note ?? '')),
+  .post('/:id/reject', decider, validate('json', Decision), async (c) =>
+    c.json(await requests.reject(c.req.param('id'), actor(c), await accessFrom(c), c.req.valid('json').note ?? '')),
   )
 
-  .post('/:id/retry', requireDevOps, async (c) =>
-    c.json(await requests.retry(c.req.param('id'), actor(c))),
-  )
+  .post('/:id/retry', decider, async (c) => c.json(await requests.retry(c.req.param('id'), await accessFrom(c))))
 
   // ---- the requester's own, or DevOps ------------------------------------
 
-  .get('/:id', async (c) => c.json(await requests.get(c.req.param('id'), actor(c))))
+  .get('/:id', async (c) => c.json(await requests.get(c.req.param('id'), actor(c), await accessFrom(c))))
 
   .post('/:id/cancel', async (c) => c.json(await requests.cancel(c.req.param('id'), actor(c))))
 

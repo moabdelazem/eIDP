@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AppWindow, Boxes, Search } from 'lucide-react'
 import { useNavigate } from 'react-router'
-import { browseItems, devopsItems, requestItems, type NavItem } from '@/app/nav.ts'
+import { browseItems, manageItems, requestItems, type NavItem } from '@/app/nav.ts'
 import { Button } from '@/components/ui/button'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import {
@@ -77,10 +77,11 @@ export function CommandPalette() {
 function Palette({ onDone }: { onDone: () => void }) {
   const navigate = useNavigate()
   const { systems } = useCatalog()
-  const { isApprover } = useProfile()
+  const { can, canSomewhere } = useProfile()
   const [query, setQuery] = useState('')
 
-  // DevOps pages are offered only to DevOps — the same rule as the sidebar.
+  // Pages that need a permission are offered only to people who hold it — the
+  // same rule as the sidebar.
   // Request types come from the registry by their full title, so "repository"
   // and "azure" both find one; only the ones with a form are offered.
   const pages: NavItem[] = useMemo(
@@ -88,9 +89,9 @@ function Palette({ onDone }: { onDone: () => void }) {
       ...browseItems,
       ...REQUEST_TYPES.filter(isAvailable).map((type) => ({ path: type.path, label: type.title, icon: type.icon })),
       ...requestItems,
-      ...(isApprover ? devopsItems : []),
+      ...manageItems.filter((item) => (item.scoped ? canSomewhere(item.permission) : can(item.permission))),
     ],
-    [isApprover],
+    [can, canSomewhere],
   )
 
   const needle = query.trim().toLowerCase()

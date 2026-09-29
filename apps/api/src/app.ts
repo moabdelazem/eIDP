@@ -6,6 +6,7 @@ import { authRoutes } from './routes/auth.ts'
 import { adoRoutes } from './routes/ado.ts'
 import { catalogRoutes } from './routes/catalog.ts'
 import { requestRoutes } from './routes/requests.ts'
+import { rbacRoutes } from './routes/rbac.ts'
 import { healthRoutes } from './routes/health.ts'
 
 /**
@@ -23,6 +24,7 @@ export function createApp() {
   app.route('/catalog', catalogRoutes)
   app.route('/requests', requestRoutes)
   app.route('/ado', adoRoutes)
+  app.route('/rbac', rbacRoutes)
 
   return app
 }

@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router'
-import { devopsItems, isItemActive } from '@/app/nav.ts'
+import { isItemActive, manageItems } from '@/app/nav.ts'
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -15,19 +15,20 @@ import { requestsApi } from '@/features/requests/api.ts'
 import { useResource } from '@/lib/use-resource.ts'
 
 /**
- * DevOps-only pages, set apart below a separator. Rendered only once the
- * directory confirms membership — not on the token's say-so — so nobody else
- * ever sees it, even for a moment. The pages themselves are guarded in
- * `app/routes.tsx` and the data behind them by the API; hiding the links is
- * the least of the three.
+ * Pages that need a permission, set apart below a separator. Each item shows
+ * only once the profile confirms the permission — not on the token's say-so —
+ * so nobody else sees it, even for a moment. The pages themselves are guarded
+ * in `app/routes.tsx` and the data behind them by the API; hiding the links
+ * is the least of the three.
  */
-export function NavDevOps() {
-  const { isApprover } = useProfile()
-  if (!isApprover) return null
-  return <DevOpsGroup />
+export function NavManage() {
+  const { can, canSomewhere } = useProfile()
+  const items = manageItems.filter((item) => (item.scoped ? canSomewhere(item.permission) : can(item.permission)))
+  if (items.length === 0) return null
+  return <ManageGroup items={items} />
 }
 
-function DevOpsGroup() {
+function ManageGroup({ items }: { items: typeof manageItems }) {
   const { pathname } = useLocation()
   const pool = useResource(() => requestsApi.pool(), [], { pollMs: 30_000 })
   const waiting = pool.data?.open.filter((r) => r.status === 'pending').length ?? 0
@@ -40,10 +41,10 @@ function DevOpsGroup() {
           rail. Forcing w-auto here keeps ui/ generated and untouched. */}
       <SidebarSeparator className="w-auto!" />
       <SidebarGroup>
-        <SidebarGroupLabel>DevOps</SidebarGroupLabel>
+        <SidebarGroupLabel>Manage</SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>
-            {devopsItems.map((item) => (
+            {items.map((item) => (
               <SidebarMenuItem key={item.path}>
                 <SidebarMenuButton asChild isActive={isItemActive(item, pathname)} tooltip={item.label}>
                   <NavLink to={item.path} end>

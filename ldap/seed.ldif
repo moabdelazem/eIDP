@@ -44,3 +44,14 @@ cn: Payments
 member: uid=alice,ou=people,dc=eidp,dc=local
 member: uid=bob,ou=people,dc=eidp,dc=local
 member: uid=carol,ou=people,dc=eidp,dc=local
+
+# In no groups at all: what someone outside every team looks like. The RBAC
+# tests grant and revoke on dave, so they never change what bob can do while
+# the request tests run beside them.
+dn: uid=dave,ou=people,dc=eidp,dc=local
+objectClass: inetOrgPerson
+uid: dave
+cn: Dave Example
+sn: Example
+mail: dave@eidp.local
+userPassword: davepw

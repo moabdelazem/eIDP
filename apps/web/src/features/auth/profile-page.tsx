@@ -86,7 +86,7 @@ export function ProfilePage() {
                 ]}
               />
             </Section>
-            <ApprovalStatus profile={profile} />
+            <YourAccess profile={profile} />
           </>
         }
       >
@@ -103,43 +103,59 @@ export function ProfilePage() {
 }
 
 /**
- * Says plainly whether you can approve — and when you expected to and can't,
- * gives the reason the directory offers rather than a silence.
+ * Every role you hold and where it comes from — a group, or a grant to you by
+ * name — so "why can't I approve?" has an answer on the page. When nothing
+ * beyond the basics shows, it says what the directory returned, because a
+ * missing group is the usual cause.
  */
-function ApprovalStatus({ profile }: { profile: Profile }) {
-  if (profile.isApprover) {
-    return (
-      <Section title="Approvals" action={<ShieldCheck className="size-4 shrink-0 text-muted-foreground" />}>
-        <p className="text-sm">
-          You’re in <span className="font-medium">{profile.approverGroup}</span>, so you can approve
-          and reject requests.
-        </p>
+function YourAccess({ profile }: { profile: Profile }) {
+  const { canSomewhere } = useProfile()
+  const beyondMember = profile.access.roles.filter((r) => r.role !== 'member')
+  return (
+    <Section
+      title="Your access"
+      description="Roles you hold, and the group or grant each comes from."
+      action={<ShieldCheck className="size-4 shrink-0 text-muted-foreground" />}
+    >
+      <ul className="space-y-3 text-sm">
+        {profile.access.roles.map((r) => (
+          <li key={`${r.role}:${r.via}:${r.scope ?? ''}`}>
+            <p className="font-medium">
+              {r.label}
+              {r.scope && (
+                <span className="font-normal text-muted-foreground">
+                  {' '}
+                  for {r.scopeType} <code className="text-foreground">{r.scope}</code>
+                </span>
+              )}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {r.role === 'member' ? 'Everyone who can sign in' : r.via === 'you, by name' ? 'Granted to you by name' : <>Through {r.via}</>}
+              {r.expiresAt && `, until ${new Date(r.expiresAt).toLocaleDateString()}`}
+            </p>
+          </li>
+        ))}
+      </ul>
+
+      {canSomewhere('requests.decide_access') && (
         <Button asChild size="sm" className="mt-4">
           <Link to="/approvals">Open approvals</Link>
         </Button>
-      </Section>
-    )
-  }
-
-  return (
-    <Section title="Approvals">
-      <p className="text-sm">
-        You’re not in <span className="font-medium">{profile.approverGroup}</span>, as far as the
-        directory reports, so requests are decided by others.
-      </p>
-      {profile.groups.length === 0 ? (
-        <p className="mt-3 text-sm text-muted-foreground">
-          The directory returned no groups for you at all. That usually means the portal’s group
-          lookup doesn’t match your directory, not that you belong to none. Whoever runs e-IDP can
-          check with <code className="text-foreground">pnpm --filter @eidp/api ldap:doctor {profile.uid}</code>.
-        </p>
-      ) : (
-        <p className="mt-3 text-sm text-muted-foreground">
-          If you should be, check that you are a member of {profile.approverGroup} in Active
-          Directory, or that the portal’s <code className="text-foreground">APPROVER_GROUP</code>{' '}
-          names the group you are in.
-        </p>
       )}
+
+      {beyondMember.length === 0 &&
+        (profile.groups.length === 0 ? (
+          <p className="mt-4 text-sm text-muted-foreground">
+            The directory returned no groups for you at all. That usually means the portal’s group
+            lookup doesn’t match your directory, not that you belong to none. Whoever runs e-IDP can
+            check with <code className="text-foreground">pnpm --filter @eidp/api ldap:doctor {profile.uid}</code>.
+          </p>
+        ) : (
+          <p className="mt-4 text-sm text-muted-foreground">
+            Roles come from your directory groups. If you should hold one, ask DevOps to grant it to
+            your team’s group on the Access page.
+          </p>
+        ))}
       <p className="mt-3 text-xs text-muted-foreground">Groups looked up by: {profile.groupLookup}</p>
     </Section>
   )

@@ -1,7 +1,7 @@
 // Needs the openldap container with the seeded DEVOPS group.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { chooseGroupFilter, groupFilter, groupsOf, isApprover } from './groups.ts'
+import { chooseGroupFilter, groupFilter, groupsOf } from './groups.ts'
 import { profileOf } from './profile.ts'
 
 const AD = { vendor: 'Active Directory (dc01.efinance.com.eg)', isActiveDirectory: true }
@@ -34,19 +34,6 @@ test('a silent server with no AD hints falls back to groupOfNames', () => {
 test('the live directory is detected, not assumed', async () => {
   const { source } = await groupFilter()
   assert.equal(source, 'detected OpenLDAP')
-})
-
-test('a member of DEVOPS is an approver', async () => {
-  assert.equal(await isApprover('alice'), true)
-  assert.equal(await isApprover('carol'), true)
-})
-
-test('a developer outside DEVOPS is not', async () => {
-  assert.equal(await isApprover('bob'), false)
-})
-
-test('an account that does not exist is not an approver', async () => {
-  assert.equal(await isApprover('nobody'), false)
 })
 
 test('group names come back by cn', async () => {

@@ -231,10 +231,10 @@ the history.
 
 The rules that matter, each tested in `routes/requests.test.ts`:
 
-- **Only the approver group decides**, and it is checked against the directory
-  at the moment of deciding — `isApprover` in `integrations/ldap/groups.ts`.
-  The `approver` role in the JWT is a UI hint only: a role in a token outlives
-  a removal from the group by up to eight hours.
+- **Only someone who may decide it decides**: `requests.decide` for anything,
+  or `requests.decide_access` within its scope for an access request — see
+  *Who may do what* below. Worked out from the directory and the bindings at
+  the moment of deciding; the `roles` claim in the JWT is a UI hint only.
 - **DEVOPS may decide their own requests.** This was once refused (a second
   member had to approve), and was dropped on purpose for speed; `decided_by`
   still records who approved what. Don't reintroduce it without asking.
@@ -310,31 +310,72 @@ Blank values in `.env` (`KEY=`) are treated as unset in `lib/config.ts`. Before
 that, a `.env` copied from `.env.example` failed to boot on its blank
 `ADO_PAT`.
 
-## DevOps-only access
+## Who may do what
 
-Some pages and actions belong to the DevOps team (`APPROVER_GROUP`) alone.
-Three layers enforce it, and only the last one is security — the other two keep
-the UI honest:
+`services/rbac.ts` is the whole model, in three layers:
 
-1. **Sidebar** — `components/sidebar/nav-devops.tsx` renders the DevOps group,
-   below a separator, only once the directory confirms membership.
-2. **Route** — `app/require-devops.tsx` wraps those routes, so opening one by
+| Layer | What | Where |
+|---|---|---|
+| **Permission** | one thing the portal can do (`requests.decide`, `rbac.manage`, …) | `PERMISSIONS`, in code |
+| **Role** | a named bundle of permissions (`member`, `team-lead`, `approver`, `devops-admin`) | `ROLES`, in code |
+| **Binding** | a directory group or one user → a role, everywhere or limited to a `team` or `project` | `rbac_bindings`, managed on the Access page (`/access`) |
+
+Two bindings are **built in** and are not rows: everyone is a `member`
+(`catalog.view`, `requests.create` — anyone in AD can sign in and use the
+portal), and `APPROVER_GROUP` is `devops-admin`. Being code, they cannot be
+removed from the page, so nobody can lock the portal out of its own admin.
+
+`accessOf(uid)` asks the directory for the person's groups (cached per process
+for `GROUP_CACHE_MS`, a minute — a removal from a group lands within it) and
+reads their bindings fresh on every check, so a change on the Access page
+applies immediately. Expired bindings count for nothing. A binding whose role
+has been deleted from code grants nothing and is listed on the page as such.
+
+- **A grant to one person needs a reason**, and may carry an expiry. It is the
+  replacement for the old portal's `VALID_USERS`; the group is the normal case.
+- **Scope.** A `project` scope matches the ADO project by name. A `team` scope
+  matches the owning teams the catalog read from each system's `project.yml`
+  (`teamsOwning`), so a lead of `DEVJAVA` decides access to every project
+  DEVJAVA owns in any environment. A scoped grant is never global.
+- **Team leads decide access requests only.** Creating a repository or project
+  stays with `requests.decide`. A lead's approvals queue (`listPool`) holds
+  only what they may decide, and `GET /requests/:id` returns `canDecide` so the
+  UI never has to guess at scope.
+- **Every grant and removal is audited** (`rbac_audit`, append-only), and
+  `GET /rbac/explain/:uid` answers "why can bob approve?" with the group or
+  binding behind each permission. The RBAC tests make and remove bindings on
+  `dave` only and delete their own audit rows, because they share the dev
+  database with real use.
+- **The old portal's map** (`VALID_GROUPS`/`VALID_USERS`) comes across with
+  `pnpm --filter @eidp/api rbac:import rbac.py` — a dry run that prints what it
+  would add and what it leaves out and why; `--apply` writes it. `X-Lead`
+  becomes a `team-lead` binding scoped to team X; roles for features e-IDP does
+  not have are left out rather than carried as dead names.
+
+Three layers enforce it, and only the last one is security:
+
+1. **Sidebar** — `components/sidebar/nav-manage.tsx` lists each `manageItems`
+   entry (`app/nav.ts`) only once the profile confirms its permission.
+2. **Route** — `app/require-permission.tsx` wraps each path, so opening one by
    link shows a refusal and nothing behind it mounts or fetches.
-3. **API** — `requireDevOps` in `middleware/auth.ts` on every DevOps-only
-   endpoint. This is the one that actually protects anything.
+3. **API** — `requirePermission(p)` in `middleware/auth.ts`; `{ scoped: true }`
+   admits anyone holding it anywhere and leaves the per-item call to the
+   service, which reads the caller's access through `accessFrom(c)`.
 
-Every layer asks the directory, live. None trusts the token's `roles` claim:
-a validly signed token claiming `approver` for someone outside DevOps gets 403
-everywhere, which `routes/rbac.test.ts` checks.
+A validly signed token claiming `approver` for someone without the permission
+gets 403 everywhere, which `routes/rbac.test.ts` checks.
 
-**Adding an admin page means four edits, or it leaks:** the item in
-`devopsItems` (`app/nav.ts`), its route inside `<RequireDevOps>`
-(`app/routes.tsx`), `requireDevOps` on its API endpoints, and those endpoints
-in the `DEVOPS_ONLY` list in `routes/rbac.test.ts`. `grep -rn requireDevOps
-apps/api/src/routes` lists the whole admin surface.
+**Adding a guarded page means four edits, or it leaks:** the item in
+`manageItems` with its permission, its route inside a matching
+`<RequirePermission>`, `requirePermission` on its API endpoints, and those
+endpoints in the `DEVOPS_ONLY` list in `routes/rbac.test.ts`. A new capability
+is a new entry in `PERMISSIONS` (and in `Permission` in
+`features/auth/profile-context.tsx`), added to the roles that should hold it.
+`grep -rn requirePermission apps/api/src/routes` lists the whole guarded
+surface.
 
-`POST /catalog/sync` is DevOps-only: a sync clones from Azure DevOps with the
-service account's token and rewrites the catalog.
+`POST /catalog/sync` needs `catalog.sync`: a sync clones from Azure DevOps with
+the service account's token and rewrites the catalog.
 
 ## UI conventions
 
@@ -433,8 +474,9 @@ wrong. Only the last is a 401 — the rest are 503s naming the setting at fault,
 because a broken deployment must never be reported as the user's mistake.
 `ldap:doctor` reports which one.
 
-Test users live in `ldap/seed.ldif` (alice/alicepw, bob/bobpw, carol/carolpw;
-alice and carol are in the DEVOPS group), mounted into
+Test users live in `ldap/seed.ldif` (alice/alicepw, bob/bobpw, carol/carolpw,
+dave/davepw; alice and carol are in DEVOPS, alice, bob and carol in Payments,
+and dave in nothing — the RBAC tests bind roles to him), mounted into
 the container's bootstrap dir so a fresh volume gets them. `pnpm --filter
 @eidp/api test` runs against the live container.
 

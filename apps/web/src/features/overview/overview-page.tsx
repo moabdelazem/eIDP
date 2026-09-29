@@ -39,9 +39,13 @@ export function OverviewPage() {
 function Overview() {
   const navigate = useNavigate()
   const { status, systems, sync, error } = useCatalog()
-  const { isApprover, profile } = useProfile()
+  const { can, canSomewhere, profile } = useProfile()
+  // DevOps, or a team lead: anyone with a queue of their own. Its contents are
+  // already only what they may decide.
+  const decider = canSomewhere('requests.decide_access')
+  const syncs = can('catalog.sync')
   const mine = useResource(() => requestsApi.mine(), [], { pollMs: 30_000 })
-  const pool = useResource(() => (isApprover ? requestsApi.pool() : Promise.resolve(null)), [isApprover], {
+  const pool = useResource(() => (decider ? requestsApi.pool() : Promise.resolve(null)), [decider], {
     pollMs: 30_000,
   })
 
@@ -78,11 +82,11 @@ function Overview() {
 
       {/* Headline counts are tiles, not charts: one number each, and every
           tile goes somewhere. */}
-      <div className={`mt-6 grid gap-3 sm:grid-cols-2 ${isApprover ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
+      <div className={`mt-6 grid gap-3 sm:grid-cols-2 ${decider ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
         <Tile label="Systems" value={catalogCount(status, systems.length)} to="/map" />
         <Tile label="Applications" value={catalogCount(status, stats.applications)} to="/map" />
         <Tile label="Your open requests" value={openRequests} to="/requests" />
-        {isApprover && (
+        {decider && (
           <Tile
             label="Waiting for a decision"
             value={waiting}
@@ -168,21 +172,23 @@ function Overview() {
         </Card>
 
         <div className="space-y-6">
-          {isApprover && (
+          {decider && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm">For DevOps</CardTitle>
-                <CardDescription>What is waiting on the team.</CardDescription>
+                <CardTitle className="text-sm">Waiting on you</CardTitle>
+                <CardDescription>Requests you can decide.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
                 <Line label="Waiting for a decision" value={waiting} to="/approvals" attention={(waiting ?? 0) > 0} />
                 <Line label="Failed, needs a retry" value={failed} to="/approvals" attention={(failed ?? 0) > 0} />
-                <Line
-                  label="Files the last sync skipped"
-                  value={status === 'loading' ? undefined : (sync?.warnings.length ?? null)}
-                  to="/map"
-                  attention={(sync?.warnings.length ?? 0) > 0}
-                />
+                {syncs && (
+                  <Line
+                    label="Files the last sync skipped"
+                    value={status === 'loading' ? undefined : (sync?.warnings.length ?? null)}
+                    to="/map"
+                    attention={(sync?.warnings.length ?? 0) > 0}
+                  />
+                )}
               </CardContent>
             </Card>
           )}

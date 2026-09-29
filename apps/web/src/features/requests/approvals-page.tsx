@@ -18,7 +18,11 @@ import { CardSkeleton, HeaderSkeleton, Loading } from '@/components/skeletons.ts
 /** A side column holds the latest few; the rest are one click away on each request. */
 const RECENT_SHOWN = 8
 
-/** Mounted only behind `RequireDevOps` — see app/routes.tsx. */
+/**
+ * Mounted behind `requests.decide_access` held anywhere — see app/routes.tsx.
+ * DevOps see every request; a team lead sees only what they may decide,
+ * because the API sends nothing else.
+ */
 export function ApprovalsPage() {
   const { session } = useSession()
   const pool = useResource(() => requestsApi.pool(), [], { pollMs: 10_000 })
@@ -65,7 +69,7 @@ export function ApprovalsPage() {
     <div className={PAGE}>
       <PageHeader
         title="Approvals"
-        description="Requests wait here for anyone in DevOps. Approving acts in Azure DevOps straight away."
+        description="Requests you can decide. Approving acts in Azure DevOps straight away."
       />
 
       <Split

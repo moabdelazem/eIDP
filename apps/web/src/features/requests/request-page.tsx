@@ -6,7 +6,6 @@ import { EmptyState } from '@/components/empty-state.tsx'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useProfile } from '@/features/auth/profile-context.tsx'
 import { useSession } from '@/features/auth/session-context.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
@@ -20,7 +19,6 @@ import { Facts, PAGE, PageHeader, Section, Split } from '@/components/page-layou
 export function RequestPage() {
   const { requestId = '' } = useParams()
   const { session } = useSession()
-  const { isApprover: approver } = useProfile()
   const [pollMs, setPollMs] = useState<number | null>(3000)
   const request = useResource(
     async () => {
@@ -76,7 +74,7 @@ export function RequestPage() {
             <DecisionStep request={r} own={own} />
             <OutcomeStep request={r} />
           </ol>
-          <Actions request={r} approver={approver} own={own} onChanged={request.reload} />
+          <Actions request={r} own={own} onChanged={request.reload} />
         </Section>
 
         <Section title="Request data" description="Everything stored for this request, as the API returns it.">
@@ -173,12 +171,10 @@ function OutcomeStep({ request: r }: { request: PortalRequest }) {
 
 function Actions({
   request: r,
-  approver,
   own,
   onChanged,
 }: {
   request: PortalRequest
-  approver: boolean
   own: boolean
   onChanged: () => void
 }) {
@@ -191,6 +187,9 @@ function Actions({
     setBusy(false)
   }
 
+  // The API's answer for this request — for a team lead it depends on the
+  // project, which only the server can match against their scope.
+  const approver = r.canDecide ?? false
   const canDecide = approver && r.status === 'pending'
   const actions = []
 

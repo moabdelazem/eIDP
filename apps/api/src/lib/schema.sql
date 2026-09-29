@@ -114,3 +114,36 @@ alter table requests add constraint requests_grant_check check (
 -- Files the last sync could not read, relative to the repo root. Added after
 -- the table existed, so it is an add-if-missing rather than part of the create.
 alter table catalog_sync add column if not exists warnings jsonb not null default '[]'::jsonb;
+
+-- Who may do what beyond the built-in grants (see services/rbac.ts). A binding
+-- gives a directory group, or one user, a role — everywhere, or limited to a
+-- team or an ADO project. Roles and permissions live in code; only who holds
+-- them lives here, so the admin page can change it without a deploy.
+create table if not exists rbac_bindings (
+  id            uuid primary key default gen_random_uuid(),
+  subject_type  text not null check (subject_type in ('group', 'user')),
+  subject       text not null,
+  role          text not null,
+  scope_type    text not null default 'global' check (scope_type in ('global', 'team', 'project')),
+  scope         text,
+  -- Required for a user binding (checked in the service): an exception for
+  -- one person is exactly what someone asks about a year later.
+  reason        text,
+  expires_at    timestamptz,
+  created_by    text not null,
+  created_at    timestamptz not null default now(),
+  check ((scope_type = 'global') = (scope is null))
+);
+
+create unique index if not exists rbac_bindings_unique_idx on rbac_bindings (
+  subject_type, lower(subject), role, scope_type, lower(coalesce(scope, ''))
+);
+
+-- Every grant and revoke, with the binding as it was. Append-only.
+create table if not exists rbac_audit (
+  id       bigserial primary key,
+  at       timestamptz not null default now(),
+  actor    text not null,
+  action   text not null check (action in ('grant', 'revoke')),
+  binding  jsonb not null
+);

@@ -12,7 +12,8 @@ import {
   webUrlFor,
   type Principal,
 } from '../integrations/ado/index.ts'
-import { dnOf, isApprover, profileOf } from '../integrations/ldap/index.ts'
+import { dnOf, profileOf } from '../integrations/ldap/index.ts'
+import { can, teamsOwning, type Access } from './rbac.ts'
 import { query } from '../lib/db.ts'
 import { ApiError } from '../lib/errors.ts'
 import { nameProblem } from './request-rules.ts'
@@ -232,8 +233,12 @@ export async function listMine(uid: string): Promise<RequestRecord[]> {
   return rows.map(toRecord)
 }
 
-/** Everything still open, then the most recent closed ones for context. */
-export async function listPool(): Promise<{ open: RequestRecord[]; recent: RequestRecord[] }> {
+/**
+ * Everything still open, then the most recent closed ones for context — or,
+ * for someone who may decide only within a scope, just the requests they may
+ * decide. A team lead's queue holds their teams' access requests, nothing else.
+ */
+export async function listPool(access: Access): Promise<{ open: RequestRecord[]; recent: RequestRecord[] }> {
   const [open, recent] = await Promise.all([
     query<Row>(
       `select * from requests where status in ('pending', 'approved', 'failed')
@@ -244,16 +249,20 @@ export async function listPool(): Promise<{ open: RequestRecord[]; recent: Reque
         order by coalesce(completed_at, decided_at, requested_at) desc limit 30`,
     ),
   ])
-  return { open: open.rows.map(toRecord), recent: recent.rows.map(toRecord) }
+  const all = { open: open.rows.map(toRecord), recent: recent.rows.map(toRecord) }
+  if (can(access, 'requests.decide')) return all
+  const decidable = await decidableBy(access, [...all.open, ...all.recent])
+  return { open: all.open.filter((r) => decidable.has(r.id)), recent: all.recent.filter((r) => decidable.has(r.id)) }
 }
 
-/** A request, if this person may see it: their own, or any of them for DEVOPS. */
-export async function get(id: string, actor: Actor): Promise<RequestRecord> {
+/** A request, if this person may see it: their own, or one they may decide — and whether they may. */
+export async function get(id: string, actor: Actor, access: Access): Promise<RequestRecord & { canDecide: boolean }> {
   const request = await find(id)
-  if (request.requestedBy !== actor.uid && !(await isApprover(actor.uid))) {
+  const canDecide = await mayDecide(request, access)
+  if (request.requestedBy !== actor.uid && !canDecide) {
     throw new ApiError(404, 'request_not_found', 'There is no such request.')
   }
-  return request
+  return { ...request, canDecide }
 }
 
 export async function cancel(id: string, actor: Actor): Promise<RequestRecord> {
@@ -276,8 +285,8 @@ export async function cancel(id: string, actor: Actor): Promise<RequestRecord> {
  * background and the request records how it ended. A project can take a
  * minute in ADO, and an approver should not sit on a spinner for it.
  */
-export async function approve(id: string, actor: Actor, note?: string): Promise<RequestRecord> {
-  await assertCanDecide(id, actor)
+export async function approve(id: string, actor: Actor, access: Access, note?: string): Promise<RequestRecord> {
+  await assertCanDecide(id, access)
   // The `status = 'pending'` guard is the lock: of two approvers clicking at
   // once, exactly one update matches, so ADO is asked once.
   const { rows } = await query<Row>(
@@ -293,11 +302,11 @@ export async function approve(id: string, actor: Actor, note?: string): Promise<
   return toRecord(rows[0])
 }
 
-export async function reject(id: string, actor: Actor, note: string): Promise<RequestRecord> {
+export async function reject(id: string, actor: Actor, access: Access, note: string): Promise<RequestRecord> {
   if (!note.trim()) {
     throw new ApiError(400, 'invalid_request', 'Say why, so the person can fix it and ask again.')
   }
-  await assertCanDecide(id, actor)
+  await assertCanDecide(id, access)
   const { rows } = await query<Row>(
     `update requests set status = 'rejected', decided_by = $2, decided_by_name = $3,
             decided_at = now(), decision_note = $4
@@ -310,10 +319,8 @@ export async function reject(id: string, actor: Actor, note: string): Promise<Re
 }
 
 /** Tries a failed creation again. The original approval stands. */
-export async function retry(id: string, actor: Actor): Promise<RequestRecord> {
-  if (!(await isApprover(actor.uid))) {
-    throw new ApiError(403, 'not_an_approver', 'Only DEVOPS can retry a request.')
-  }
+export async function retry(id: string, access: Access): Promise<RequestRecord> {
+  await assertCanDecide(id, access)
   const { rows } = await query<Row>(
     `update requests set status = 'approved', error = null
       where id = $1 and status = 'failed'
@@ -439,13 +446,44 @@ async function withContext(context: string, step: () => Promise<void>): Promise<
   }
 }
 
-async function assertCanDecide(id: string, actor: Actor): Promise<void> {
-  if (!(await isApprover(actor.uid))) {
-    throw new ApiError(403, 'not_an_approver', 'Only DEVOPS can approve or reject requests.')
+/**
+ * Whether `access` may decide this request. Creations are DevOps' alone
+ * (`requests.decide`); an access request may also be decided by whoever holds
+ * `requests.decide_access` for its project or for a team that owns it.
+ *
+ * Deciding your own request is allowed: the team chose speed over a second
+ * pair of eyes, and decided_by still records who approved what.
+ */
+async function mayDecide(request: RequestRecord, access: Access): Promise<boolean> {
+  if (can(access, 'requests.decide')) return true
+  if (request.kind !== 'grant_access') return false
+  return can(access, 'requests.decide_access', { project: request.project, teams: await teamsOwning(request.project) })
+}
+
+/** The ids among `requests` that `access` may decide, looking each project's teams up once. */
+async function decidableBy(access: Access, requests: RequestRecord[]): Promise<Set<string>> {
+  const teams = new Map<string, string[]>()
+  const ids = new Set<string>()
+  for (const request of requests) {
+    if (request.kind !== 'grant_access') continue
+    const key = request.project.toLowerCase()
+    if (!teams.has(key)) teams.set(key, await teamsOwning(request.project))
+    if (can(access, 'requests.decide_access', { project: request.project, teams: teams.get(key)! })) ids.add(request.id)
   }
-  // DEVOPS may decide their own requests too: the team chose speed over a
-  // second pair of eyes. decided_by still records who approved what.
-  await find(id) // 404 when it does not exist
+  return ids
+}
+
+async function assertCanDecide(id: string, access: Access): Promise<void> {
+  const request = await find(id) // 404 when it does not exist
+  if (!(await mayDecide(request, access))) {
+    throw new ApiError(
+      403,
+      'forbidden',
+      request.kind === 'grant_access'
+        ? 'You can’t decide this request: it is for a project outside the teams you approve for.'
+        : 'Only DevOps can decide requests to create repositories and projects.',
+    )
+  }
 }
 
 async function find(id: string): Promise<RequestRecord> {

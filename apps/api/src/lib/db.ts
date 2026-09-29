@@ -42,7 +42,16 @@ export async function transaction<T>(fn: (client: pg.PoolClient) => Promise<T>):
  */
 export async function ensureSchema(): Promise<void> {
   const sql = await readFile(fileURLToPath(new URL('./schema.sql', import.meta.url)), 'utf8')
-  await pool.query(sql)
+  // Serialised across processes: the test files run in parallel, and two
+  // concurrent `create table if not exists` can still collide in the catalog.
+  const client = await pool.connect()
+  try {
+    await client.query('select pg_advisory_lock(4201)')
+    await client.query(sql)
+  } finally {
+    await client.query('select pg_advisory_unlock(4201)').catch(() => {})
+    client.release()
+  }
 }
 
 export async function closeDb(): Promise<void> {

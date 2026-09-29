@@ -88,15 +88,3 @@ export async function dnOf(uid: string): Promise<string | null> {
   })
 }
 
-/**
- * Whether `uid` is in the approver group *right now*.
- *
- * Asked live at the moment of approval rather than trusted from the session,
- * so someone removed from DEVOPS loses the power immediately, not when their
- * token expires eight hours later.
- */
-export async function isApprover(uid: string): Promise<boolean> {
-  const dn = await dnOf(uid)
-  if (!dn) return false
-  return (await groupsOf(dn)).some(isApproverGroup)
-}

@@ -1,4 +1,5 @@
-import { Boxes, Inbox, LayoutDashboard, ListChecks } from 'lucide-react'
+import { Boxes, Inbox, LayoutDashboard, ListChecks, ShieldCheck } from 'lucide-react'
+import type { Permission } from '@/features/auth/profile-context.tsx'
 import type { LucideIcon } from 'lucide-react'
 
 export type NavItem = {
@@ -32,10 +33,13 @@ export const requestItems: NavItem[] = [
 ]
 
 /**
- * The DevOps-only pages. The sidebar shows this group only to DevOps, and
- * `app/routes.tsx` puts every one of these paths behind `RequireDevOps` —
- * a new admin page goes in both places, or it is reachable by link.
+ * Pages that need a permission beyond being signed in. The sidebar lists each
+ * only to people who hold it, and `app/routes.tsx` wraps each path in
+ * `RequirePermission` with the same one — a new page goes in both places, or
+ * it is reachable by link. The API is what actually refuses.
  */
-export const devopsItems: NavItem[] = [
-  { path: '/approvals', label: 'Approvals', icon: ListChecks },
+export const manageItems: (NavItem & { permission: Permission; scoped?: boolean })[] = [
+  // Scoped: a team lead has an approvals queue too, holding only their teams'.
+  { path: '/approvals', label: 'Approvals', icon: ListChecks, permission: 'requests.decide_access', scoped: true },
+  { path: '/access', label: 'Access', icon: ShieldCheck, permission: 'rbac.manage' },
 ]

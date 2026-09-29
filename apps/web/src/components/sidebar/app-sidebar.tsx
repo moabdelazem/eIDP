@@ -5,7 +5,7 @@ import {
   SidebarFooter,
   SidebarHeader,
 } from '@/components/ui/sidebar'
-import { NavDevOps } from './nav-devops.tsx'
+import { NavManage } from './nav-manage.tsx'
 import { NavMain } from './nav-main.tsx'
 import { NavRequests } from './nav-requests.tsx'
 import { NavUser } from './nav-user.tsx'
@@ -32,7 +32,7 @@ export function AppSidebar() {
       <SidebarContent>
         <NavMain label="Browse" items={browseItems} />
         <NavRequests />
-        <NavDevOps />
+        <NavManage />
       </SidebarContent>
 
       <SidebarFooter>

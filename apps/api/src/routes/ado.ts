@@ -1,11 +1,13 @@
 import { Hono } from 'hono'
 import { ApiError } from '../lib/errors.ts'
-import { requireAuth, type AppEnv } from '../middleware/auth.ts'
+import { requireAuth, requirePermission, type AppEnv } from '../middleware/auth.ts'
 import { adoConfig, listCollections, listProjects } from '../integrations/ado/index.ts'
 
 /** What the request form needs to offer choices rather than free text. */
 export const adoRoutes = new Hono<AppEnv>()
   .use('*', requireAuth)
+  // Only the request forms read these.
+  .use('*', requirePermission('requests.create'))
 
   .get('/collections', async (c) => {
     const { defaultCollection } = adoConfig()
