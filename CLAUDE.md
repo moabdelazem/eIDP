@@ -91,6 +91,21 @@ pnpm workspace. `apps/*` and `packages/*`.
   focusable nodes, and the List view beside it is the plain, screen-reader
   friendly path to the same data.
 
+  Sidebar links: hover (`--sidebar-hover`) is lighter than the current page
+  (`--sidebar-accent`), which also carries a lilac bar (`--sidebar-indicator`),
+  so where you are and where you point never look the same; colours fade in
+  180ms and the icon nudges on hover under `no-preference`. All of it is CSS
+  on `[data-sidebar=menu-button]` in `index.css`, not edits to the generated
+  `sidebar.tsx`, whose button animated only its size. A trigger whose menu
+  is open (New request) takes the hover tint, and its chevron leans out in
+  lilac.
+
+  Menu, palette (cmdk) and select items highlight in `--secondary` with dark
+  text, easing in 150ms — shadcn's own `bg-accent` is the rail's dark
+  eggplant here, which put the grey description under a highlight at 1.8:1 (now 5.4:1).
+  Menus, dialogs and popovers also drop their open animation under
+  `prefers-reduced-motion: reduce`, which shadcn does not do on its own.
+
   The sidebar collapses to an icon rail
   (`collapsible="icon"`), and `AppShell` reads the `sidebar_state` cookie back
   itself — shadcn only writes it, since Next reads it server-side.

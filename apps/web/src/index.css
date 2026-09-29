@@ -53,6 +53,11 @@
   --sidebar-accent-foreground: #f6eef7;
   --sidebar-border: var(--rail-border);
   --sidebar-ring: #9c6faa;
+  /* Pointing at a link is lighter than being on it, so the two never look the
+     same; the current page also carries a bar in the rail's own lilac (not
+     red: where you are is not something to act on). */
+  --sidebar-hover: #33213a;
+  --sidebar-indicator: #c9a6d6;
 }
 
 .dark {
@@ -176,6 +181,85 @@
   ::view-transition-group(*) {
     animation-duration: 220ms;
     animation-timing-function: ease-out;
+  }
+}
+
+/*
+ * Sidebar links. shadcn's menu button animates only its size, so colour
+ * changes snapped, and its hover was the very colour of the current page.
+ * Overridden here, unlayered so it outranks the utilities, rather than in
+ * the generated sidebar.tsx.
+ */
+[data-sidebar='menu-button'] {
+  transition-property: width, height, padding, background-color, color, box-shadow;
+  transition-duration: 180ms;
+  transition-timing-function: ease-out;
+}
+[data-sidebar='menu-button']:hover:not([data-active='true']) {
+  background-color: var(--sidebar-hover);
+  color: var(--sidebar-accent-foreground);
+}
+[data-sidebar='menu-button'][data-active='true'] {
+  box-shadow: inset 3px 0 0 var(--sidebar-indicator);
+}
+/* In the icon rail the button is a square; a bar on its edge reads as a glitch. */
+[data-collapsible='icon'] [data-sidebar='menu-button'][data-active='true'] {
+  box-shadow: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-sidebar='menu-button'] > svg:first-child {
+    transition: transform 180ms ease-out;
+  }
+  [data-sidebar='menu-button']:hover > svg:first-child {
+    transform: translateX(2px);
+  }
+}
+
+/* A trigger whose menu is open looks pointed-at, and its chevron leans out
+   toward the menu in the indicator's lilac. */
+[data-sidebar='menu-button'][data-state='open']:not([data-active='true']) {
+  background-color: var(--sidebar-hover);
+  color: var(--sidebar-accent-foreground);
+}
+[data-sidebar='menu-button'] > svg:last-child:not(:first-child) {
+  transition:
+    transform 180ms ease-out,
+    color 180ms ease-out;
+}
+[data-sidebar='menu-button'][data-state='open'] > svg:last-child:not(:first-child) {
+  color: var(--sidebar-indicator);
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-sidebar='menu-button'][data-state='open'] > svg:last-child:not(:first-child) {
+    transform: translateX(3px);
+  }
+}
+
+/*
+ * Menu, palette and select items. shadcn highlights them with --accent, which
+ * here is the rail's dark eggplant: a heavy bar on a white menu, with the grey
+ * description under it at about 2:1. A soft tint of the ground instead, dark
+ * text on it, and the change eased rather than snapped. Destructive items keep
+ * their own red highlight.
+ */
+:is([data-slot='dropdown-menu-item'], [data-slot='dropdown-menu-sub-trigger'], [data-slot='dropdown-menu-checkbox-item'], [data-slot='dropdown-menu-radio-item'], [data-slot='select-item'], [data-slot='command-item']) {
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out;
+}
+:is([data-slot='dropdown-menu-item'], [data-slot='dropdown-menu-sub-trigger'], [data-slot='dropdown-menu-checkbox-item'], [data-slot='dropdown-menu-radio-item'], [data-slot='select-item']):is(:focus, [data-highlighted], [data-state='open']):not([data-variant='destructive']),
+[data-slot='command-item'][data-selected='true'] {
+  background-color: var(--secondary);
+  color: var(--foreground);
+}
+
+/*
+ * Menus, dialogs and popovers open with shadcn's fade-and-zoom. That is motion
+ * too, so it goes for anyone who asked for less, like everything else here.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :is([data-slot$='-content'], [data-slot$='-overlay']) {
+    animation: none !important;
   }
 }
 
