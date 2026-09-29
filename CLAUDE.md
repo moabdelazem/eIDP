@@ -193,6 +193,12 @@ containers reach the services on the *container* ports (5432, 389), not the
 published host ports — the script passes `DATABASE_URL` and `LDAP_URL`
 overrides that win over `.env`.
 
+The api runs with `node --watch-path=src`, not `--watch`: `--watch` follows
+individual files, and `git pull` replaces files rather than editing them, so
+after a pull the api kept serving the old code — a new route answered as the
+old `/:id` route's 404. Watching the directory catches replaced files. If an
+api still looks stale, `scripts/dev.sh restart`.
+
 `Containerfile.dev` installs dependencies into the image and only source is
 bind-mounted, so the container never sees the host's `node_modules`. It also
 installs `git`, which the catalog sync shells out to and the base image lacks.

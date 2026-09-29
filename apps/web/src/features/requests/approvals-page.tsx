@@ -103,6 +103,10 @@ export function ApprovalsPage() {
               showTab('history')
             }}
           />
+        ) : history.error ? (
+          // Said, not left as a placeholder that never fills: the queue below
+          // still works without the counts.
+          <p className="text-sm text-muted-foreground">Counts are unavailable right now: {history.error}</p>
         ) : (
           <Skeleton className="h-[74px] w-full rounded-xl" />
         )}
