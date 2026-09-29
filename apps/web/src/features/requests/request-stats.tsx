@@ -1,4 +1,5 @@
 import type { PortalRequest, RequestStatus } from './api.ts'
+import { STATUS_TONE } from './status.tsx'
 
 /**
  * A status's name as a filter — shorter and kind-neutral, unlike the badge's
@@ -60,7 +61,10 @@ export function RequestStats({
               selected ? 'border-ring ring-1 ring-ring/40' : ''
             }`}
           >
-            <span className="text-xs text-muted-foreground">{label}</span>
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              {status !== 'all' && <span aria-hidden className={`size-2 rounded-full ${STATUS_TONE[status].dot}`} />}
+              {label}
+            </span>
             <span className={`mt-1 block text-2xl font-semibold tabular-nums ${alarm ? 'text-primary' : ''}`}>{n}</span>
           </button>
         )

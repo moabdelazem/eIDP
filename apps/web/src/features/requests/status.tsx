@@ -27,9 +27,20 @@ export const KIND_ICON: Record<RequestKind, LucideIcon> = {
 const GRANT_LABEL: Partial<Record<RequestStatus, string>> = { approved: 'Granting', completed: 'Granted' }
 
 /**
- * Red only where someone has to act: a rejection to read, a failure to retry.
- * Everything else stays quiet.
+ * What each status looks like: a badge fill and a dot. Red only where someone
+ * has to act — a rejection to read, a failure to retry. The rest say what they
+ * mean without asking anything: amber waits, indigo is moving, green is done,
+ * and a withdrawn request goes quiet.
  */
+export const STATUS_TONE: Record<RequestStatus, { badge: string; dot: string }> = {
+  pending: { badge: 'border-warning/25 bg-warning-soft text-warning', dot: 'bg-warning' },
+  approved: { badge: 'border-info/25 bg-info-soft text-info', dot: 'bg-info' },
+  completed: { badge: 'border-success/25 bg-success-soft text-success', dot: 'bg-success' },
+  rejected: { badge: 'border-destructive/30 bg-destructive/5 text-destructive', dot: 'bg-destructive' },
+  failed: { badge: 'border-destructive/30 bg-destructive/5 text-destructive', dot: 'bg-destructive' },
+  cancelled: { badge: 'text-muted-foreground', dot: 'bg-muted-foreground/50' },
+}
+
 export function StatusBadge({ status, kind }: { status: RequestStatus; kind?: RequestKind }) {
   const attention = status === 'rejected' || status === 'failed'
   const Icon =
@@ -45,14 +56,7 @@ export function StatusBadge({ status, kind }: { status: RequestStatus; kind?: Re
 
   return (
     <span
-      className={[
-        'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium',
-        attention
-          ? 'border-destructive/30 bg-destructive/5 text-destructive'
-          : status === 'completed'
-            ? 'border-accent/20 bg-accent/5 text-accent'
-            : 'text-muted-foreground',
-      ].join(' ')}
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${STATUS_TONE[status].badge}`}
     >
       <Icon className={`size-3.5 ${status === 'approved' ? 'animate-spin motion-reduce:animate-none' : ''}`} />
       {(kind === 'grant_access' && GRANT_LABEL[status]) || STATUS_LABEL[status]}

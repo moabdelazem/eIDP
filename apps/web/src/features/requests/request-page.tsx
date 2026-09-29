@@ -140,7 +140,7 @@ function OutcomeStep({ request: r }: { request: PortalRequest }) {
   if (r.status === 'completed') {
     const cloneUrl = r.repository && r.resultUrl ? r.resultUrl : null
     return (
-      <Step title={granting ? 'Access granted in Azure DevOps' : 'Created in Azure DevOps'} when={r.completedAt} done last>
+      <Step title={granting ? 'Access granted in Azure DevOps' : 'Created in Azure DevOps'} when={r.completedAt} done success last>
         {r.resultUrl && (
           <Button asChild variant="outline" size="sm" className="mt-3">
             <a href={r.resultUrl} target="_blank" rel="noreferrer">
@@ -245,6 +245,7 @@ function Step({
   done,
   current,
   attention,
+  success,
   last,
   children,
 }: {
@@ -253,6 +254,8 @@ function Step({
   done?: boolean
   current?: boolean
   attention?: boolean
+  /** The end of a request that worked — green, like its badge. */
+  success?: boolean
   last?: boolean
   children?: React.ReactNode
 }) {
@@ -267,7 +270,9 @@ function Step({
           'relative mt-1 flex size-[15px] shrink-0 items-center justify-center rounded-full border-2',
           attention
             ? 'border-destructive bg-destructive'
-            : done
+            : success
+              ? 'border-success bg-success'
+              : done
               ? 'border-foreground bg-foreground'
               : current
                 ? 'border-foreground bg-background'

@@ -30,6 +30,16 @@
   --input: #e3d7e6;
   --ring: #7a4a85;
 
+  /* What a state means, beside the palette's two jobs (eggplant ground, red
+     action). Each is a readable text colour (4.5:1 on its soft fill and on a
+     card) and a soft fill; always with an icon and a word, never alone. */
+  --success: #1d6b47;
+  --success-soft: #e5f3ec;
+  --warning: #8a5300;
+  --warning-soft: #fcf1db;
+  --info: #3a4a94;
+  --info-soft: #eaedfa;
+
   /* App chrome — the eggplant rail, identical in both themes. */
   --rail: #2a1930;
   --rail-foreground: #e8dcea;
@@ -67,6 +77,12 @@
   --border: #392640;
   --input: #392640;
   --ring: #9c6faa;
+  --success: #7fd4a8;
+  --success-soft: #12291f;
+  --warning: #f0c06a;
+  --warning-soft: #2e2310;
+  --info: #a9b6f2;
+  --info-soft: #1c2240;
   --sidebar: var(--rail);
   --sidebar-foreground: var(--rail-foreground);
   --sidebar-primary: #e8394f;
@@ -100,6 +116,12 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
 
   --color-rail: var(--rail);
   --color-rail-foreground: var(--rail-foreground);

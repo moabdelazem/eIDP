@@ -123,6 +123,14 @@ tokens point at the rail, so the sidebar is the rail. `shadcn add` writes
 its own neutral values into `src/index.css` — check them after adding any
 component and point them back at the rail.
 
+Three **meaning colours** sit beside those two, for state and nothing else:
+`success` (green, done), `warning` (amber, waiting) and `info` (indigo, in
+progress), each a text colour plus a `-soft` fill, all 4.5:1 or better in
+both themes. `STATUS_TONE` in `features/requests/status.tsx` is where a
+status gets its colour — badges, the stat tiles' dots and the timeline's last
+step all read it. They never carry meaning alone: every one comes with an
+icon and a word. Red still means only "act on this".
+
 Light is the only theme in use — `<html>` carries no `dark` class. The `.dark`
 token block in `src/index.css` is kept and works, but nothing switches to it
 yet. Design and check against light.

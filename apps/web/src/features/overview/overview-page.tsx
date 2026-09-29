@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo } from 'react'
-import { ArrowRight, ChevronDown, Inbox, Plus, TriangleAlert } from 'lucide-react'
+import { AppWindow, ArrowRight, Boxes, ChevronDown, Inbox, ListChecks, Plus, TriangleAlert, type LucideIcon } from 'lucide-react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -83,12 +83,13 @@ function Overview() {
       {/* Headline counts are tiles, not charts: one number each, and every
           tile goes somewhere. */}
       <div className={`mt-6 grid gap-3 sm:grid-cols-2 ${decider ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
-        <Tile label="Systems" value={catalogCount(status, systems.length)} to="/map" />
-        <Tile label="Applications" value={catalogCount(status, stats.applications)} to="/map" />
-        <Tile label="Your open requests" value={openRequests} to="/requests" />
+        <Tile label="Systems" icon={Boxes} value={catalogCount(status, systems.length)} to="/map" />
+        <Tile label="Applications" icon={AppWindow} value={catalogCount(status, stats.applications)} to="/map" />
+        <Tile label="Your open requests" icon={Inbox} value={openRequests} to="/requests" />
         {decider && (
           <Tile
             label="Waiting for a decision"
+            icon={ListChecks}
             value={waiting}
             to="/approvals"
             // The one number on the page that asks something of the reader.
@@ -224,11 +225,13 @@ function catalogCount(status: 'loading' | 'ready' | 'error', count: number): num
 
 function Tile({
   label,
+  icon: Icon,
   value,
   to,
   attention = false,
 }: {
   label: string
+  icon: LucideIcon
   /** undefined while loading; null when it could not be counted. */
   value: number | null | undefined
   to: string
@@ -237,9 +240,19 @@ function Tile({
   return (
     <Link
       to={to}
-      className="group rounded-xl border bg-card p-4 transition-colors hover:border-ring/40 hover:bg-muted/30 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+      className="group rounded-xl border bg-card p-4 shadow-sm transition-colors hover:border-ring/40 hover:bg-muted/30 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
     >
-      <p className="text-sm text-muted-foreground">{label}</p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">{label}</p>
+        {/* Eggplant, not red: the icon says what the number is, it asks nothing. */}
+        <span
+          className={`flex size-8 items-center justify-center rounded-lg ${
+            attention ? 'bg-primary/10 text-primary' : 'bg-secondary text-secondary-foreground'
+          }`}
+        >
+          <Icon className="size-4" aria-hidden />
+        </span>
+      </div>
       {value === undefined ? (
         <Skeleton className="mt-2 h-8 w-16" />
       ) : value === null ? (
