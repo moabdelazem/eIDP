@@ -14,6 +14,7 @@ import { NewRequestMenuContent } from '@/features/requests/new-request-menu.tsx'
 import { RequestRow } from '@/features/requests/request-row.tsx'
 import { since } from '@/features/requests/status.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
+import { PAGE } from '@/components/page-layout.tsx'
 import { useResource } from '@/lib/use-resource.ts'
 import type { Datum } from './charts.tsx'
 import { BarsSkeleton, Loading, RowsSkeleton } from '@/components/skeletons.tsx'
@@ -68,7 +69,7 @@ function Overview() {
   const failed = pool.error ? null : pool.data?.open.filter((r) => r.status === 'failed').length
 
   return (
-    <div className="max-w-6xl">
+    <div className={PAGE}>
       <h1 className="text-lg font-semibold tracking-tight">Overview</h1>
       <p className="mt-1 text-muted-foreground">
         {profile?.name ? `Signed in as ${profile.name}` : 'Signed in'}

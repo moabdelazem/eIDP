@@ -3,11 +3,13 @@ import { ShieldCheck } from 'lucide-react'
 import { Link } from 'react-router'
 import { DataView } from '@/components/data-view.tsx'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useProfile, type Profile } from './profile-context.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { FactsSkeleton, HeaderSkeleton, Loading } from '@/components/skeletons.tsx'
+import { Facts, PAGE, PageHeader, Section, Split } from '@/components/page-layout.tsx'
 
 const GROUPS_SHOWN = 24
 
@@ -28,7 +30,7 @@ export function ProfilePage() {
   }
   if (!profile) {
     return (
-      <Loading label="Loading your profile…" className="max-w-2xl">
+      <Loading label="Loading your profile…" className={PAGE}>
         <div className="flex items-center gap-4">
           <Skeleton className="size-14 rounded-lg" />
           <div className="flex-1">
@@ -43,7 +45,7 @@ export function ProfilePage() {
   // Department and team are always listed, empty or not — they are what people
   // come here to check. The rest appear only when the directory has them, so a
   // sparse profile is not a column of "not set".
-  const details: [string, string | null, boolean?][] = [
+  const organisation: [string, React.ReactNode][] = [
     ['Department', profile.department],
     ['Team', profile.division],
     ...(
@@ -51,46 +53,51 @@ export function ProfilePage() {
         ['Company', profile.company],
         ['Office', profile.office],
         ['Manager', profile.manager],
-        ['Email', profile.mail || null],
       ] as [string, string | null][]
     ).filter(([, value]) => value),
-    ['Username', profile.uid, true],
   ]
 
   return (
-    <div className="max-w-2xl">
-      <div className="flex items-center gap-4">
-        <Avatar className="size-14 rounded-lg">
-          <AvatarFallback className="rounded-lg bg-accent text-lg text-accent-foreground">
-            {initials(profile.name)}
-          </AvatarFallback>
-        </Avatar>
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-semibold tracking-tight">{profile.name}</h1>
-          {profile.title && <p className="truncate text-muted-foreground">{profile.title}</p>}
-        </div>
-      </div>
-
-      <dl className="mt-8 grid grid-cols-[9rem_minmax(0,1fr)] gap-y-3 text-sm">
-        {details.map(([label, value, mono]) => (
-          <div key={label} className="contents">
-            <dt className="text-muted-foreground">{label}</dt>
-            <dd className={mono ? 'font-mono' : ''}>
-              {value ?? <span className="text-muted-foreground">Not set in the directory</span>}
-            </dd>
+    <div className={PAGE}>
+      <PageHeader
+        title={
+          <div className="flex items-center gap-4">
+            <Avatar className="size-14 rounded-xl">
+              <AvatarFallback className="rounded-xl bg-accent text-lg text-accent-foreground">
+                {initials(profile.name)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-semibold tracking-tight">{profile.name}</h1>
+              {profile.title && <p className="truncate text-muted-foreground">{profile.title}</p>}
+            </div>
           </div>
-        ))}
-      </dl>
+        }
+      />
 
-      <ApprovalStatus profile={profile} />
-      <Groups profile={profile} />
-
-      <details className="mt-10">
-        <summary className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground">
-          What the directory returned
-        </summary>
-        <DataView className="mt-3" data={profile} filename={`profile-${profile.uid}`} />
-      </details>
+      <Split
+        aside={
+          <>
+            <Section title="Account">
+              <Facts
+                items={[
+                  ['Username', <code>{profile.uid}</code>],
+                  ['Email', profile.mail || null],
+                ]}
+              />
+            </Section>
+            <ApprovalStatus profile={profile} />
+          </>
+        }
+      >
+        <Section title="Organisation" description="As the directory has it.">
+          <Facts items={organisation} empty="Not set in the directory" />
+        </Section>
+        <Groups profile={profile} />
+        <Section title="What the directory returned" description="The whole profile, as the API reads it.">
+          <DataView data={profile} filename={`profile-${profile.uid}`} />
+        </Section>
+      </Split>
     </div>
   )
 }
@@ -102,40 +109,39 @@ export function ProfilePage() {
 function ApprovalStatus({ profile }: { profile: Profile }) {
   if (profile.isApprover) {
     return (
-      <section className="mt-10 flex flex-wrap items-center gap-4 rounded-lg border bg-card p-5">
-        <ShieldCheck className="size-5 shrink-0" />
-        <p className="min-w-0 flex-1 text-sm">
+      <Section title="Approvals" action={<ShieldCheck className="size-4 shrink-0 text-muted-foreground" />}>
+        <p className="text-sm">
           You’re in <span className="font-medium">{profile.approverGroup}</span>, so you can approve
           and reject requests.
         </p>
-        <Button asChild size="sm">
+        <Button asChild size="sm" className="mt-4">
           <Link to="/approvals">Open approvals</Link>
         </Button>
-      </section>
+      </Section>
     )
   }
 
   return (
-    <section className="mt-10 rounded-lg border bg-card p-5 text-sm">
-      <p>
+    <Section title="Approvals">
+      <p className="text-sm">
         You’re not in <span className="font-medium">{profile.approverGroup}</span>, as far as the
         directory reports, so requests are decided by others.
       </p>
       {profile.groups.length === 0 ? (
-        <p className="mt-3 text-muted-foreground">
+        <p className="mt-3 text-sm text-muted-foreground">
           The directory returned no groups for you at all. That usually means the portal’s group
           lookup doesn’t match your directory, not that you belong to none. Whoever runs e-IDP can
           check with <code className="text-foreground">pnpm --filter @eidp/api ldap:doctor {profile.uid}</code>.
         </p>
       ) : (
-        <p className="mt-3 text-muted-foreground">
+        <p className="mt-3 text-sm text-muted-foreground">
           If you should be, check that you are a member of {profile.approverGroup} in Active
           Directory, or that the portal’s <code className="text-foreground">APPROVER_GROUP</code>{' '}
           names the group you are in.
         </p>
       )}
       <p className="mt-3 text-xs text-muted-foreground">Groups looked up by: {profile.groupLookup}</p>
-    </section>
+    </Section>
   )
 }
 
@@ -151,20 +157,18 @@ function Groups({ profile }: { profile: Profile }) {
   const shown = all ? ordered : ordered.slice(0, GROUPS_SHOWN)
 
   return (
-    <section className="mt-10">
-      <h2 className="text-sm font-medium text-muted-foreground">
-        Groups in the directory ({profile.groups.length})
-      </h2>
-      <ul className="mt-3 flex flex-wrap gap-1.5">
+    <Section title={`Groups (${profile.groups.length})`} description="Every directory group you are in, nested ones included.">
+      <ul className="flex flex-wrap gap-1.5">
         {shown.map((group) => (
-          <li
-            key={group}
-            className={[
-              'rounded-md border px-2 py-0.5 text-xs',
-              group.toLowerCase() === approver ? 'border-foreground font-medium' : 'text-muted-foreground',
-            ].join(' ')}
-          >
-            {group}
+          <li key={group}>
+            {/* Not the default badge: that one is red, and a group is not an action. */}
+            {group.toLowerCase() === approver ? (
+              <Badge variant="secondary">{group}</Badge>
+            ) : (
+              <Badge variant="outline" className="font-normal text-muted-foreground">
+                {group}
+              </Badge>
+            )}
           </li>
         ))}
       </ul>
@@ -173,7 +177,7 @@ function Groups({ profile }: { profile: Profile }) {
           {all ? 'Show fewer' : `Show all ${ordered.length}`}
         </Button>
       )}
-    </section>
+    </Section>
   )
 }
 

@@ -13,8 +13,9 @@ import { useResource } from '@/lib/use-resource.ts'
 import { isInFlight, requestsApi, targetPath, type PortalRequest } from './api.ts'
 import { decide, rejectRequest } from './decisions.ts'
 import { RejectDialog } from './reject-dialog.tsx'
-import { AccessLine, RequestName, since, StatusBadge, WrappingUrl } from './status.tsx'
+import { AccessLine, KIND_LABEL, RequestName, since, StatusBadge, WrappingUrl } from './status.tsx'
 import { HeaderSkeleton, Loading, TimelineSkeleton } from '@/components/skeletons.tsx'
+import { Facts, PAGE, PageHeader, Section, Split } from '@/components/page-layout.tsx'
 
 export function RequestPage() {
   const { requestId = '' } = useParams()
@@ -38,7 +39,7 @@ export function RequestPage() {
   }
   if (!request.data) {
     return (
-      <Loading label="Loading the request…" className="max-w-2xl">
+      <Loading label="Loading the request…" className={PAGE}>
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1">
             <HeaderSkeleton />
@@ -56,37 +57,57 @@ export function RequestPage() {
   const own = r.requestedBy === session?.uid
 
   return (
-    <div className="max-w-2xl">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <RequestName request={r} as="h1" />
-        <StatusBadge status={r.status} kind={r.kind} />
-      </div>
+    <div className={PAGE}>
+      <PageHeader title={<RequestName request={r} as="h1" />} actions={<StatusBadge status={r.status} kind={r.kind} />} />
 
-      <ol className="mt-8 space-y-0">
-        <Step title={own ? 'You asked for it' : `${r.requestedByName} asked for it`} when={r.requestedAt} done>
-          <blockquote className="mt-2 border-l-2 pl-3 text-sm text-muted-foreground">{r.justification}</blockquote>
-          {r.description && (
-            <p className="mt-2 text-sm">
-              <span className="text-muted-foreground">Description: </span>
-              {r.description}
-            </p>
-          )}
-          <AccessLine request={r} own={own} className="mt-2" />
-        </Step>
+      <Split aside={<Details request={r} own={own} />}>
+        <Section title="What happened">
+          <ol>
+            <Step title={own ? 'You asked for it' : `${r.requestedByName} asked for it`} when={r.requestedAt} done>
+              <blockquote className="mt-2 border-l-2 pl-3 text-sm text-muted-foreground">{r.justification}</blockquote>
+              {r.description && (
+                <p className="mt-2 text-sm">
+                  <span className="text-muted-foreground">Description: </span>
+                  {r.description}
+                </p>
+              )}
+            </Step>
 
-        <DecisionStep request={r} own={own} />
-        <OutcomeStep request={r} />
-      </ol>
+            <DecisionStep request={r} own={own} />
+            <OutcomeStep request={r} />
+          </ol>
+          <Actions request={r} approver={approver} own={own} onChanged={request.reload} />
+        </Section>
 
-      <Actions request={r} approver={approver} own={own} onChanged={request.reload} />
-
-      <details className="group mt-10">
-        <summary className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground">
-          Request data
-        </summary>
-        <DataView className="mt-3" data={r} filename={`request-${r.repository ?? r.project}`} />
-      </details>
+        <Section title="Request data" description="Everything stored for this request, as the API returns it.">
+          <DataView data={r} filename={`request-${r.repository ?? r.project}`} />
+        </Section>
+      </Split>
     </div>
+  )
+}
+
+/** The facts of the request in one place, beside the story of it. */
+function Details({ request: r, own }: { request: PortalRequest; own: boolean }) {
+  const at = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : null)
+  return (
+    <Section title="Details">
+      <Facts
+        empty="—"
+        items={[
+          ['Type', r.kind === 'grant_access' ? 'Access to a project' : KIND_LABEL[r.kind]],
+          ['Collection', <code>{r.collection}</code>],
+          ['Project', <code>{r.project}</code>],
+          ...(r.repository ? ([['Repository', <code>{r.repository}</code>]] as [string, React.ReactNode][]) : []),
+          ['Access', <AccessLine request={r} own={own} />],
+          ['Requested by', own ? 'You' : r.requestedByName],
+          ['Requested', at(r.requestedAt)],
+          ['Decided by', r.decidedByName],
+          ['Decided', at(r.decidedAt)],
+          ['Finished', at(r.completedAt)],
+        ]}
+      />
+    </Section>
   )
 }
 
@@ -202,7 +223,7 @@ function Actions({
   return (
     <>
       {actions.length > 0 && (
-        <div className="mt-8 flex flex-wrap items-center gap-2 border-t pt-6">{actions}</div>
+        <div className="mt-6 flex flex-wrap items-center gap-2 border-t pt-6">{actions}</div>
       )}
       <RejectDialog
         open={rejecting}

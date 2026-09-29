@@ -366,6 +366,16 @@ service account's token and rewrites the catalog.
   never red. Output goes in via `dangerouslySetInnerHTML`, which is safe only
   because Shiki escapes every token; keep it that way. The effect keys on the
   serialised text, not the `data` object, because callers build it inline.
+- **Pages use the width.** `components/page-layout.tsx` holds the shapes:
+  `PAGE` (the one width cap, shared with the Overview), `PageHeader`,
+  `Split` (a main column plus a 20–22rem side column that stacks under it
+  below `lg`), `Section` (a titled shadcn `Card`; `flush` for edge-to-edge
+  lists) and `Facts` (label/value rows). Main column is what the page is
+  for — the timeline, the queue, the configuration; the side column is facts
+  and short lists about it. A page with its own `max-w-2xl` left the right
+  third of a desktop empty; don't reintroduce one. `RequestRow` lays itself
+  out with container queries (`@container`/`@md:`), not screen breakpoints,
+  because the same row sits in a full-width list and in a side column.
 - **Loading looks like what is loading.** `components/skeletons.tsx` has
   placeholders shaped like the real layouts (header, facts, request rows,
   approval cards, timeline, bar chart), each wrapped in `Loading` so screen

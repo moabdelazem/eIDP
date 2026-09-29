@@ -11,6 +11,7 @@ import { DataView } from '@/components/data-view.tsx'
 import { useCatalog } from './catalog-context.tsx'
 import { CatalogUnavailable } from './catalog-error.tsx'
 import { FactsSkeleton, HeaderSkeleton, Loading } from '@/components/skeletons.tsx'
+import { Facts, PAGE, PageHeader, Section, Split } from '@/components/page-layout.tsx'
 
 /** The environments every system is described against, in promotion order. */
 const PROMOTION: Environment[] = ['dev', 'qc', 'uat', 'prd']
@@ -29,7 +30,7 @@ export function ProjectPage() {
   if (status === 'error') return <CatalogUnavailable error={error!} onRetry={reload} />
   if (status === 'loading') {
     return (
-      <Loading className="max-w-2xl">
+      <Loading className={PAGE}>
         <HeaderSkeleton />
         <FactsSkeleton />
       </Loading>
@@ -54,6 +55,7 @@ export function ProjectPage() {
   const environments = app.environments.includes('prd_dr') ? [...PROMOTION, 'prd_dr' as const] : PROMOTION
 
   const facts: [string, React.ReactNode][] = [
+    ['System', <Link to={`/map?q=${encodeURIComponent(system.projectName)}`} className="underline underline-offset-2">{system.projectName}</Link>],
     ['Repository', app.repository ? <code>{app.repository}</code> : null],
     ['Build', app.buildTechnology],
     ['Platform', app.deployPlatform],
@@ -61,79 +63,84 @@ export function ProjectPage() {
   ]
 
   return (
-    <div className="max-w-2xl">
-      <h1 className="font-mono text-lg font-semibold break-words">{app.name}</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Application in{' '}
-        <Link to={`/map?q=${encodeURIComponent(system.projectName)}`} className="underline underline-offset-2">
-          {system.projectName}
-        </Link>
-      </p>
+    <div className={PAGE}>
+      <PageHeader
+        title={<h1 className="font-mono text-lg font-semibold break-words">{app.name}</h1>}
+        description={
+          <>
+            Application in{' '}
+            <Link to={`/map?q=${encodeURIComponent(system.projectName)}`} className="underline underline-offset-2">
+              {system.projectName}
+            </Link>
+          </>
+        }
+      />
 
-      <dl className="mt-8 grid grid-cols-[8rem_minmax(0,1fr)] gap-y-3 text-sm">
-        {facts.map(([label, value]) => (
-          <div key={label} className="contents">
-            <dt className="text-muted-foreground">{label}</dt>
-            <dd>{value ?? <span className="text-muted-foreground">Not set in inventories</span>}</dd>
-          </div>
-        ))}
-      </dl>
+      <Split
+        aside={
+          <>
+            <Section title="Details">
+              <Facts items={facts} empty="Not set in inventories" />
+            </Section>
 
-      <Configuration rows={config.data} error={config.error} />
+            <Section
+              title="Environments"
+              description={
+                <>
+                  Teams are set once per system, in <code>{system.id}/group_vars/all/project.yml</code>.
+                </>
+              }
+            >
+              <table className="w-full text-sm">
+                <thead className="sr-only">
+                  <tr>
+                    <th>Environment</th>
+                    <th>Configured in inventories</th>
+                    <th>Owning team</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {environments.map((env) => {
+                    const state = environmentState(env, app.environments, hasBase)
+                    return (
+                      <tr key={env} className={`align-top ${state === 'missing' ? 'text-muted-foreground' : ''}`}>
+                        <td className="w-14 py-2 font-mono">{env}</td>
+                        <td className="py-2">
+                          <span className="inline-flex items-center gap-1.5">
+                            {state === 'missing' ? <Minus className="size-3.5" /> : <Check className="size-3.5" />}
+                            {state === 'override' ? 'Own override' : state === 'base' ? 'Uses the base' : 'Not configured'}
+                          </span>
+                          <span className="block text-xs text-muted-foreground">{system.teams[env] ?? 'No team set'}</span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </Section>
 
-      <section className="mt-10">
-        <h2 className="text-sm font-medium">Environments and who owns them</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Teams are set once per system, in <code>{system.id}/group_vars/all/project.yml</code>.
-        </p>
-        <table className="mt-3 w-full text-sm">
-          <thead className="sr-only">
-            <tr>
-              <th>Environment</th>
-              <th>Configured in inventories</th>
-              <th>Owning team</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y border-y">
-            {environments.map((env) => {
-              const state = environmentState(env, app.environments, hasBase)
-              return (
-                <tr key={env} className={state === 'missing' ? 'text-muted-foreground' : ''}>
-                  <td className="w-20 py-2.5 font-mono">{env}</td>
-                  <td className="w-44 py-2.5">
-                    <span className="inline-flex items-center gap-1.5">
-                      {state === 'missing' ? <Minus className="size-3.5" /> : <Check className="size-3.5" />}
-                      {state === 'override' ? 'Own override' : state === 'base' ? 'Uses the base' : 'Not configured'}
-                    </span>
-                  </td>
-                  <td className="py-2.5">{system.teams[env] ?? <span className="text-muted-foreground">No team set</span>}</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </section>
-
-      {siblings.length > 0 && (
-        <section className="mt-10">
-          <h2 className="text-sm font-medium">
-            Also in {system.projectName} ({siblings.length})
-          </h2>
-          <ul className="mt-3 divide-y rounded-lg border bg-card text-sm">
-            {siblings.map((other) => (
-              <li key={other.id}>
-                <Link
-                  to={`/projects/${encodeURIComponent(other.id)}`}
-                  className="flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-muted/50"
-                >
-                  <span className="truncate font-mono">{other.name}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">{other.buildTechnology}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+            {siblings.length > 0 && (
+              <Section title={`Also in ${system.projectName} (${siblings.length})`} flush>
+                <ul className="max-h-96 divide-y overflow-y-auto text-sm">
+                  {siblings.map((other) => (
+                    <li key={other.id}>
+                      <Link
+                        to={`/projects/${encodeURIComponent(other.id)}`}
+                        className="flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-muted/50"
+                      >
+                        <span className="truncate font-mono">{other.name}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">{other.buildTechnology}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            )}
+          </>
+        }
+      >
+        <Configuration rows={config.data} error={config.error} />
+      </Split>
     </div>
   )
 }
@@ -162,11 +169,11 @@ function environmentState(
  */
 function Configuration({ rows, error }: { rows: ApplicationConfig[] | undefined; error: string | null }) {
   if (error && !rows) {
-    return <p className="mt-10 text-sm text-destructive">Could not load the configuration: {error}</p>
+    return <p className="text-sm text-destructive">Could not load the configuration: {error}</p>
   }
   if (!rows) {
     return (
-      <Loading label="Loading configuration…" className="mt-10">
+      <Loading label="Loading configuration…">
         <Skeleton className="h-4 w-20" />
         <FactsSkeleton rows={5} className="mt-4" />
       </Loading>
@@ -184,24 +191,27 @@ function Configuration({ rows, error }: { rows: ApplicationConfig[] | undefined;
 
   return (
     <>
-      <section className="mt-10">
-        <h2 className="text-sm font-medium">Runtime</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          From <code>cicd.yml</code> and the technology file beside it, merged in the order Ansible
-          applies them
-          {base.environment && (
-            <>
-              {' '}— shown for <code>{base.environment}</code>, as there is no base configuration
-            </>
-          )}
-          .
-        </p>
+      <Section
+        title="Runtime"
+        description={
+          <>
+            From <code>cicd.yml</code> and the technology file beside it, merged in the order Ansible
+            applies them
+            {base.environment && (
+              <>
+                {' '}— shown for <code>{base.environment}</code>, as there is no base configuration
+              </>
+            )}
+            .
+          </>
+        }
+      >
         {settings.length === 0 ? (
-          <p className="mt-3 text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             None of the usual runtime settings are set; everything the files hold is listed below.
           </p>
         ) : (
-          <dl className="mt-3 grid grid-cols-[8rem_minmax(0,1fr)] gap-y-2.5 text-sm">
+          <dl className="grid grid-cols-[8rem_minmax(0,1fr)] gap-y-2.5 text-sm">
             {settings.map((setting) => (
               <div key={setting.label} className="contents">
                 <dt className="text-muted-foreground">{setting.label}</dt>
@@ -213,14 +223,13 @@ function Configuration({ rows, error }: { rows: ApplicationConfig[] | undefined;
             ))}
           </dl>
         )}
-      </section>
+      </Section>
 
       {overrides.length > 0 && (
-        <section className="mt-10">
-          <h2 className="text-sm font-medium">What each environment changes</h2>
-          <ul className="mt-3 space-y-3 text-sm">
+        <Section title="What each environment changes">
+          <ul className="grid gap-3 text-sm xl:grid-cols-2">
             {overrides.map(({ environment, changes }) => (
-              <li key={environment} className="rounded-lg border bg-card p-4">
+              <li key={environment} className="rounded-lg border bg-muted/30 p-4">
                 <p className="font-mono font-medium">{environment}</p>
                 {changes.length === 0 ? (
                   <p className="mt-1 text-muted-foreground">Same as the base configuration.</p>
@@ -247,23 +256,25 @@ function Configuration({ rows, error }: { rows: ApplicationConfig[] | undefined;
               </li>
             ))}
           </ul>
-        </section>
+        </Section>
       )}
 
-      <section className="mt-10">
-        <h2 className="text-sm font-medium">All settings</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Each group directory, keyed as it is in <code>inventories</code>, with its files merged.
-          Passwords, tokens and vault-encrypted values show as <code>[hidden]</code>.
-        </p>
+      <Section
+        title="All settings"
+        description={
+          <>
+            Each group directory, keyed as it is in <code>inventories</code>, with its files merged.
+            Passwords, tokens and vault-encrypted values show as <code>[hidden]</code>.
+          </>
+        }
+      >
         <DataView
-          className="mt-3"
           // Keyed by directory, so it reads like the repo: the base group and
           // each environment's own, side by side.
           data={Object.fromEntries(rows.map((row) => [row.group, row.descriptor]))}
           filename={base.name}
         />
-      </section>
+      </Section>
     </>
   )
 }

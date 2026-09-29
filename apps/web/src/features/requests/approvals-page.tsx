@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useSession } from '@/features/auth/session-context.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { withViewTransition } from '@/lib/view-transition.ts'
+import { Facts, PAGE, PageHeader, Section, Split } from '@/components/page-layout.tsx'
 import { useResource } from '@/lib/use-resource.ts'
 import { requestsApi, targetPath, type PortalRequest } from './api.ts'
 import { decide, rejectRequest } from './decisions.ts'
@@ -13,6 +14,9 @@ import { RejectDialog } from './reject-dialog.tsx'
 import { RequestRow } from './request-row.tsx'
 import { AccessLine, KIND_ICON, RequestName, since } from './status.tsx'
 import { CardSkeleton, HeaderSkeleton, Loading } from '@/components/skeletons.tsx'
+
+/** A side column holds the latest few; the rest are one click away on each request. */
+const RECENT_SHOWN = 8
 
 /** Mounted only behind `RequireDevOps` — see app/routes.tsx. */
 export function ApprovalsPage() {
@@ -30,7 +34,7 @@ export function ApprovalsPage() {
   if (pool.error && !pool.data) return <p className="text-sm text-destructive">{pool.error}</p>
   if (!pool.data) {
     return (
-      <Loading label="Loading approvals…" className="max-w-3xl">
+      <Loading label="Loading approvals…" className={PAGE}>
         <HeaderSkeleton />
         <Skeleton className="mt-8 h-4 w-40" />
         <div className="mt-2 space-y-3">
@@ -54,67 +58,82 @@ export function ApprovalsPage() {
   }
   const attention = pool.data.open.filter((r) => r.status !== 'pending')
 
+  const failed = attention.filter((r) => r.status === 'failed').length
+  const recent = pool.data.recent.slice(0, RECENT_SHOWN)
+
   return (
-    <div className="max-w-3xl">
-      <h1 className="text-lg font-semibold tracking-tight">Approvals</h1>
-      <p className="mt-1 text-muted-foreground">
-        Requests wait here for anyone in DevOps. Approving creates it in Azure DevOps straight away.
-      </p>
+    <div className={PAGE}>
+      <PageHeader
+        title="Approvals"
+        description="Requests wait here for anyone in DevOps. Approving acts in Azure DevOps straight away."
+      />
 
-      <section className="mt-8">
-        <h2 className="text-sm font-medium text-muted-foreground">
-          Waiting for a decision{waiting.length > 0 && ` (${waiting.length})`}
-        </h2>
-        {waiting.length === 0 ? (
-          <p className="mt-2 rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            Nothing waiting. New requests show up here as they arrive.
-          </p>
-        ) : (
-          <ul className="mt-2 space-y-3">
-            {waiting.map((request) => (
-              // A name per card is what lets the browser track each one across
-              // the change and slide it, rather than cross-fading the whole list.
-              <li key={request.id} style={{ viewTransitionName: `request-${request.id}` }}>
-                <PendingCard
-                  request={request}
-                  onDecided={() => onDecided(request.id)}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <Split
+        aside={
+          <>
+            <Section title="At a glance">
+              <Facts
+                items={[
+                  ['Waiting', waiting.length],
+                  ['In progress', attention.length - failed],
+                  // Red only when there is something to retry.
+                  ['Failed', <span className={failed > 0 ? 'font-medium text-destructive' : ''}>{failed}</span>],
+                ]}
+              />
+            </Section>
 
-      {attention.length > 0 && (
-        <section className="mt-10">
-          <h2 className="text-sm font-medium text-muted-foreground">Creating, or needs a retry</h2>
-          <ul className="mt-2 divide-y rounded-lg border bg-card">
-            {attention.map((request) => (
-              <li key={request.id} className="flex items-center">
-                <div className="min-w-0 flex-1">
-                  <RequestRow request={request} showRequester />
-                </div>
-                {request.status === 'failed' && (
-                  <RetryButton request={request} onChanged={pool.reload} />
-                )}
-              </li>
-            ))}
-          </ul>
+            {attention.length > 0 && (
+              <Section title="Creating, or needs a retry" flush>
+                <ul className="divide-y">
+                  {attention.map((request) => (
+                    <li key={request.id} className="flex items-center">
+                      <div className="min-w-0 flex-1">
+                        <RequestRow request={request} showRequester />
+                      </div>
+                      {request.status === 'failed' && <RetryButton request={request} onChanged={pool.reload} />}
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            )}
+
+            {recent.length > 0 && (
+              <Section title="Recently decided" flush>
+                <ul className="divide-y">
+                  {recent.map((request) => (
+                    <li key={request.id}>
+                      <RequestRow request={request} showRequester />
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            )}
+          </>
+        }
+      >
+        <section>
+          <h2 className="text-sm font-medium text-muted-foreground">
+            Waiting for a decision{waiting.length > 0 && ` (${waiting.length})`}
+          </h2>
+          {waiting.length === 0 ? (
+            <p className="mt-2 rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
+              Nothing waiting. New requests show up here as they arrive.
+            </p>
+          ) : (
+            // Two across once there is room: a card is short, and a long queue
+            // should not become one long scroll.
+            <ul className="mt-2 grid gap-3 2xl:grid-cols-2">
+              {waiting.map((request) => (
+                // A name per card is what lets the browser track each one across
+                // the change and slide it, rather than cross-fading the whole list.
+                <li key={request.id} style={{ viewTransitionName: `request-${request.id}` }}>
+                  <PendingCard request={request} onDecided={() => onDecided(request.id)} />
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
-      )}
-
-      {pool.data.recent.length > 0 && (
-        <section className="mt-10">
-          <h2 className="text-sm font-medium text-muted-foreground">Recently decided</h2>
-          <ul className="mt-2 divide-y rounded-lg border bg-card">
-            {pool.data.recent.map((request) => (
-              <li key={request.id}>
-                <RequestRow request={request} showRequester />
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      </Split>
     </div>
   )
 }
@@ -126,7 +145,7 @@ function PendingCard({ request: r, onDecided }: { request: PortalRequest; onDeci
   const Icon = KIND_ICON[r.kind]
 
   return (
-    <article className="rounded-lg border bg-card p-5">
+    <article className="h-full rounded-xl border bg-card p-5 shadow-sm">
       <div className="flex items-start gap-3">
         <Icon className="mt-1 size-4 shrink-0 text-muted-foreground" aria-hidden />
         <Link to={`/requests/${r.id}`} className="min-w-0 flex-1 hover:[&_p:first-child]:underline">
