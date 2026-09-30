@@ -1,6 +1,6 @@
 import { api } from '@/lib/api-client.ts'
 
-export type RequestKind = 'create_repository' | 'create_project' | 'grant_access'
+export type RequestKind = 'create_repository' | 'create_project' | 'grant_access' | 'create_jira_project'
 export type AccessLevel = 'read' | 'contribute'
 export type RequestStatus = 'pending' | 'approved' | 'rejected' | 'completed' | 'failed' | 'cancelled'
 
@@ -8,8 +8,11 @@ export type PortalRequest = {
   id: string
   kind: RequestKind
   status: RequestStatus
-  collection: string
+  /** The Azure DevOps collection; null for Jira, which has none. */
+  collection: string | null
   project: string
+  /** Jira projects only: the key every issue carries, like PAY. */
+  projectKey: string | null
   repository: string | null
   description: string | null
   justification: string
@@ -37,6 +40,8 @@ export type Target =
   | { kind: 'create_project'; collection: string; project: string; description?: string }
   /** Always Contribute on the whole project; neither is the requester's choice. */
   | { kind: 'grant_access'; collection: string; project: string; grantees: string[] }
+  /** `project` is the Jira project's name; `projectKey` its key. */
+  | { kind: 'create_jira_project'; project: string; projectKey: string; description?: string }
 
 export type Check = { ok: true } | { ok: false; reason: string }
 
@@ -47,6 +52,8 @@ export const requestsApi = {
     api<{ name: string; description: string | null }[]>(
       `/ado/collections/${encodeURIComponent(collection)}/projects`,
     ),
+  /** Which Jira the portal talks to; fails when it cannot reach it. */
+  jira: () => api<{ baseUrl: string; serverTitle: string; version: string }>('/jira'),
   check: (target: Target) =>
     api<Check>('/requests/check', { method: 'POST', body: JSON.stringify(target) }),
   submit: (target: Target, justification: string, teamGroup?: string) =>
@@ -67,9 +74,30 @@ export const requestsApi = {
   retry: (id: string) => api<PortalRequest>(`/requests/${id}/retry`, { method: 'POST' }),
 }
 
-/** The thing being created, as a path — the one line that identifies a request. */
-export function targetPath(request: Pick<PortalRequest, 'collection' | 'project' | 'repository'>): string[] {
-  return [request.collection, request.project, ...(request.repository ? [request.repository] : [])]
+/** Jira's requests act in Jira; everything else is Azure DevOps. */
+export function isJira(request: Pick<PortalRequest, 'kind'>): boolean {
+  return request.kind === 'create_jira_project'
+}
+
+/** Where a request acts, by name — for sentences like "created in Jira". */
+export function systemOf(request: Pick<PortalRequest, 'kind'>): string {
+  return isJira(request) ? 'Jira' : 'Azure DevOps'
+}
+
+type Located = Pick<PortalRequest, 'kind' | 'collection' | 'project' | 'projectKey' | 'repository'>
+
+/**
+ * The thing being created, as a path — the one line that identifies a request.
+ * A Jira project has no collection; its key stands where the collection would.
+ */
+export function targetPath(request: Located): string[] {
+  if (isJira(request)) return [request.projectKey ?? '', request.project]
+  return [request.collection ?? '', request.project, ...(request.repository ? [request.repository] : [])]
+}
+
+/** Everything in the path but the name: the context beneath it in a list. */
+export function whereOf(request: Located): string {
+  return targetPath(request).slice(0, -1).join(' / ')
 }
 
 /** Still moving, so worth watching. */

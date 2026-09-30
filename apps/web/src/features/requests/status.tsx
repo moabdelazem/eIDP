@@ -1,5 +1,5 @@
-import { Check, CircleDashed, FolderGit2, FolderKanban, KeyRound, Loader2, TriangleAlert, X, type LucideIcon } from 'lucide-react'
-import type { PortalRequest, RequestKind, RequestStatus } from './api.ts'
+import { Check, CircleDashed, ClipboardList, FolderGit2, FolderKanban, KeyRound, Loader2, TriangleAlert, X, type LucideIcon } from 'lucide-react'
+import { isJira, whereOf, type PortalRequest, type RequestKind, type RequestStatus } from './api.ts'
 
 /** What each status is called in a badge. Access requests say Granting/Granted instead. */
 const STATUS_LABEL: Record<RequestStatus, string> = {
@@ -15,12 +15,14 @@ export const KIND_LABEL: Record<RequestKind, string> = {
   create_repository: 'Repository',
   create_project: 'Project',
   grant_access: 'Access',
+  create_jira_project: 'Jira project',
 }
 
 export const KIND_ICON: Record<RequestKind, LucideIcon> = {
   create_repository: FolderGit2,
   create_project: FolderKanban,
   grant_access: KeyRound,
+  create_jira_project: ClipboardList,
 }
 
 /** Nothing is created by an access request, so its badge says what it does. */
@@ -108,19 +110,20 @@ export function RequestName({
   as: Tag = 'p',
   className = '',
 }: {
-  request: { kind: RequestKind; collection: string; project: string; repository: string | null }
+  request: Pick<PortalRequest, 'kind' | 'collection' | 'project' | 'projectKey' | 'repository'>
   as?: 'p' | 'h1'
   className?: string
 }) {
   const name = request.repository ?? request.project
-  const where = request.repository ? `${request.collection} / ${request.project}` : request.collection
+  const where = whereOf(request)
   const label =
     request.kind === 'grant_access' ? `Access to the ${request.repository ? 'repository' : 'project'}` : KIND_LABEL[request.kind]
   return (
     <div className={`min-w-0 ${className}`}>
       <Tag className={`font-mono font-medium break-words ${Tag === 'h1' ? 'text-lg' : ''}`}>{name}</Tag>
       <p className="mt-0.5 truncate text-xs text-muted-foreground">
-        {label} in <span className="font-mono">{where}</span>
+        {/* A Jira project lives nowhere narrower than Jira; its key is what people know it by. */}
+        {isJira(request) ? label : `${label} in`} <span className="font-mono">{where}</span>
       </p>
     </div>
   )
@@ -146,7 +149,8 @@ export function AccessLine({
   const level = r.kind === 'grant_access' && r.accessLevel === 'read' ? 'Read' : 'Contributor'
   return (
     <p className={`text-sm ${className}`}>
-      <span className="text-muted-foreground">{level} access for </span>
+      {/* Jira has roles, not access levels; which role is the server's setting. */}
+      <span className="text-muted-foreground">{isJira(r) ? 'Project members: ' : `${level} access for `}</span>
       {names.map(({ name, mono }, index) => (
         <span key={name}>
           {index > 0 && (index === names.length - 1 ? ' and ' : ', ')}

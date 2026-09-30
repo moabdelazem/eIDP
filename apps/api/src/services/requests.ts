@@ -12,13 +12,14 @@ import {
   webUrlFor,
   type Principal,
 } from '../integrations/ado/index.ts'
+import * as jira from '../integrations/jira/index.ts'
 import { dnOf, profileOf } from '../integrations/ldap/index.ts'
 import { can, teamsOwning, type Access } from './rbac.ts'
 import { query } from '../lib/db.ts'
 import { ApiError } from '../lib/errors.ts'
-import { nameProblem } from './request-rules.ts'
+import { jiraKeyProblem, jiraNameProblem, nameProblem } from './request-rules.ts'
 
-export type RequestKind = 'create_repository' | 'create_project' | 'grant_access'
+export type RequestKind = 'create_repository' | 'create_project' | 'grant_access' | 'create_jira_project'
 export type AccessLevel = 'read' | 'contribute'
 
 /** Enough for a team; a larger grant is a group's job, not a list of names. */
@@ -31,8 +32,11 @@ export type RequestRecord = {
   id: string
   kind: RequestKind
   status: RequestStatus
-  collection: string
+  /** The ADO collection; null for Jira, which has none. */
+  collection: string | null
   project: string
+  /** create_jira_project only: the key every issue will carry, like PAY. */
+  projectKey: string | null
   repository: string | null
   description: string | null
   justification: string
@@ -53,18 +57,32 @@ export type RequestRecord = {
   error: string | null
 }
 
-export type NewRequest = {
-  kind: RequestKind
+/** What is being asked for in Azure DevOps. */
+export type AdoTarget = {
+  kind: Exclude<RequestKind, 'create_jira_project'>
   collection: string
   project: string
   repository?: string
   description?: string
-  justification: string
-  /** Creations only. */
-  teamGroup?: string
   /** grant_access only. */
   grantees?: string[]
   accessLevel?: AccessLevel
+}
+
+/** A Jira project: `project` is its name, `projectKey` its key. */
+export type JiraTarget = {
+  kind: 'create_jira_project'
+  project: string
+  projectKey: string
+  description?: string
+}
+
+export type Target = AdoTarget | JiraTarget
+
+export type NewRequest = Target & {
+  justification: string
+  /** Creations only. */
+  teamGroup?: string
 }
 
 export type Check = { ok: true } | { ok: false; reason: string }
@@ -75,7 +93,8 @@ export type Check = { ok: true } | { ok: false; reason: string }
  * calls this as someone types, and `submit` runs the same thing, so the answer
  * on screen is the answer on submit.
  */
-export async function check(input: Omit<NewRequest, 'justification' | 'teamGroup'>): Promise<Check> {
+export async function check(input: Target): Promise<Check> {
+  if (input.kind === 'create_jira_project') return checkJiraProject(input)
   if (input.kind === 'grant_access') return checkGrant(input)
   const creatingRepo = input.kind === 'create_repository'
   const name = creatingRepo ? (input.repository ?? '') : input.project
@@ -116,7 +135,7 @@ export async function check(input: Omit<NewRequest, 'justification' | 'teamGroup
  * one is named, must be there, and every grantee must be an account the
  * directory knows — ADO would otherwise fail it only after approval.
  */
-async function checkGrant(input: Omit<NewRequest, 'justification' | 'teamGroup'>): Promise<Check> {
+async function checkGrant(input: AdoTarget): Promise<Check> {
   const grantees = uniqueNames(input.grantees ?? [])
   if (grantees.length === 0) return { ok: false, reason: 'Name at least one person to grant access to.' }
   if (grantees.length > MAX_GRANTEES) {
@@ -139,6 +158,33 @@ async function checkGrant(input: Omit<NewRequest, 'justification' | 'teamGroup'>
       ok: false,
       reason: `The directory has no account called ${unknown.join(', ')}. Use login names, like jsmith.`,
     }
+  }
+  return { ok: true }
+}
+
+/**
+ * A Jira project needs a name and a key nobody has, and a key Jira's own rules
+ * accept — which only the server knows, since the pattern, the length and the
+ * reserved words are its configuration. It also sees archived projects, whose
+ * keys stay taken though the project list leaves them out.
+ */
+async function checkJiraProject(input: JiraTarget): Promise<Check> {
+  const problem = jiraNameProblem(input.project) ?? jiraKeyProblem(input.projectKey)
+  if (problem) return { ok: false, reason: problem }
+
+  const existing = (await jira.listProjects()).find((p) => same(p.name, input.project))
+  if (existing) return { ok: false, reason: `Jira already has a project called ${existing.name} (${existing.key}).` }
+  const keyProblem = await jira.keyProblem(input.projectKey)
+  if (keyProblem) return { ok: false, reason: keyProblem }
+
+  const { rows } = await query<{ requested_by_name: string }>(
+    `select requested_by_name from requests
+      where kind = 'create_jira_project' and (lower(project) = lower($1) or lower(project_key) = lower($2))
+        and status in ('pending', 'approved')`,
+    [input.project, input.projectKey],
+  )
+  if (rows[0]) {
+    return { ok: false, reason: `${rows[0].requested_by_name} has already asked for this; it is waiting on approval.` }
   }
   return { ok: true }
 }
@@ -171,14 +217,15 @@ export async function submit(input: NewRequest, actor: Actor): Promise<RequestRe
   try {
     const { rows } = await query<Row>(
       `insert into requests
-         (kind, collection, project, repository, description, justification,
+         (kind, collection, project, project_key, repository, description, justification,
           requested_by, requested_by_name, team_group)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        returning *`,
       [
         input.kind,
-        input.collection,
+        input.kind === 'create_jira_project' ? null : input.collection,
         input.project,
+        input.kind === 'create_jira_project' ? input.projectKey : null,
         input.kind === 'create_repository' ? input.repository : null,
         input.description?.trim() || null,
         input.justification.trim(),
@@ -203,7 +250,7 @@ export async function submit(input: NewRequest, actor: Actor): Promise<RequestRe
  * Rows filed before that was fixed may name a repository or Read, and
  * `executeGrant` still honours them.
  */
-async function submitGrant(input: NewRequest, actor: Actor): Promise<RequestRecord> {
+async function submitGrant(input: AdoTarget & NewRequest, actor: Actor): Promise<RequestRecord> {
   input = { ...input, repository: undefined, accessLevel: 'contribute' }
   const verdict = await check(input)
   if (!verdict.ok) throw new ApiError(409, 'request_not_possible', verdict.reason)
@@ -377,10 +424,12 @@ export async function recoverInterrupted(): Promise<number> {
  */
 async function execute(request: RequestRecord): Promise<void> {
   try {
+    if (request.kind === 'create_jira_project') return await executeJiraProject(request)
     if (request.kind === 'grant_access') return await executeGrant(request)
+    const collection = request.collection!
     const principals: Principal[] = []
     for (const name of [request.requestedBy, request.teamGroup]) {
-      if (name) principals.push(await findIdentity(request.collection, name))
+      if (name) principals.push(await findIdentity(collection, name))
     }
     const created = request.resultUrl !== null
 
@@ -388,20 +437,20 @@ async function execute(request: RequestRecord): Promise<void> {
     if (request.kind === 'create_repository') {
       const repo = created
         ? await existingRepository(request)
-        : await createRepository(request.collection, request.project, request.repository!)
-      resultUrl = repo.webUrl ?? webUrlFor(request.collection, request.project, repo.name)
+        : await createRepository(collection, request.project, request.repository!)
+      resultUrl = repo.webUrl ?? webUrlFor(collection, request.project, repo.name)
       if (!created) await recordCreated(request.id, resultUrl)
       await withContext(`Created ${repo.name}, but could not grant access`, () =>
-        grantRepository(request.collection, repo.project.id, repo.id, principals),
+        grantRepository(collection, repo.project.id, repo.id, principals),
       )
     } else {
       const project = created
         ? { name: request.project }
-        : await createProject(request.collection, request.project, request.description ?? '')
-      resultUrl = webUrlFor(request.collection, project.name)
+        : await createProject(collection, request.project, request.description ?? '')
+      resultUrl = webUrlFor(collection, project.name)
       if (!created) await recordCreated(request.id, resultUrl)
       await withContext(`Created ${project.name}, but could not grant access`, () =>
-        addToProjectGroup(request.collection, project.name, 'Contributors', principals),
+        addToProjectGroup(collection, project.name, 'Contributors', principals),
       )
     }
     await query(
@@ -423,18 +472,19 @@ async function execute(request: RequestRecord): Promise<void> {
  * retry simply runs it again.
  */
 async function executeGrant(request: RequestRecord): Promise<void> {
+  const collection = request.collection!
   const principals: Principal[] = []
-  for (const name of request.grantees ?? []) principals.push(await findIdentity(request.collection, name))
+  for (const name of request.grantees ?? []) principals.push(await findIdentity(collection, name))
   const read = request.accessLevel === 'read'
 
   let resultUrl: string
   if (request.repository) {
     const repo = await existingRepository(request)
-    await grantRepository(request.collection, repo.project.id, repo.id, principals, read ? READER : CONTRIBUTOR)
-    resultUrl = repo.webUrl ?? webUrlFor(request.collection, request.project, repo.name)
+    await grantRepository(collection, repo.project.id, repo.id, principals, read ? READER : CONTRIBUTOR)
+    resultUrl = repo.webUrl ?? webUrlFor(collection, request.project, repo.name)
   } else {
-    await addToProjectGroup(request.collection, request.project, read ? 'Readers' : 'Contributors', principals)
-    resultUrl = webUrlFor(request.collection, request.project)
+    await addToProjectGroup(collection, request.project, read ? 'Readers' : 'Contributors', principals)
+    resultUrl = webUrlFor(collection, request.project)
   }
   await query(
     `update requests set status = 'completed', completed_at = now(), result_url = $2, error = null
@@ -443,8 +493,33 @@ async function executeGrant(request: RequestRecord): Promise<void> {
   )
 }
 
+/**
+ * Creates the Jira project, led by the requester, then puts the requester and
+ * their team in its member role. As with Azure DevOps, both are found in Jira
+ * before anything is created, and `result_url` is written the moment the
+ * project exists, so a retry after a failed grant only grants.
+ */
+async function executeJiraProject(request: RequestRecord): Promise<void> {
+  const lead = await jira.findUser(request.requestedBy)
+  const members = [lead, ...(request.teamGroup ? [await jira.findGroup(request.teamGroup)] : [])]
+  const key = request.projectKey!
+  const resultUrl = jira.browseUrl(key)
+
+  if (request.resultUrl === null) {
+    await jira.createProject({ key, name: request.project, description: request.description ?? '', lead: lead.name })
+    await recordCreated(request.id, resultUrl)
+  }
+  const { memberRole } = jira.jiraConfig()
+  await withContext(`Created ${key}, but could not grant access`, () => jira.addToRole(key, memberRole, members))
+  await query(
+    `update requests set status = 'completed', completed_at = now(), result_url = $2, error = null
+      where id = $1`,
+    [request.id, resultUrl],
+  )
+}
+
 async function existingRepository(request: RequestRecord) {
-  const repos = await listRepositories(request.collection, request.project)
+  const repos = await listRepositories(request.collection!, request.project)
   const repo = repos.find((r) => same(r.name, request.repository!))
   if (!repo) throw new ApiError(404, 'ado_repository_missing', `${request.repository} is no longer in ${request.project}.`)
   return repo
@@ -519,8 +594,9 @@ type Row = {
   id: string
   kind: RequestKind
   status: RequestStatus
-  collection: string
+  collection: string | null
   project: string
+  project_key: string | null
   repository: string | null
   description: string | null
   justification: string
@@ -546,6 +622,7 @@ function toRecord(row: Row): RequestRecord {
     status: row.status,
     collection: row.collection,
     project: row.project,
+    projectKey: row.project_key,
     repository: row.repository,
     description: row.description,
     justification: row.justification,

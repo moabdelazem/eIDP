@@ -185,6 +185,14 @@ so `git.ts` keeps a shallow working copy instead: clone once, fetch after. The
 token goes in through `GIT_CONFIG_*` environment variables — command-line
 arguments are world-readable in `ps`, a process environment is not.
 
+`integrations/jira/` — Jira **Data Center / Server** (on-prem), REST v2 at
+`<JIRA_BASE_URL>/rest/api/2/...`; v3 is Cloud's. `JIRA_TOKEN` is a personal
+access token sent as Bearer; with `JIRA_USERNAME` set it is sent as that
+user's password instead (Basic), for servers older than PATs. Optional like
+ADO — `jiraConfig()` names what is missing. `fake-server.ts` stands in for it
+(`pnpm --filter @eidp/api jira:fake`), including the ErrorCollection its
+refusals use and an archived project whose key is still taken.
+
 `integrations/inventories/` — parses that working copy into the catalog. Its
 rules and the traps they exist for are in `parse.ts`; `__fixtures__/repo` is a
 small tree covering both layout conventions, so the parser is tested without
@@ -314,6 +322,21 @@ permissions on repositories and the right to edit project group membership —
 without them requests end `failed` with "Created X, but could not grant
 access", and a retry finishes once that is fixed. Rows filed before teams
 existed have `team_group` null and grant the requester alone.
+
+**Jira projects** (`create_jira_project`) carry a name and a key and no
+collection — `collection` is null on those rows and `project_key` is set, which
+`requests_jira_check` enforces; two partial unique indexes keep one open
+request per name and per key. `check()` asks Jira's own
+`projectvalidate/key`, because the key pattern, its length and the reserved
+words are server configuration, and only the server sees archived projects,
+whose keys stay taken. Approval creates a `software` project from
+`JIRA_PROJECT_TEMPLATE` (Scrum by default), led by the requester, then puts the
+requester and their team in the `JIRA_MEMBER_ROLE` project role (Developers).
+Same rules as ADO: both are found in Jira before anything is created,
+`result_url` is written once the project exists, and `addToRole` adds only
+actors not already in the role — Jira refuses the whole call if any one is,
+which would make a retry fail forever. The service account needs Jira's
+*Administer* global permission to create projects.
 
 **Access requests** (`grant_access`) give up to 20 people, by login name,
 Contribute on a whole existing project — membership of `[Project]\Contributors`.
