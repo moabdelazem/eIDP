@@ -193,6 +193,17 @@ ADO — `jiraConfig()` names what is missing. `fake-server.ts` stands in for it
 (`pnpm --filter @eidp/api jira:fake`), including the ErrorCollection its
 refusals use and an archived project whose key is still taken.
 
+`integrations/jenkins/` — Jenkins' remote access API, `<JENKINS_URL>/.../api/json`
+with `tree` so it sends only what is asked. `JENKINS_USER` + `JENKINS_TOKEN` (an
+API token, Basic auth); API-token calls are exempt from CSRF crumbs, so none are
+fetched, and a password in `JENKINS_TOKEN` would fail every POST. A job's full
+name carries its folders (`payments/loan-api`), so `jobPath` turns it into
+repeated `job/` segments and the routes take it as a value, not a path.
+Multibranch branches are named with an encoded slash (`feature%2Fx`), encoded
+once more in the URL — don't "fix" the double encoding. Build logs are read as a
+stream keeping only the last 64 KB, where a failure explains itself.
+`fake-server.ts` stands in for it (`pnpm --filter @eidp/api jenkins:fake`).
+
 `integrations/inventories/` — parses that working copy into the catalog. Its
 rules and the traps they exist for are in `parse.ts`; `__fixtures__/repo` is a
 small tree covering both layout conventions, so the parser is tested without
@@ -388,7 +399,7 @@ that, a `.env` copied from `.env.example` failed to boot on its blank
 | Layer | What | Where |
 |---|---|---|
 | **Permission** | one thing the portal can do (`requests.decide`, `rbac.manage`, …) | `PERMISSIONS`, in code |
-| **Role** | a named bundle of permissions (`member`, `team-lead`, `approver`, `devops-admin`) | `ROLES`, in code |
+| **Role** | a named bundle of permissions (`member`, `team-lead`, `approver`, `build-operator`, `devops-admin`) | `ROLES`, in code |
 | **Binding** | a directory group or one user → a role, everywhere or limited to a `team` or `project` | `rbac_bindings`, managed on the Access page (`/access`) |
 
 Two bindings are **built in** and are not rows: everyone is a `member`
@@ -458,6 +469,29 @@ is a new entry in `PERMISSIONS` (and in `Permission` in
 `features/auth/profile-context.tsx`), added to the roles that should hold it.
 `grep -rn requirePermission apps/api/src/routes` lists the whole guarded
 surface.
+
+**Jenkins** (`/jenkins`, `features/jenkins/`) is a Manage page behind
+`jenkins.view`: failing jobs first (latest *finished* build failed or unstable,
+with how many in a row and since when), then recent runs across every job, the
+queue, agents, and Activity. `jenkins.operate` adds three actions — run a build
+again, stop a running one, take one out of the queue — each behind a
+confirmation. Both are `devops-admin`'s, and `build-operator` bundles them to
+bind to anyone else. Every action goes to Jenkins as the service account, so
+`jenkins_audit` records who asked, refused attempts included; the Activity tab
+reads it, and the tests delete only rows they made (`id > ` the max before).
+
+"Run again" is a rebuild, not "Build now": the same parameters the build had,
+because a failed deploy re-run with defaults deploys something else. A build
+with a password parameter (Jenkins never returns its value) or a file one is
+refused rather than re-run blank. Parameter values under secret-like names are
+shown as `[hidden]`, as the inventories parser does. Acting from the run dialog
+closes it before the confirmation opens: two stacked Radix modals closing
+together (Escape during the exit animation) left the page inert.
+
+`services/jenkins.ts` serves one overview per 15 seconds to everyone —
+single-flight, and cleared by any action so its result shows at once — because
+each overview is a sweep of every job. `tree` is three levels deep (folder,
+multibranch, branch); `tree` has no recursion, so deeper jobs are not seen.
 
 `POST /catalog/sync` needs `catalog.sync`: a sync clones from Azure DevOps with
 the service account's token and rewrites the catalog. The map's **Refresh from

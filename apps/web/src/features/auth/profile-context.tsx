@@ -33,6 +33,8 @@ export type Permission =
   | 'requests.decide_access'
   | 'rbac.manage'
   | 'rbac.view_as'
+  | 'jenkins.view'
+  | 'jenkins.operate'
 export type ScopeType = 'global' | 'team' | 'project'
 
 type ProfileValue = {

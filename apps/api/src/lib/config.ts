@@ -74,6 +74,13 @@ const schema = z.object({
   /** The project role the requester and their team are put in. */
   JIRA_MEMBER_ROLE: z.string().min(1).default('Developers'),
 
+  // Jenkins. Optional: the Jenkins page says what is missing rather than the
+  // API failing to boot. JENKINS_TOKEN is an API token of JENKINS_USER — API
+  // token calls are exempt from Jenkins' CSRF crumbs, a password is not.
+  JENKINS_URL: z.string().url().optional(),
+  JENKINS_USER: z.string().min(1).optional(),
+  JENKINS_TOKEN: z.string().min(1).optional(),
+
   /** Where the inventories repo lives inside that collection. */
   INVENTORIES_PROJECT: z.string().min(1).optional(),
   INVENTORIES_REPO: z.string().min(1).default('inventories'),

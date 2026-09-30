@@ -1,11 +1,13 @@
+import type { ComponentType } from 'react'
 import { Boxes, Inbox, LayoutDashboard, ListChecks, ShieldCheck } from 'lucide-react'
+import { JenkinsIcon } from '@/components/brand-icons.tsx'
 import type { Permission } from '@/features/auth/profile-context.tsx'
-import type { LucideIcon } from 'lucide-react'
 
 export type NavItem = {
   path: string
   label: string
-  icon: LucideIcon
+  /** A Lucide icon, or a brand mark where the page is that product's. */
+  icon: ComponentType<{ className?: string }>
   /** Other paths this item stays highlighted for, e.g. its detail pages. */
   owns?: (pathname: string) => boolean
 }
@@ -41,5 +43,6 @@ export const requestItems: NavItem[] = [
 export const manageItems: (NavItem & { permission: Permission; scoped?: boolean })[] = [
   // Scoped: a team lead has an approvals queue too, holding only their teams'.
   { path: '/approvals', label: 'Approvals', icon: ListChecks, permission: 'requests.decide_access', scoped: true },
+  { path: '/jenkins', label: 'Jenkins', icon: JenkinsIcon, permission: 'jenkins.view' },
   { path: '/access', label: 'Access', icon: ShieldCheck, permission: 'rbac.manage' },
 ]
