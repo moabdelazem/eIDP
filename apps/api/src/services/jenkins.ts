@@ -1,6 +1,8 @@
 import * as jenkins from '../integrations/jenkins/index.ts'
 import type { Agent, BuildDetail, Parameter, QueueItem, Result } from '../integrations/jenkins/index.ts'
+import { ollamaConfig } from '../integrations/ollama/index.ts'
 import { query } from '../lib/db.ts'
+import { PROMPT_VERSION } from './build-explainer.ts'
 import { ApiError } from '../lib/errors.ts'
 import { syncJenkins, syncState, type SyncState } from './jenkins-sync.ts'
 import type { Actor } from './requests.ts'
@@ -42,6 +44,8 @@ export type Failure = {
   lastSuccess: string | null
   running: boolean
   inQueue: boolean
+  /** The model's one-line account of the latest failure, when there is one and the reader may see it. */
+  explanation: { summary: string; category: string } | null
 }
 
 export type Overview = {
@@ -126,12 +130,12 @@ function liveState({ fresh = false } = {}) {
 }
 
 /** What needs attention now: jobs failing, what is running and waiting, agents down. */
-export async function overview({ fresh = false } = {}): Promise<Overview> {
+export async function overview({ fresh = false, withExplanations = false } = {}): Promise<Overview> {
   const url = server()
   const [sync, { queue, agents }, failures, counts] = await Promise.all([
     syncState(),
     liveState({ fresh }),
-    failingNow(url),
+    failingNow(url, withExplanations),
     query<{ jobs: string; running: string }>(
       `select (select count(*) from jenkins_jobs where server = $1) as jobs,
               (select count(distinct b.job) from jenkins_builds b
@@ -164,8 +168,10 @@ export async function overview({ fresh = false } = {}): Promise<Overview> {
  * Jobs Jenkins still has whose latest finished build failed or was unstable,
  * with the streak since their last pass. Newest failure first.
  */
-async function failingNow(url: string): Promise<Failure[]> {
-  const { rows } = await query<RunRow & { streak: string; since: Date; last_success: Date | null; job_url: string; in_queue: boolean; running: boolean }>(
+async function failingNow(url: string, withExplanations: boolean): Promise<Failure[]> {
+  // Explanations for the current prompt and model only — a stale one is not served as current.
+  const ai = withExplanations ? ollamaConfig() : null
+  const { rows } = await query<RunRow & { streak: string; since: Date; last_success: Date | null; job_url: string; in_queue: boolean; running: boolean; explanation: { summary: string; category: string } | null }>(
     `with latest as (
        select distinct on (b.job) b.*
          from jenkins_builds b
@@ -185,13 +191,17 @@ async function failingNow(url: string): Promise<Failure[]> {
                 and s.result in ('failure', 'unstable')) as streak,
             (select min(started_at) from jenkins_builds s
               where s.server = $1 and s.job = l.job and s.number > coalesce(p.number, 0)
-                and s.result in ('failure', 'unstable')) as since
+                and s.result in ('failure', 'unstable')) as since,
+            (select json_build_object('summary', e.explanation->>'summary', 'category', e.explanation->>'category')
+               from build_explanations e
+              where $2::text is not null and e.server = $1 and e.job = l.job and e.number = l.number
+                and e.prompt_version = $3 and e.model = $2) as explanation
        from latest l
        join jenkins_jobs j on j.server = l.server and j.full_name = l.job
        left join passed p on p.job = l.job
       where l.result in ('failure', 'unstable')
       order by l.started_at desc`,
-    [url],
+    [url, ai?.model ?? null, PROMPT_VERSION],
   )
   return rows.map((row) => ({
     job: row.job,
@@ -203,6 +213,7 @@ async function failingNow(url: string): Promise<Failure[]> {
     lastSuccess: row.last_success?.toISOString() ?? null,
     running: row.running,
     inQueue: row.in_queue,
+    explanation: row.explanation,
   }))
 }
 

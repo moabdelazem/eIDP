@@ -285,3 +285,18 @@ create table if not exists assistant_messages (
 );
 
 create index if not exists assistant_messages_conversation_idx on assistant_messages (conversation_id, id);
+
+-- Automatic explanations that did not work: how often, and why. A build the
+-- model cannot explain is tried twice, fifteen minutes apart, then left for
+-- someone to ask by hand — never retried on every sync.
+create table if not exists build_explain_attempts (
+  server           text not null,
+  job              text not null,
+  number           integer not null,
+  prompt_version   integer not null,
+  model            text not null,
+  attempts         integer not null default 0,
+  last_error       text,
+  last_attempt_at  timestamptz not null default now(),
+  primary key (server, job, number, prompt_version, model)
+);

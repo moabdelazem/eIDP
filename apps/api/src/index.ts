@@ -4,6 +4,7 @@ import { config } from './lib/config.ts'
 import { ensureSchema } from './lib/db.ts'
 import { syncCatalog } from './services/catalog.ts'
 import { syncJenkins } from './services/jenkins-sync.ts'
+import { explainNewFailures } from './services/auto-explain.ts'
 import { recoverInterrupted } from './services/requests.ts'
 
 await ensureSchema()
@@ -37,8 +38,13 @@ if (config.SYNC_INTERVAL_MINUTES > 0) {
  * refusing to serve.
  */
 if (config.JENKINS_URL && config.JENKINS_USER && config.JENKINS_TOKEN && config.JENKINS_SYNC_SECONDS > 0) {
+  // Each sync is followed by explaining the failures it found (auto-explain.ts),
+  // one at a time; a slow model never holds up the next sync's timer.
   const refreshJenkins = () =>
-    syncJenkins().catch((err) => console.error('jenkins sync failed:', err instanceof Error ? err.message : err))
+    syncJenkins()
+      .then(() => explainNewFailures())
+      .then(({ explained, failed }) => explained + failed > 0 && console.log(`auto-explain: ${explained} explained, ${failed} could not be`))
+      .catch((err) => console.error('jenkins sync failed:', err instanceof Error ? err.message : err))
   void refreshJenkins()
   setInterval(refreshJenkins, config.JENKINS_SYNC_SECONDS * 1000).unref()
 }

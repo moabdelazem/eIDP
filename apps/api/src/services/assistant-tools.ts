@@ -181,8 +181,8 @@ const TOOLS = [
     args: z.object({}).catch({}),
     allowed: jenkinsOn,
     label: () => 'Checked which Jenkins jobs are failing',
-    run: async () => {
-      const { failures } = await jenkins.overview()
+    run: async (_, { access }) => {
+      const { failures } = await jenkins.overview({ withExplanations: can(access, 'ai.use') })
       return {
         failing: failures.length,
         jobs: failures.slice(0, 15).map((f) => ({
@@ -192,6 +192,7 @@ const TOOLS = [
           brokenForBuilds: f.streak,
           since: f.since,
           lastPassed: f.lastSuccess,
+          ...(f.explanation ? { whyItFailed: f.explanation.summary } : {}),
           link: buildLink(f.job, f.last.number),
         })),
       }

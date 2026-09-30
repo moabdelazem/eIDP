@@ -1,10 +1,12 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { validate } from '../lib/validate.ts'
-import { requireAuth, requirePermission, type AppEnv } from '../middleware/auth.ts'
+import { accessFrom, requireAuth, requirePermission, type AppEnv } from '../middleware/auth.ts'
+import { can } from '../services/rbac.ts'
 import * as jenkins from '../services/jenkins.ts'
 import { syncJenkins } from '../services/jenkins-sync.ts'
 import * as explainer from '../services/build-explainer.ts'
+import * as autoExplain from '../services/auto-explain.ts'
 import { ollamaConfig } from '../integrations/ollama/index.ts'
 
 // A job's full name carries its folders ("payments/loan-api"), so it travels
@@ -25,7 +27,13 @@ export const jenkinsRoutes = new Hono<AppEnv>()
   .use('*', requireAuth)
 
   .get('/', requirePermission('jenkins.view'), async (c) =>
-    c.json(await jenkins.overview({ fresh: c.req.query('fresh') === '1' })),
+    c.json(
+      await jenkins.overview({
+        fresh: c.req.query('fresh') === '1',
+        // The one-line explanation of each failure, for those who may read them.
+        withExplanations: can(await accessFrom(c), 'ai.use'),
+      }),
+    ),
   )
 
   .get('/stats', requirePermission('jenkins.view'), validate('query', Window), async (c) =>
@@ -48,9 +56,12 @@ export const jenkinsRoutes = new Hono<AppEnv>()
   .get('/explain', requirePermission('jenkins.view'), requirePermission('ai.use'), validate('query', BuildRef), async (c) => {
     const { job, number } = c.req.valid('query')
     const ai = ollamaConfig()
+    const explanation = ai ? await explainer.cached(job, number) : null
     return c.json({
       ai: { configured: ai !== null, model: ai?.model ?? null },
-      explanation: ai ? await explainer.cached(job, number) : null,
+      explanation,
+      // Whether one is on its way without anyone asking.
+      auto: explanation ? { state: 'off', error: null } : await autoExplain.status(job, number),
     })
   })
 
@@ -63,7 +74,12 @@ export const jenkinsRoutes = new Hono<AppEnv>()
 
   // Reading history sooner is a read, not an act on Jenkins: a viewer may ask.
   // It still runs as a POST, because it writes the portal's own tables.
-  .post('/sync', requirePermission('jenkins.view'), async (c) => c.json(await syncJenkins()))
+  .post('/sync', requirePermission('jenkins.view'), async (c) => {
+    const state = await syncJenkins()
+    // Explaining what the sync found runs on after the answer; the page polls for it.
+    void autoExplain.explainNewFailures().catch(() => {})
+    return c.json(state)
+  })
 
   .post('/rebuild', requirePermission('jenkins.operate'), validate('json', BuildRef), async (c) => {
     const { job, number } = c.req.valid('json')

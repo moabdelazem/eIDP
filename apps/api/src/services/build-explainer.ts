@@ -56,6 +56,8 @@ export type Explanation = {
   durationMs: number
   /** The log was longer than the context window allowed; only part of it was read. */
   trimmed: boolean
+  /** Made by the automatic run when the build failed, not asked for by someone. */
+  automatic: boolean
 }
 
 // ---- the log ---------------------------------------------------------------
@@ -337,8 +339,9 @@ async function askOnce(user: string) {
 }
 
 type ExplanationRow = {
-  explanation: Omit<Explanation, 'model' | 'createdAt' | 'createdByName' | 'durationMs' | 'trimmed'>
+  explanation: Omit<Explanation, 'model' | 'createdAt' | 'createdByName' | 'durationMs' | 'trimmed' | 'automatic'>
   model: string
+  created_by: string
   created_at: Date
   created_by_name: string
   duration_ms: number
@@ -353,5 +356,6 @@ function toExplanation(row: ExplanationRow): Explanation {
     createdByName: row.created_by_name,
     durationMs: row.duration_ms,
     trimmed: row.trimmed,
+    automatic: row.created_by === 'e-idp',
   }
 }

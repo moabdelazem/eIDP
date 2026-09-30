@@ -538,8 +538,23 @@ log box itself, never `scrollIntoView`, which also scrolled the page and
 shifted the sidebar rail.
 
 **"What went wrong"** on a failed or unstable build (`explain-panel.tsx`,
-`services/build-explainer.ts`) asks the model, on request — never
-automatically; a failure nobody opens needs no GPU time. It needs `ai.use`
+`services/build-explainer.ts`) is made **automatically** for each job's latest
+failure (`services/auto-explain.ts`), after the Jenkins sync that finds it, so
+the answer is usually waiting when someone opens the build; anything else
+(an older failure, one the run could not do) is a click. The automatic run is
+kept small because every answer is shared GPU time: only each job's *latest*
+build and only when it failed or was unstable — a job failing twenty times in
+a row is explained once per new failure, not twenty times; only within
+`OLLAMA_AUTO_EXPLAIN_HOURS` (24), so turning it on does not work through a
+month of history; at most five per run, one at a time, newest first. A build
+the model fails on is tried once more fifteen minutes later
+(`build_explain_attempts`), then left for a click, and its error shown. When
+Ollama itself is down (unreachable, model missing) the run stops without
+counting it against the build, and the next sync tries again. Automatic
+answers are by `e-idp` ("e-IDP, automatically"); the explainer's single
+flight means a click during an automatic run shares its call. The Failing tab
+and the assistant's `jenkins_failing` carry each failure's one-line summary.
+`OLLAMA_AUTO_EXPLAIN=false` turns it off. It needs `ai.use`
 beside `jenkins.view` (`devops-admin` and `build-operator` hold it). The model
 gets the facts (failed stage, parameters, commits, agent) and an *excerpt* of
 the log, numbered as the build page numbers it: each error line with six
