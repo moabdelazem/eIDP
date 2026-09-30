@@ -1,5 +1,5 @@
 import { ConfirmDialog } from '@/components/confirm-dialog.tsx'
-import type { PortalRequest } from './api.ts'
+import { systemOf, targetPath, type PortalRequest } from './api.ts'
 import { decide } from './decisions.ts'
 import { TargetPath } from './status.tsx'
 
@@ -10,7 +10,7 @@ function who(r: PortalRequest): string {
 }
 
 /**
- * Approving acts in Azure DevOps at once, so it asks first — and says exactly
+ * Approving acts in Azure DevOps or Jira at once, so it asks first — and says exactly
  * what will be created and who will be able to push to it, which is the part
  * people approve without reading when it sits on a card.
  */
@@ -27,6 +27,7 @@ export function ApproveDialog({
 }) {
   const granting = r.kind === 'grant_access'
   const noun = r.kind === 'create_repository' ? 'repository' : 'project'
+  const system = systemOf(r)
   return (
     <ConfirmDialog
       open={open}
@@ -39,18 +40,27 @@ export function ApproveDialog({
         return ok
       }}
     >
-      <TargetPath parts={[r.collection, r.project, ...(r.repository ? [r.repository] : [])]} className="block text-foreground" />
+      <TargetPath parts={targetPath(r)} className="block text-foreground" />
       <p>
         {granting ? (
           <>
             <span className="text-foreground">{who(r)}</span> will get{' '}
             {r.accessLevel === 'read' ? 'read access' : 'Contributor access'} to{' '}
-            {r.repository ? 'this repository' : 'the whole project'} in Azure DevOps.
+            {r.repository ? 'this repository' : 'the whole project'} in {system}.
           </>
         ) : (
           <>
-            The {noun} is created in Azure DevOps straight away, then{' '}
-            <span className="text-foreground">{who(r)}</span> get Contributor access to it.
+            The {noun} is created in {system} straight away, then{' '}
+            {system === 'Jira' ? (
+              <>
+                with <span className="text-foreground">{r.requestedByName}</span> as its lead;{' '}
+                <span className="text-foreground">{who(r)}</span> join it as members.
+              </>
+            ) : (
+              <>
+                <span className="text-foreground">{who(r)}</span> get Contributor access to it.
+              </>
+            )}
           </>
         )}
       </p>
@@ -85,7 +95,7 @@ export function WithdrawDialog({
         return ok
       }}
     >
-      <TargetPath parts={[r.collection, r.project, ...(r.repository ? [r.repository] : [])]} className="block text-foreground" />
+      <TargetPath parts={targetPath(r)} className="block text-foreground" />
       <p>DevOps stop seeing it, and it cannot be picked up again. To ask later, file a new request.</p>
     </ConfirmDialog>
   )

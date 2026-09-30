@@ -154,3 +154,23 @@ alter table rbac_audit add column if not exists target text;
 alter table rbac_audit alter column binding drop not null;
 alter table rbac_audit drop constraint if exists rbac_audit_action_check;
 alter table rbac_audit add constraint rbac_audit_action_check check (action in ('grant', 'revoke', 'assume'));
+
+-- Jira projects. Jira has no collections, so those rows carry none, and the
+-- project key — what every issue is numbered with, PAY-123 — beside the name.
+alter table requests add column if not exists project_key text;
+alter table requests alter column collection drop not null;
+alter table requests drop constraint if exists requests_kind_check;
+alter table requests add constraint requests_kind_check
+  check (kind in ('create_repository', 'create_project', 'grant_access', 'create_jira_project'));
+alter table requests drop constraint if exists requests_jira_check;
+alter table requests add constraint requests_jira_check check (
+  (kind = 'create_jira_project') = (collection is null)
+  and (kind = 'create_jira_project') = (project_key is not null)
+);
+
+-- One open request per Jira name and per key: both are unique in Jira. The
+-- ADO index above cannot see these rows, since their collection is null.
+create unique index if not exists requests_one_open_jira_name_idx on requests (lower(project))
+  where status in ('pending', 'approved') and kind = 'create_jira_project';
+create unique index if not exists requests_one_open_jira_key_idx on requests (lower(project_key))
+  where status in ('pending', 'approved') and kind = 'create_jira_project';

@@ -5,15 +5,23 @@ import type { AddressInfo } from 'node:net'
 import { after, before, test } from 'node:test'
 import { serve } from '@hono/node-server'
 import { createFakeAdo } from '../integrations/ado/fake-server.ts'
+import { createFakeJira } from '../integrations/jira/fake-server.ts'
 
 const fake = createFakeAdo()
 const server = serve({ fetch: fake.app.fetch, port: 0 })
 await new Promise((resolve) => server.once('listening', resolve))
 const port = (server.address() as AddressInfo).port
 
-// Config is read on import, so point it at the fake before anything loads it.
+const fakeJira = createFakeJira()
+const jiraServer = serve({ fetch: fakeJira.app.fetch, port: 0 })
+await new Promise((resolve) => jiraServer.once('listening', resolve))
+const jiraPort = (jiraServer.address() as AddressInfo).port
+
+// Config is read on import, so point it at the fakes before anything loads it.
 process.env.ADO_BASE_URL = `http://localhost:${port}/tfs/DefaultCollection`
 process.env.ADO_PAT = 'fake'
+process.env.JIRA_BASE_URL = `http://localhost:${jiraPort}/jira`
+process.env.JIRA_TOKEN = 'fake'
 
 const { createApp } = await import('../app.ts')
 const { closeDb, ensureSchema, query } = await import('../lib/db.ts')
@@ -38,6 +46,7 @@ after(async () => {
   await query('delete from requests')
   await closeDb()
   server.close()
+  jiraServer.close()
 })
 
 function call(who: string, method: string, path: string, body?: unknown) {
@@ -364,4 +373,126 @@ test('an access request is Contribute on the whole project, whatever the body as
   assert.deepEqual(membersOf('AgriLand', 'Contributors').sort(), ['bob', 'carol'])
   assert.deepEqual(membersOf('AgriLand', 'Readers'), [])
   assert.equal(accessOn('agriland-api', 'carol'), undefined)
+})
+
+// ---- Jira ----------------------------------------------------------------
+
+const jiraRequest = (project: string, projectKey: string) => ({
+  kind: 'create_jira_project',
+  project,
+  projectKey,
+  description: 'Loan scoring backlog.',
+  justification: 'The Payments team is starting the loan scoring work.',
+  teamGroup: 'Payments',
+})
+
+/** Who is in a Jira project's role, as `user:name` / `group:name`. */
+function jiraRole(key: string, role: keyof typeof fakeJira.roleIds): string[] {
+  return (fakeJira.roles.get(key)?.get(fakeJira.roleIds[role]) ?? [])
+    .map((a) => `${a.type === 'atlassian-user-role-actor' ? 'user' : 'group'}:${a.name}`)
+    .sort()
+}
+
+test('the form is told which Jira it is asking', async () => {
+  const body = await json(await call('bob', 'GET', '/jira'))
+  assert.equal(body.baseUrl, `http://localhost:${jiraPort}/jira`)
+  assert.equal(body.serverTitle, 'Jira (fake)')
+})
+
+test('the Jira check explains what is wrong before anything is filed', async () => {
+  const check = async (name: string, key: string) =>
+    json<{ ok: boolean; reason?: string }>(await call('bob', 'POST', '/requests/check', jiraRequest(name, key)))
+  assert.deepEqual(await check('Loan Scoring', 'LOAN'), { ok: true })
+  assert.match(String((await check('Loan Scoring', 'loan')).reason), /uppercase letter/)
+  assert.match(String((await check('X', 'LOAN')).reason), /at least two characters/)
+  assert.match(String((await check('agriland', 'LOAN')).reason), /already has a project called AgriLand \(AGRI\)/)
+  assert.match(String((await check('Loan Scoring', 'AGRI')).reason), /Project 'AgriLand' uses this project key/)
+  // Archived projects are not listed, but Jira still holds their keys.
+  assert.match(String((await check('Loan Scoring', 'OLD')).reason), /uses this project key/)
+  // The server's own pattern and length, which the portal does not assume.
+  assert.match(String((await check('Loan Scoring', 'LOAN2')).reason), /uppercase alphanumeric/)
+  assert.match(String((await check('Loan Scoring', 'LOANSCORINGX')).reason), /must not exceed 10/)
+})
+
+test('a Jira project request waits for DevOps, and cannot be filed twice by name or key', async () => {
+  const res = await call('bob', 'POST', '/requests', jiraRequest('Loan Scoring', 'LOAN'))
+  assert.equal(res.status, 201)
+  const request = await json(res)
+  assert.equal(request.kind, 'create_jira_project')
+  assert.equal(request.collection, null)
+  assert.equal(request.projectKey, 'LOAN')
+  assert.equal(request.teamGroup, 'Payments')
+
+  for (const [name, key] of [['Loan Scoring', 'LSC'], ['Scoring', 'LOAN']] as const) {
+    const again = await call('carol', 'POST', '/requests', jiraRequest(name, key))
+    assert.equal(again.status, 409)
+    assert.match(String((await json<{ error: { message: string } }>(again)).error.message), /Bob Example has already asked/)
+  }
+
+  assert.equal((await call('bob', 'POST', `/requests/${request.id}/approve`, {})).status, 403)
+})
+
+test('DevOps approve, and the project is created in Jira with the requester and their team in it', async () => {
+  const [pending] = (await json<{ id: string; kind: string }[]>(await call('bob', 'GET', '/requests/mine'))).filter(
+    (r) => r.kind === 'create_jira_project',
+  )
+  await call('alice', 'POST', `/requests/${pending!.id}/approve`, {})
+  const done = await settled(pending!.id)
+  assert.equal(done.status, 'completed', done.error)
+  assert.equal(done.resultUrl, `http://localhost:${jiraPort}/jira/browse/LOAN`)
+
+  const project = fakeJira.projects.find((p) => p.key === 'LOAN')!
+  assert.equal(project.name, 'Loan Scoring')
+  assert.equal(project.lead, 'bob')
+  assert.equal(project.description, 'Loan scoring backlog.')
+  assert.deepEqual(jiraRole('LOAN', 'Developers'), ['group:Payments', 'user:bob'])
+  assert.deepEqual(jiraRole('LOAN', 'Administrators'), [])
+})
+
+test('a team Jira cannot find fails the request before anything is created', async () => {
+  fakeJira.groups.delete('Payments')
+  try {
+    const created = await json<{ id: string }>(await call('bob', 'POST', '/requests', jiraRequest('No Team', 'NOTEAM')))
+    await call('alice', 'POST', `/requests/${created.id}/approve`, {})
+    const failed = await settled(created.id)
+    assert.equal(failed.status, 'failed')
+    assert.match(failed.error!, /Jira does not know a group called Payments/)
+    assert.ok(!fakeJira.projects.some((p) => p.key === 'NOTEAM'))
+  } finally {
+    fakeJira.groups.add('Payments')
+  }
+})
+
+test('when Jira refuses the roles after creating, a retry only grants', async () => {
+  fakeJira.setDenyRoles(true)
+  const created = await json<{ id: string }>(await call('bob', 'POST', '/requests', jiraRequest('Grant Later', 'GRANT')))
+  await call('alice', 'POST', `/requests/${created.id}/approve`, {})
+  const failed = await settled(created.id)
+  fakeJira.setDenyRoles(false)
+  assert.equal(failed.status, 'failed')
+  assert.match(failed.error!, /Created GRANT, but could not grant access: You cannot edit the configuration/)
+  assert.ok(failed.resultUrl)
+
+  // Half granted by hand in the meantime: the retry adds only what is missing,
+  // where adding bob again would make Jira refuse the whole call.
+  fakeJira.roles.get('GRANT')!.get(fakeJira.roleIds.Developers)!.push({ name: 'bob', type: 'atlassian-user-role-actor' })
+  await call('carol', 'POST', `/requests/${created.id}/retry`)
+  const done = await settled(created.id)
+  assert.equal(done.status, 'completed', done.error)
+  assert.equal(fakeJira.projects.filter((p) => p.key === 'GRANT').length, 1)
+  assert.deepEqual(jiraRole('GRANT', 'Developers'), ['group:Payments', 'user:bob'])
+})
+
+test('when Jira fails to create, the request says why and nothing is recorded as made', async () => {
+  fakeJira.setFailCreate(true)
+  const created = await json<{ id: string }>(await call('bob', 'POST', '/requests', jiraRequest('Broken', 'BROKEN')))
+  await call('alice', 'POST', `/requests/${created.id}/approve`, {})
+  const failed = await settled(created.id)
+  fakeJira.setFailCreate(false)
+  assert.equal(failed.status, 'failed')
+  assert.match(failed.error!, /Internal server error creating the project/)
+  assert.equal(failed.resultUrl, null)
+
+  await call('alice', 'POST', `/requests/${created.id}/retry`)
+  assert.equal((await settled(created.id)).status, 'completed')
 })

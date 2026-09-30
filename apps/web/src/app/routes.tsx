@@ -9,6 +9,7 @@ import { isAvailable, REQUEST_TYPES } from '@/features/requests/kinds.ts'
 import { MyRequestsPage } from '@/features/requests/my-requests-page.tsx'
 import { NewRequestPage } from '@/features/requests/new-request-page.tsx'
 import { GrantAccessPage } from '@/features/requests/grant-access-page.tsx'
+import { JiraProjectPage } from '@/features/requests/jira-project-page.tsx'
 import { RequestPage } from '@/features/requests/request-page.tsx'
 import { AppShell } from './app-shell.tsx'
 import { NotFoundPage } from './not-found-page.tsx'
@@ -35,6 +36,8 @@ export function AppRoutes() {
               element={
                 type.kind === 'grant_access' ? (
                   <GrantAccessPage />
+                ) : type.kind === 'create_jira_project' ? (
+                  <JiraProjectPage />
                 ) : (
                   <NewRequestPage key={type.path} kind={type.kind!} />
                 )

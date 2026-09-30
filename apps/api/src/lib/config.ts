@@ -59,6 +59,21 @@ const schema = z.object({
   /** Pinned to the server release — it decides which endpoints exist. */
   ADO_API_VERSION: z.string().default('6.0'),
 
+  // Jira Data Center / Server (on-prem). Optional like ADO: the API boots
+  // without them and `jiraConfig()` names what is missing when asked to work.
+  JIRA_BASE_URL: z.string().url().optional(),
+  /**
+   * A personal access token, sent as a Bearer token. With JIRA_USERNAME set it
+   * is sent as that user's password instead (Basic), for servers older than
+   * PATs (8.14).
+   */
+  JIRA_TOKEN: z.string().min(1).optional(),
+  JIRA_USERNAME: z.string().min(1).optional(),
+  /** What a new project is made from. Scrum by default; see `.env.example`. */
+  JIRA_PROJECT_TEMPLATE: z.string().min(1).default('com.pyxis.greenhopper.jira:gh-simplified-scrum-classic'),
+  /** The project role the requester and their team are put in. */
+  JIRA_MEMBER_ROLE: z.string().min(1).default('Developers'),
+
   /** Where the inventories repo lives inside that collection. */
   INVENTORIES_PROJECT: z.string().min(1).optional(),
   INVENTORIES_REPO: z.string().min(1).default('inventories'),

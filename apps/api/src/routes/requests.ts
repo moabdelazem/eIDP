@@ -25,6 +25,13 @@ const Target = z.discriminatedUnion('kind', [
     // requester's choice, so neither is accepted.
     grantees: z.array(z.string().max(256)).max(100),
   }),
+  z.object({
+    kind: z.literal('create_jira_project'),
+    // The project's name; its key is what issues are numbered with.
+    project: z.string().max(256),
+    projectKey: z.string().max(256),
+    description: z.string().max(4000).optional(),
+  }),
 ])
 
 const NewRequest = z.intersection(

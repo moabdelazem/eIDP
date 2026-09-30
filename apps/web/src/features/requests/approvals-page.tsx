@@ -88,7 +88,7 @@ export function ApprovalsPage() {
     <div className={PAGE}>
       <PageHeader
         title="Approvals"
-        description="Requests you can decide. Approving acts in Azure DevOps straight away."
+        description="Requests you can decide. Approving acts in Azure DevOps or Jira straight away."
       />
 
       <div className="mt-6">

@@ -67,12 +67,10 @@ export const REQUEST_TYPES: RequestType[] = [
     provider: 'jira',
     label: 'Project',
     title: 'New Jira project',
-    description: 'A Jira project for a team',
+    description: 'A software project for a team',
     icon: ClipboardList,
     path: '/requests/new/jira/project',
-    // Shown so the menu's shape is honest about what is coming, but not
-    // offered until the integration exists.
-    kind: null,
+    kind: 'create_jira_project',
   },
   {
     provider: 'jenkins',

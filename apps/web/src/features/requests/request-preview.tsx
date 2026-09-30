@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import type { PortalRequest } from './api.ts'
+import { targetPath, type PortalRequest } from './api.ts'
 import { AccessLine, KIND_LABEL, StatusBadge, TargetPath } from './status.tsx'
 
 /**
@@ -32,7 +32,7 @@ export function RequestPreview({ request: r, onClose }: { request: PortalRequest
               </div>
               <DialogDescription asChild>
                 <div>
-                  <TargetPath parts={[r.collection, r.project, ...(r.repository ? [r.repository] : [])]} className="text-xs" />
+                  <TargetPath parts={targetPath(r)} className="text-xs" />
                 </div>
               </DialogDescription>
             </DialogHeader>

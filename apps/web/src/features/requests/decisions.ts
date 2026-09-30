@@ -1,6 +1,6 @@
 import { toast } from 'sonner'
 import { ApiError } from '@/lib/api-client.ts'
-import { requestsApi, type PortalRequest } from './api.ts'
+import { requestsApi, systemOf, type PortalRequest } from './api.ts'
 
 /**
  * The actions a request can take, with the toasts that say what happened. One
@@ -10,10 +10,10 @@ export async function decide(
   action: 'approve' | 'retry' | 'cancel',
   request: PortalRequest,
 ): Promise<boolean> {
+  const system = systemOf(request)
   const messages = {
-    approve:
-      request.kind === 'grant_access' ? 'Approved — granting access in Azure DevOps' : 'Approved — creating it in Azure DevOps',
-    retry: 'Retrying in Azure DevOps',
+    approve: request.kind === 'grant_access' ? `Approved — granting access in ${system}` : `Approved — creating it in ${system}`,
+    retry: `Retrying in ${system}`,
     cancel: 'Request withdrawn',
   }
   try {

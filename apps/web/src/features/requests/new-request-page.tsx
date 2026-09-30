@@ -21,7 +21,7 @@ import { useProfile } from '@/features/auth/profile-context.tsx'
 
 // The title comes from kinds.ts, so the menu, the breadcrumb and this heading
 // cannot drift apart; only the form's own wording lives here.
-type CreationKind = Exclude<RequestKind, 'grant_access'>
+type CreationKind = Exclude<RequestKind, 'grant_access' | 'create_jira_project'>
 
 const COPY: Record<CreationKind, { lead: string; noun: string; why: string }> = {
   create_repository: {

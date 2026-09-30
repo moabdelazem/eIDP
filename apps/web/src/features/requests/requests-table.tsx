@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import type { PortalRequest, RequestKind, RequestStatus } from './api.ts'
+import { whereOf, type PortalRequest, type RequestKind, type RequestStatus } from './api.ts'
 import { STATUS_NAME } from './request-stats.tsx'
 import { RequestPreview } from './request-preview.tsx'
 import { KIND_ICON, KIND_LABEL, StatusBadge } from './status.tsx'
@@ -48,7 +48,7 @@ export function RequestsTable({
         (status === 'all' || r.status === status) &&
         (kind === 'all' || r.kind === kind) &&
         (!needle ||
-          [r.repository, r.project, r.collection, r.requestedByName, r.requestedBy, r.decidedByName, ...(r.grantees ?? [])]
+          [r.repository, r.project, r.projectKey, r.collection, r.requestedByName, r.requestedBy, r.decidedByName, ...(r.grantees ?? [])]
             .filter(Boolean)
             .some((text) => text!.toLowerCase().includes(needle))),
     )
@@ -153,7 +153,7 @@ export function RequestsTable({
                       <span className="min-w-0">
                         <span className="block truncate font-mono group-hover:underline">{r.repository ?? r.project}</span>
                         <span className="block truncate text-xs text-muted-foreground">
-                          {r.repository ? `${r.collection} / ${r.project}` : r.collection}
+                          {whereOf(r)}
                         </span>
                       </span>
                     </Link>

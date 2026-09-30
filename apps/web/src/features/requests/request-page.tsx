@@ -3,14 +3,14 @@ import { ExternalLink } from 'lucide-react'
 import { useParams } from 'react-router'
 import { DataDialog } from '@/components/data-dialog.tsx'
 import { EmptyState } from '@/components/empty-state.tsx'
-import { AzureDevOpsIcon } from '@/components/brand-icons.tsx'
+import { AzureDevOpsIcon, JiraIcon } from '@/components/brand-icons.tsx'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSession } from '@/features/auth/session-context.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
-import { isInFlight, requestsApi, targetPath, type PortalRequest } from './api.ts'
+import { isInFlight, isJira, requestsApi, systemOf, targetPath, type PortalRequest } from './api.ts'
 import { decide, rejectRequest } from './decisions.ts'
 import { RejectDialog } from './reject-dialog.tsx'
 import { ApproveDialog, WithdrawDialog } from './decision-dialogs.tsx'
@@ -106,7 +106,9 @@ function Details({ request: r, own }: { request: PortalRequest; own: boolean }) 
         empty="—"
         items={[
           ['Type', r.kind === 'grant_access' ? 'Access to a project' : KIND_LABEL[r.kind]],
-          ['Collection', <code>{r.collection}</code>],
+          ...((r.collection
+            ? [['Collection', <code>{r.collection}</code>]]
+            : [['Key', <code>{r.projectKey}</code>]]) as [string, React.ReactNode][]),
           ['Project', <code>{r.project}</code>],
           ...(r.repository ? ([['Repository', <code>{r.repository}</code>]] as [string, React.ReactNode][]) : []),
           ['Access', <AccessLine request={r} own={own} />],
@@ -145,17 +147,19 @@ function DecisionStep({ request: r, own }: { request: PortalRequest; own: boolea
 
 function OutcomeStep({ request: r }: { request: PortalRequest }) {
   const granting = r.kind === 'grant_access'
+  const system = systemOf(r)
+  const Icon = isJira(r) ? JiraIcon : AzureDevOpsIcon
   if (r.status === 'approved') {
-    return <Step title={granting ? 'Granting access in Azure DevOps…' : 'Creating it in Azure DevOps…'} current last />
+    return <Step title={granting ? `Granting access in ${system}…` : `Creating it in ${system}…`} current last />
   }
   if (r.status === 'completed') {
     const cloneUrl = r.repository && r.resultUrl ? r.resultUrl : null
     return (
-      <Step title={granting ? 'Access granted in Azure DevOps' : 'Created in Azure DevOps'} when={r.completedAt} done success last>
+      <Step title={granting ? `Access granted in ${system}` : `Created in ${system}`} when={r.completedAt} done success last>
         {r.resultUrl && (
           <Button asChild variant="outline" size="sm" className="mt-3">
             <a href={r.resultUrl} target="_blank" rel="noreferrer">
-              <AzureDevOpsIcon /> Open in Azure DevOps <ExternalLink />
+              <Icon /> Open in {system} <ExternalLink />
             </a>
           </Button>
         )}
@@ -172,7 +176,7 @@ function OutcomeStep({ request: r }: { request: PortalRequest }) {
   }
   if (r.status === 'failed') {
     return (
-      <Step title={granting ? 'Azure DevOps could not grant it' : 'Azure DevOps could not create it'} attention last>
+      <Step title={granting ? `${system} could not grant it` : `${system} could not create it`} attention last>
         <p className="mt-2 text-sm">{r.error}</p>
         <p className="mt-2 text-sm text-muted-foreground">DevOps can retry once the cause is fixed.</p>
       </Step>
