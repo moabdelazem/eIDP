@@ -18,6 +18,7 @@ import { can, teamsOwning, type Access } from './rbac.ts'
 import { query } from '../lib/db.ts'
 import { ApiError } from '../lib/errors.ts'
 import { jiraKeyProblem, jiraNameProblem, nameProblem } from './request-rules.ts'
+import { assess, assessmentsOf, type Assessment } from './request-risk.ts'
 
 export type RequestKind = 'create_repository' | 'create_project' | 'grant_access' | 'create_jira_project'
 export type AccessLevel = 'read' | 'contribute'
@@ -55,6 +56,8 @@ export type RequestRecord = {
   completedAt: string | null
   resultUrl: string | null
   error: string | null
+  /** For people who may decide it: what to weigh before approving. Absent for everyone else. */
+  assessment?: Assessment | null
 }
 
 /** What is being asked for in Azure DevOps. */
@@ -234,7 +237,7 @@ export async function submit(input: NewRequest, actor: Actor): Promise<RequestRe
         team,
       ],
     )
-    return toRecord(rows[0]!)
+    return filed(toRecord(rows[0]!))
   } catch (err) {
     // The check passed, but someone filed the same request in the gap. The
     // unique index is what actually decides.
@@ -269,7 +272,29 @@ async function submitGrant(input: AdoTarget & NewRequest, actor: Actor): Promise
       uniqueNames(input.grantees ?? []),
     ],
   )
-  return toRecord(rows[0]!)
+  return filed(toRecord(rows[0]!))
+}
+
+/**
+ * A request just filed: assessed in the background, so the approver finds
+ * the facts and the summary waiting. The filing never waits on it or fails
+ * because of it.
+ */
+function filed(request: RequestRecord): RequestRecord {
+  void assess(request).catch((err) => console.error(`assessing request ${request.id} failed:`, err instanceof Error ? err.message : err))
+  return request
+}
+
+/** The records with their assessments attached — only ever called for people who may decide them. */
+async function withAssessments(requests: RequestRecord[]): Promise<RequestRecord[]> {
+  const found = await assessmentsOf(requests.map((r) => r.id))
+  return requests.map((r) => ({ ...r, assessment: found.get(r.id) ?? null }))
+}
+
+/** Assesses a request again — the directory and the catalog may have changed since it was filed. */
+export async function reassess(id: string, access: Access): Promise<Assessment> {
+  await assertCanDecide(id, access)
+  return assess(await find(id))
 }
 
 export async function listMine(uid: string): Promise<RequestRecord[]> {
@@ -297,9 +322,13 @@ export async function listPool(access: Access): Promise<{ open: RequestRecord[];
     ),
   ])
   const all = { open: open.rows.map(toRecord), recent: recent.rows.map(toRecord) }
-  if (can(access, 'requests.decide')) return all
+  // Assessments ride on the open ones only: that is where a decision is still to be made.
+  if (can(access, 'requests.decide')) return { open: await withAssessments(all.open), recent: all.recent }
   const decidable = await decidableBy(access, [...all.open, ...all.recent])
-  return { open: all.open.filter((r) => decidable.has(r.id)), recent: all.recent.filter((r) => decidable.has(r.id)) }
+  return {
+    open: await withAssessments(all.open.filter((r) => decidable.has(r.id))),
+    recent: all.recent.filter((r) => decidable.has(r.id)),
+  }
 }
 
 /**
@@ -326,7 +355,9 @@ export async function get(id: string, actor: Actor, access: Access): Promise<Req
   if (request.requestedBy !== actor.uid && !canDecide) {
     throw new ApiError(404, 'request_not_found', 'There is no such request.')
   }
-  return { ...request, canDecide }
+  if (!canDecide) return { ...request, canDecide }
+  const [withAssessment] = await withAssessments([request])
+  return { ...withAssessment!, canDecide }
 }
 
 export async function cancel(id: string, actor: Actor): Promise<RequestRecord> {
