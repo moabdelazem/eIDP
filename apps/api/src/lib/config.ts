@@ -98,6 +98,13 @@ const schema = z.object({
   OLLAMA_NUM_CTX: z.coerce.number().int().min(2048).default(8192),
   /** How long one answer may take. A 7B model on CPU needs most of a minute. */
   OLLAMA_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(180),
+  /**
+   * Explain failed builds as they happen, not only when someone asks. Only
+   * each job's latest failure, one at a time, after each Jenkins sync.
+   */
+  OLLAMA_AUTO_EXPLAIN: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+  /** How far back automatic explaining looks. Older failures are explained on request. */
+  OLLAMA_AUTO_EXPLAIN_HOURS: z.coerce.number().positive().default(24),
 
   /** Where the inventories repo lives inside that collection. */
   INVENTORIES_PROJECT: z.string().min(1).optional(),

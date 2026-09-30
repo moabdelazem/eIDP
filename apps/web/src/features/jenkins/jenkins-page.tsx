@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { CircleCheck, ExternalLink, RefreshCw, Server, X } from 'lucide-react'
+import { CircleCheck, ExternalLink, RefreshCw, Server, Sparkles, X } from 'lucide-react'
 import { JenkinsIcon } from '@/components/brand-icons.tsx'
 import { EmptyState } from '@/components/empty-state.tsx'
 import { PAGE, PageHeader } from '@/components/page-layout.tsx'
@@ -302,10 +302,17 @@ function FailuresTable({
         <TableBody>
           {failures.map((f) => (
             <TableRow key={f.job}>
-              <TableCell className="max-w-72">
+              <TableCell className="max-w-md">
                 <Link to={buildPath(f.last)} className="hover:underline">
                   <JobName name={f.job} className="text-sm" />
                 </Link>
+                {/* The model's one line on why, made when the build failed — the full answer is on the build page. */}
+                {f.explanation && (
+                  <p className="mt-1 flex items-start gap-1.5 text-xs whitespace-normal text-muted-foreground" title={f.explanation.summary}>
+                    <Sparkles className="mt-0.5 size-3 shrink-0 text-[var(--chart-1)]" aria-label="AI explanation:" />
+                    <span className="line-clamp-2">{f.explanation.summary}</span>
+                  </p>
+                )}
                 {(f.running || f.inQueue) && (
                   <p className="mt-0.5 text-xs text-muted-foreground">{f.running ? 'A new build is running' : 'A new build is queued'}</p>
                 )}

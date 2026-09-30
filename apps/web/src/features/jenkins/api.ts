@@ -28,6 +28,8 @@ export type Failure = {
   lastSuccess: string | null
   running: boolean
   inQueue: boolean
+  /** The model's one line on the latest failure, for people who may read explanations. */
+  explanation: { summary: string; category: Category } | null
 }
 
 export type QueueItem = {
@@ -125,6 +127,8 @@ export type Explanation = {
   createdByName: string
   durationMs: number
   trimmed: boolean
+  /** Made by the automatic run when the build failed. */
+  automatic: boolean
 }
 
 export type AuditEntry = {
@@ -158,7 +162,12 @@ export const jenkinsApi = {
   audit: () => api<AuditEntry[]>('/jenkins/audit'),
   /** The kept explanation, if any, and whether the AI is set up to make one. */
   explanation: (job: string, number: number) =>
-    api<{ ai: { configured: boolean; model: string | null }; explanation: Explanation | null }>(`/jenkins/explain?${params({ job, number })}`),
+    api<{
+      ai: { configured: boolean; model: string | null }
+      explanation: Explanation | null
+      /** `queued`: being explained without anyone asking. `failed`: the automatic try did not work, and why. */
+      auto: { state: 'queued' | 'failed' | 'off'; error: string | null }
+    }>(`/jenkins/explain?${params({ job, number })}`),
   /** Asks the model — or returns the kept answer unless `fresh`. */
   explain: (job: string, number: number, fresh = false) => post('/jenkins/explain', { job, number, fresh }) as Promise<Explanation>,
   /** Pull build history from Jenkins now instead of waiting for the timer. */
