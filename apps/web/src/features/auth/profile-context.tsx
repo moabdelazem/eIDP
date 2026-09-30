@@ -35,6 +35,7 @@ export type Permission =
   | 'rbac.view_as'
   | 'jenkins.view'
   | 'jenkins.operate'
+  | 'ai.use'
 export type ScopeType = 'global' | 'team' | 'project'
 
 type ProfileValue = {

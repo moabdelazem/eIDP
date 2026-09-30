@@ -237,3 +237,25 @@ create table if not exists jenkins_sync (
   builds      integer not null default 0,
   jobs_read   integer not null default 0
 );
+
+-- A model's explanation of a failed Jenkins build, kept so each failure is
+-- explained once however many people open it. Keyed by prompt version and
+-- model too: a new prompt or a bigger model is a new answer, not the old one
+-- served as current. Keyed by server like the rest of the Jenkins history.
+create table if not exists build_explanations (
+  server           text not null,
+  job              text not null,
+  number           integer not null,
+  prompt_version   integer not null,
+  model            text not null,
+  -- {summary, cause, category, confidence, evidence: [{line, text}], nextSteps}
+  explanation      jsonb not null,
+  -- Only part of the log fitted the context window.
+  trimmed          boolean not null default false,
+  prompt_tokens    integer not null default 0,
+  duration_ms      integer not null default 0,
+  created_by       text not null,
+  created_by_name  text not null,
+  created_at       timestamptz not null default now(),
+  primary key (server, job, number, prompt_version, model)
+);

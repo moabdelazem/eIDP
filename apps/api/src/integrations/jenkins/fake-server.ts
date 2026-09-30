@@ -73,6 +73,10 @@ function history(
         '[Pipeline] Start of Pipeline',
         '[Pipeline] { (Checkout)',
         '+ git checkout main',
+        // Secrets as real logs leak them — for the build explainer to redact.
+        '+ git fetch https://deploy:s3cr3t-pass@git.example.com/payments/loan.git',
+        '+ curl -sf -H "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJkZXBsb3kifQ.c2lnbmF0dXJl" https://nexus.example.com/api/v1/status',
+        '+ export DB_PASSWORD=hunter2',
         '[Pipeline] }',
         '[Pipeline] { (Build)',
         ...Array.from({ length: 40 }, (_, n) => `[INFO] Compiling module ${n + 1} of 40`),

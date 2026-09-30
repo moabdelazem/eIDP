@@ -13,6 +13,7 @@ import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
 import { ActionDialog, type Pending } from './actions.tsx'
 import { duration, jenkinsApi, type RunDetail, type Stage } from './api.ts'
+import { ExplainPanel } from './explain-panel.tsx'
 import { LogViewer } from './log-viewer.tsx'
 import { JobName, RESULT, ResultBadge } from './result.tsx'
 import { RunAction } from './runs.tsx'
@@ -42,6 +43,8 @@ export function BuildPage() {
   const { can } = useProfile()
   const canOperate = can('jenkins.operate')
   const [pending, setPending] = useState<Pending | null>(null)
+  // A line the explanation points at, for the log to show.
+  const [jump, setJump] = useState<{ line: number; at: number } | null>(null)
 
   if (!job || !Number.isInteger(number) || number < 1) {
     return (
@@ -130,8 +133,9 @@ export function BuildPage() {
           </>
         }
       >
+        <ExplainPanel job={job} number={number} result={r.result} onJump={(line) => setJump({ line, at: Date.now() })} />
         {r.stages.length > 0 && <Stages stages={r.stages} />}
-        <LogViewer key={`${job}#${number}`} log={r.log} truncated={r.logTruncated} fullUrl={r.logUrl} />
+        <LogViewer key={`${job}#${number}`} log={r.log} truncated={r.logTruncated} fullUrl={r.logUrl} jump={jump} />
       </Split>
 
       <ActionDialog pending={pending} onClose={() => setPending(null)} onDone={run.reload} />

@@ -110,6 +110,23 @@ export type RunDetail = Run & {
   logUrl: string
 }
 
+export type Category = 'test_failure' | 'compilation' | 'dependency' | 'infrastructure' | 'configuration' | 'permission' | 'timeout' | 'flaky' | 'unknown'
+
+/** A model's explanation of a failed build, from services/build-explainer.ts. */
+export type Explanation = {
+  summary: string
+  cause: string
+  category: Category
+  confidence: 'low' | 'medium' | 'high'
+  evidence: { line: number; text: string }[]
+  nextSteps: string[]
+  model: string
+  createdAt: string
+  createdByName: string
+  durationMs: number
+  trimmed: boolean
+}
+
 export type AuditEntry = {
   id: number
   at: string
@@ -139,6 +156,11 @@ export const jenkinsApi = {
   parameters: (window: Window) => api<ParameterFacet[]>(`/jenkins/parameters?window=${window}`),
   run: (job: string, number: number) => api<RunDetail>(`/jenkins/run?${params({ job, number })}`),
   audit: () => api<AuditEntry[]>('/jenkins/audit'),
+  /** The kept explanation, if any, and whether the AI is set up to make one. */
+  explanation: (job: string, number: number) =>
+    api<{ ai: { configured: boolean; model: string | null }; explanation: Explanation | null }>(`/jenkins/explain?${params({ job, number })}`),
+  /** Asks the model — or returns the kept answer unless `fresh`. */
+  explain: (job: string, number: number, fresh = false) => post('/jenkins/explain', { job, number, fresh }) as Promise<Explanation>,
   /** Pull build history from Jenkins now instead of waiting for the timer. */
   sync: () => post('/jenkins/sync') as Promise<SyncState>,
   rebuild: (job: string, number: number) => post('/jenkins/rebuild', { job, number }),

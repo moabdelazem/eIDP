@@ -38,6 +38,8 @@ const DEVOPS_ONLY: [method: string, path: string][] = [
   ['GET', '/jenkins/runs'],
   ['GET', '/jenkins/parameters'],
   ['POST', '/jenkins/sync'],
+  ['GET', '/jenkins/explain?job=x&number=1'],
+  ['POST', '/jenkins/explain'],
   ['POST', '/jenkins/rebuild'],
   ['POST', '/jenkins/stop'],
   ['POST', '/jenkins/queue/1/cancel'],
