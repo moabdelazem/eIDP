@@ -6,6 +6,7 @@ import { authRoutes } from './routes/auth.ts'
 import { adoRoutes } from './routes/ado.ts'
 import { jiraRoutes } from './routes/jira.ts'
 import { jenkinsRoutes } from './routes/jenkins.ts'
+import { assistantRoutes } from './routes/assistant.ts'
 import { catalogRoutes } from './routes/catalog.ts'
 import { requestRoutes } from './routes/requests.ts'
 import { rbacRoutes } from './routes/rbac.ts'
@@ -28,6 +29,7 @@ export function createApp() {
   app.route('/ado', adoRoutes)
   app.route('/jira', jiraRoutes)
   app.route('/jenkins', jenkinsRoutes)
+  app.route('/assistant', assistantRoutes)
   app.route('/rbac', rbacRoutes)
 
   return app

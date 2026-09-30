@@ -28,6 +28,7 @@ export const PERMISSIONS = {
   'jenkins.view': 'See Jenkins jobs, recent runs, failures, the queue and agents',
   'jenkins.operate': 'Re-run and stop Jenkins builds, and take them out of the queue',
   'ai.use': 'Ask the portal’s AI (Ollama, on our own machines) to explain what it shows',
+  'ai.chat': 'Chat with the portal’s assistant, which looks up only what you may already see',
 } as const
 
 export type Permission = keyof typeof PERMISSIONS
@@ -36,7 +37,7 @@ export const ROLES = {
   member: {
     label: 'Member',
     description: 'Everyone who can sign in. Built in; never bound by hand.',
-    permissions: ['catalog.view', 'requests.create'],
+    permissions: ['catalog.view', 'requests.create', 'ai.chat'],
   },
   'team-lead': {
     label: 'Team lead',

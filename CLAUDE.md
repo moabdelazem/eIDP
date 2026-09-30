@@ -212,7 +212,9 @@ trimmed to fit it: Ollama's default window is small, and past it the prompt is
 cut silently *from the front* — the instructions go, and the answer is about
 what is left. A model nobody pulled is a 404, reported as "ollama pull <model>".
 `fake-server.ts` answers like a model would (`pnpm --filter @eidp/api
-ollama:fake`), and can invent a line number or break its JSON on request.
+ollama:fake`), and can invent a line number or break its JSON on request. For
+the assistant it streams, and calls the tool a question's words point to —
+only among those offered — or a rogue one when asked to.
 
 `integrations/inventories/` — parses that working copy into the catalog. Its
 rules and the traps they exist for are in `parse.ts`; `__fixtures__/repo` is a
@@ -558,6 +560,45 @@ change the prompt, bump it — so each failure is explained once for everyone,
 and two people asking at once share one call. The panel says the answer is
 generated, by which model, for whom and when, and that it can be wrong; each
 cited line jumps the log viewer to it.
+
+**The assistant** (`/assistant/:conversationId?`, `features/assistant/`,
+`services/assistant.ts`) is a chat with the same model, for everyone:
+`ai.chat` is a `member` permission. General engineering questions it answers
+from what the model knows; questions about *us* — systems, owners,
+configuration, requests, builds — it answers through read-only tools in
+`services/assistant-tools.ts`. Four rules hold it, each tested in
+`routes/assistant.test.ts`:
+
+- **It looks, never acts.** No tool creates, approves, runs or changes
+  anything; the system prompt tells the model to point at the page that does.
+- **Tools are offered per person.** Each tool has an `allowed(access)`; without
+  `jenkins.view`, Jenkins does not exist for the model. A call to a tool not
+  offered — invented, or not this person's — is refused, not run.
+- **Tool results are data, not instructions** (the prompt says so), capped in
+  size, and already redacted where they are stored (`[hidden]`).
+- **Conversations are the owner's alone** — anyone else's id is a 404, to read,
+  continue or delete.
+
+It streams: Ollama's NDJSON (`chatStream`, tool calls arrive whole) becomes
+server-sent events (`conversation`, `step`, `delta`, `reset`, `done`, `error`)
+through `hono/streaming`, read by `apiStream` in `lib/api-client.ts` — not
+`EventSource`, which can neither POST nor send the token. Refusals (busy, not
+yours, not configured) are checked *before* the stream opens, so they are
+ordinary JSON errors. A turn that calls tools may have streamed a preamble;
+`reset` drops it. Up to four tool rounds, then the model answers with what it
+has. One answer at a time per person; closing the page aborts the model call.
+The question is stored at once, the answer only when complete, and tool
+results never — the next turn asks again, which keeps history small and data
+current. History is trimmed from the oldest to fit `num_ctx`.
+
+Answers are markdown, rendered by `markdown.tsx` into React elements — never
+HTML, since a model that read our data wrote it. Portal paths become in-app
+links (the tools hand the model a `link` for everything they return); `_x_` is
+italic only between word boundaries, because names like
+`NBFS_LoanManagementSystem` are not emphasis. It is one route with an optional
+id, so a new chat takes its URL mid-answer without remounting. The catalog
+tests and the assistant tests share `pg_advisory_lock(4202)`: `catalog.test.ts`
+replaces the catalog wholesale, and they run in parallel processes.
 
 `POST /catalog/sync` needs `catalog.sync`: a sync clones from Azure DevOps with
 the service account's token and rewrites the catalog. The map's **Refresh from
