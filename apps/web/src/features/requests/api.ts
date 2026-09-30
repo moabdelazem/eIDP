@@ -33,6 +33,19 @@ export type PortalRequest = {
   error: string | null
   /** On a single request only: whether the viewer may decide it. */
   canDecide?: boolean
+  /** For people who may decide it: what to weigh before approving. Absent for everyone else. */
+  assessment?: Assessment | null
+}
+
+/** Mirrors services/request-risk.ts. The level comes from the facts; the model adds only words. */
+export type Assessment = {
+  level: 'low' | 'medium' | 'high'
+  facts: { level: 'caution' | 'info'; text: string }[]
+  summary: string | null
+  reasonConcerns: string[]
+  model: string | null
+  error: string | null
+  createdAt: string
 }
 
 export type Target =
@@ -72,6 +85,8 @@ export const requestsApi = {
   reject: (id: string, note: string) =>
     api<PortalRequest>(`/requests/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),
   retry: (id: string) => api<PortalRequest>(`/requests/${id}/retry`, { method: 'POST' }),
+  /** Assess again — the directory and the catalog may have changed since it was filed. */
+  assess: (id: string) => api<Assessment>(`/requests/${id}/assess`, { method: 'POST' }),
 }
 
 /** Jira's requests act in Jira; everything else is Azure DevOps. */

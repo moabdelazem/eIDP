@@ -1,6 +1,7 @@
 import { ConfirmDialog } from '@/components/confirm-dialog.tsx'
 import { systemOf, targetPath, type PortalRequest } from './api.ts'
 import { decide } from './decisions.ts'
+import { Cautions, RiskBadge } from './risk.tsx'
 import { TargetPath } from './status.tsx'
 
 /** Everyone approval hands access to, as a sentence. */
@@ -64,6 +65,12 @@ export function ApproveDialog({
           </>
         )}
       </p>
+      {r.assessment && r.assessment.level !== 'low' && (
+        <div className="space-y-2 rounded-md border p-3">
+          <RiskBadge level={r.assessment.level} />
+          <Cautions assessment={r.assessment} />
+        </div>
+      )}
       <p>Asked for by {r.requestedByName}. The requester sees who approved it.</p>
     </ConfirmDialog>
   )

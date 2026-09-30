@@ -79,6 +79,9 @@ export const requestRoutes = new Hono<AppEnv>()
     c.json(await requests.reject(c.req.param('id'), actor(c), await accessFrom(c), c.req.valid('json').note ?? '')),
   )
 
+  /** Assess again: the directory and the catalog may have moved on since it was filed. */
+  .post('/:id/assess', decider, async (c) => c.json(await requests.reassess(c.req.param('id'), await accessFrom(c))))
+
   .post('/:id/retry', decider, async (c) => c.json(await requests.retry(c.req.param('id'), await accessFrom(c))))
 
   // ---- the requester's own, or DevOps ------------------------------------

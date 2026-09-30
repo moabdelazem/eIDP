@@ -6,6 +6,9 @@ import { after, before, test } from 'node:test'
 import { serve } from '@hono/node-server'
 import { createFakeAdo } from '../integrations/ado/fake-server.ts'
 import { createFakeJira } from '../integrations/jira/fake-server.ts'
+import { createFakeOllama } from '../integrations/ollama/fake-server.ts'
+import { randomUUID } from 'node:crypto'
+import pg from 'pg'
 
 const fake = createFakeAdo()
 const server = serve({ fetch: fake.app.fetch, port: 0 })
@@ -22,6 +25,12 @@ process.env.ADO_BASE_URL = `http://localhost:${port}/tfs/DefaultCollection`
 process.env.ADO_PAT = 'fake'
 process.env.JIRA_BASE_URL = `http://localhost:${jiraPort}/jira`
 process.env.JIRA_TOKEN = 'fake'
+
+const fakeOllama = createFakeOllama()
+const ollamaServer = serve({ fetch: fakeOllama.app.fetch, port: 0 })
+await new Promise((resolve) => ollamaServer.once('listening', resolve))
+process.env.OLLAMA_URL = `http://localhost:${(ollamaServer.address() as AddressInfo).port}`
+process.env.OLLAMA_MODEL = 'qwen2.5'
 
 const { createApp } = await import('../app.ts')
 const { closeDb, ensureSchema, query } = await import('../lib/db.ts')
@@ -47,6 +56,7 @@ after(async () => {
   await closeDb()
   server.close()
   jiraServer.close()
+  ollamaServer.close()
 })
 
 function call(who: string, method: string, path: string, body?: unknown) {
@@ -495,4 +505,94 @@ test('when Jira fails to create, the request says why and nothing is recorded as
 
   await call('alice', 'POST', `/requests/${created.id}/retry`)
   assert.equal((await settled(created.id)).status, 'completed')
+})
+
+// ---- risk summaries --------------------------------------------------------
+// The catalog is shared with catalog.test.ts, which replaces it wholesale:
+// hold its lock while these tests' own system is in it.
+
+const catalogLock = new pg.Client({ connectionString: process.env.DATABASE_URL ?? 'postgresql://eidp:eidp@localhost:5432/eidp' })
+const RISK_SYSTEM = 'ZZRisk'
+
+async function assessed(id: string, who = 'alice') {
+  for (let i = 0; i < 60; i++) {
+    const request = await json<Record<string, any>>(await call(who, 'GET', `/requests/${id}`))
+    if (request.assessment || who !== 'alice') return request
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  throw new Error('never assessed')
+}
+
+const texts = (a: any, level: string) => a.facts.filter((f: any) => f.level === level).map((f: any) => f.text)
+
+test('risk: a project that reaches production, owned by one team, is set up to check against', async () => {
+  await catalogLock.connect()
+  await catalogLock.query('select pg_advisory_lock(4202)')
+  await query('delete from catalog_systems where dir = $1', [RISK_SYSTEM])
+  await query(`insert into catalog_systems (dir, project_name, teams) values ($1, 'RiskLab', '{"dev":"DEVOPS","prd":"DEVOPS"}')`, [RISK_SYSTEM])
+  await query(
+    `insert into catalog_applications (id, system_dir, group_name, name, environment) values ($1, $2, 'prd_risk-api', 'risk-api', 'prd')`,
+    [`${RISK_SYSTEM}/prd_risk-api`, RISK_SYSTEM],
+  )
+  const coll = fake.collections.get('DefaultCollection')!
+  const project = { id: randomUUID(), name: 'RiskLab', description: '', state: 'wellFormed' as const }
+  coll.projects.push(project)
+  coll.repos.push({ id: randomUUID(), name: 'loan-scoring', project: { id: project.id, name: 'RiskLab' } })
+})
+
+test('risk: access for people outside the owning team, to production, for a thin reason, is high — and says why', async () => {
+  const filed = await json<{ id: string }>(
+    await call('bob', 'POST', '/requests', { kind: 'grant_access', collection: 'DefaultCollection', project: 'RiskLab', grantees: ['alice', 'bob', 'dave'], justification: 'Need it' }),
+  )
+  const { assessment } = await assessed(filed.id)
+  assert.equal(assessment.level, 'high')
+  const cautions = texts(assessment, 'caution')
+  assert.ok(cautions.some((t: string) => /Bob Example is not in a team that owns RiskLab \(DEVOPS\)/.test(t)), cautions.join(' | '))
+  assert.ok(cautions.some((t: string) => /RiskLab deploys to production/.test(t)))
+  assert.ok(cautions.some((t: string) => /2 of 3 are outside the teams that own RiskLab: bob, dave/.test(t)))
+  assert.ok(cautions.some((t: string) => /The reason is 2 words long/.test(t)))
+  // The model's words, over those facts — and its reading of the reason.
+  assert.match(assessment.summary, /^Weigh this before approving:/)
+  assert.deepEqual(assessment.reasonConcerns, ['The reason does not say who needs this or what for.'])
+  assert.equal(assessment.model, 'qwen2.5')
+})
+
+test('risk: only someone who may decide a request sees its assessment', async () => {
+  const [mine] = await json<{ id: string }[]>(await call('bob', 'GET', '/requests/mine'))
+  const asRequester = await json<Record<string, unknown>>(await call('bob', 'GET', `/requests/${mine!.id}`))
+  assert.equal(asRequester.canDecide, false)
+  assert.ok(!('assessment' in asRequester))
+  assert.equal((await call('bob', 'POST', `/requests/${mine!.id}/assess`)).status, 403)
+
+  const pool = await json<{ open: Record<string, any>[] }>(await call('alice', 'GET', '/requests/pool'))
+  assert.equal(pool.open.find((r) => r.id === mine!.id)?.assessment.level, 'high')
+})
+
+test('risk: a near-duplicate name is a caution, from someone in the owning team a medium', async () => {
+  const filed = await json<{ id: string }>(
+    await call('alice', 'POST', '/requests', {
+      kind: 'create_repository', collection: 'DefaultCollection', project: 'RiskLab', repository: 'loan_scoring-v2',
+      justification: 'Second version of the scoring service for the Payments team, replacing loan-scoring next quarter.', teamGroup: 'DEVOPS',
+    }),
+  )
+  const { assessment } = await assessed(filed.id)
+  assert.deepEqual(texts(assessment, 'caution'), ['Similar names already exist: loan-scoring. It may already be there under another name.'])
+  assert.equal(assessment.level, 'medium')
+  assert.ok(texts(assessment, 'info').some((t: string) => /RiskLab deploys to production/.test(t)))
+})
+
+test('risk: without the model, the facts and the level still stand, and it says why there are no words', async () => {
+  const [mine] = await json<{ id: string }[]>(await call('bob', 'GET', '/requests/mine'))
+  fakeOllama.setMode('no-model')
+  try {
+    const again = await json<Record<string, any>>(await call('alice', 'POST', `/requests/${mine!.id}/assess`))
+    assert.equal(again.level, 'high')
+    assert.equal(again.summary, null)
+    assert.match(again.error, /ollama pull qwen2\.5/)
+  } finally {
+    fakeOllama.setMode('ok')
+  }
+  await query('delete from catalog_systems where dir = $1', [RISK_SYSTEM])
+  await catalogLock.query('select pg_advisory_unlock(4202)')
+  await catalogLock.end()
 })

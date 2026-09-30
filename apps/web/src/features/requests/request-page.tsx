@@ -13,6 +13,7 @@ import { useResource } from '@/lib/use-resource.ts'
 import { isInFlight, isJira, requestsApi, systemOf, targetPath, type PortalRequest } from './api.ts'
 import { decide, rejectRequest } from './decisions.ts'
 import { RejectDialog } from './reject-dialog.tsx'
+import { RiskPanel } from './risk.tsx'
 import { ApproveDialog, WithdrawDialog } from './decision-dialogs.tsx'
 import { AccessLine, KIND_LABEL, RequestName, since, StatusBadge, WrappingUrl } from './status.tsx'
 import { HeaderSkeleton, Loading, TimelineSkeleton } from '@/components/skeletons.tsx'
@@ -73,7 +74,19 @@ export function RequestPage() {
         }
       />
 
-      <Split aside={<Details request={r} own={own} />}>
+      <Split
+        aside={
+          <>
+            {/* For deciders only — the API sends an assessment to nobody else. */}
+            {r.canDecide && (
+              <Section title="Before you approve">
+                <RiskPanel requestId={r.id} assessment={r.assessment} onChange={request.reload} />
+              </Section>
+            )}
+            <Details request={r} own={own} />
+          </>
+        }
+      >
         <Section title="What happened">
           <ol>
             <Step title={own ? 'You asked for it' : `${r.requestedByName} asked for it`} when={r.requestedAt} done>

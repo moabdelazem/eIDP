@@ -16,6 +16,7 @@ import { RejectDialog } from './reject-dialog.tsx'
 import { ApproveDialog } from './decision-dialogs.tsx'
 import { RequestRow } from './request-row.tsx'
 import { AccessLine, KIND_ICON, RequestName, since } from './status.tsx'
+import { RiskLine } from './risk.tsx'
 import { CardSkeleton, HeaderSkeleton, Loading, RowsSkeleton } from '@/components/skeletons.tsx'
 
 /** A side column holds the latest few; the rest are one click away on each request. */
@@ -218,6 +219,8 @@ function PendingCard({ request: r, onDecided }: { request: PortalRequest; onDeci
       <blockquote className="mt-3 border-l-2 pl-3 text-sm text-muted-foreground">{r.justification}</blockquote>
       {/* What approving hands out, so it is decided with open eyes. */}
       <AccessLine request={r} className="mt-3" />
+      {/* What to weigh: checked facts, and the model's line on them. */}
+      <RiskLine assessment={r.assessment} className="mt-3" />
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Button size="sm" onClick={() => setApproving(true)}>

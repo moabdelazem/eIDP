@@ -23,6 +23,7 @@ const DEVOPS_ONLY: [method: string, path: string][] = [
   ['POST', '/requests/00000000-0000-0000-0000-000000000000/approve'],
   ['POST', '/requests/00000000-0000-0000-0000-000000000000/reject'],
   ['POST', '/requests/00000000-0000-0000-0000-000000000000/retry'],
+  ['POST', '/requests/00000000-0000-0000-0000-000000000000/assess'],
   ['POST', '/catalog/sync'],
   ['GET', '/rbac/roles'],
   ['GET', '/rbac/bindings'],

@@ -300,3 +300,19 @@ create table if not exists build_explain_attempts (
   last_attempt_at  timestamptz not null default now(),
   primary key (server, job, number, prompt_version, model)
 );
+
+-- What an approver should know before approving a request (services/
+-- request-risk.ts): facts the portal checked, the level they add up to, and
+-- the model's one line on them. One per request, remade on "Assess again".
+create table if not exists request_assessments (
+  request_id       uuid primary key references requests(id) on delete cascade,
+  level            text not null check (level in ('low', 'medium', 'high')),
+  facts            jsonb not null default '[]'::jsonb,
+  summary          text,
+  reason_concerns  jsonb not null default '[]'::jsonb,
+  model            text,
+  prompt_version   integer not null,
+  -- Why there is no summary, when the model was asked and failed.
+  error            text,
+  created_at       timestamptz not null default now()
+);

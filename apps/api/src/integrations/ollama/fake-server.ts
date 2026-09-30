@@ -69,6 +69,17 @@ export function createFakeOllama({ models = ['qwen2.5:latest'] }: { models?: str
     if (mode === 'no-model' || !known) return c.json({ error: `model '${body.model}' not found` }, 404)
     if (mode === 'slow') await new Promise((resolve) => setTimeout(resolve, 3000))
     if (body.stream) return assistantTurn(c, body)
+    // A request's risk summary: its schema asks for reasonConcerns.
+    if (JSON.stringify(body.format ?? {}).includes('reasonConcerns')) {
+      const user = body.messages.find((m) => m.role === 'user')?.content ?? ''
+      const caution = /^- \(caution\) (.+)$/m.exec(user)?.[1]
+      const reason = /^Reason given: "(.*)"$/m.exec(user)?.[1] ?? ''
+      const answer = {
+        summary: caution ? `Weigh this before approving: ${caution}` : 'Nothing stands out; the request matches its reason.',
+        reasonConcerns: reason.split(/\s+/).length < 6 ? ['The reason does not say who needs this or what for.'] : [],
+      }
+      return c.json({ model: body.model, message: { role: 'assistant', content: JSON.stringify(answer) }, done: true, total_duration: 900_000_000, prompt_eval_count: 400 })
+    }
 
     const user = body.messages.find((m) => m.role === 'user')?.content ?? ''
     // Lines of the excerpt are "<n>: <text>"; cite those that read like errors.

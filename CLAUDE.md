@@ -376,6 +376,24 @@ retry just grants again — both operations are idempotent. The form is its own
 page (`grant-access-page.tsx`); the badge says Granting/Granted, not
 Creating/Created.
 
+**Every request is assessed for its approver** (`services/request-risk.ts`),
+in the background the moment it is filed, and shown only to people who may
+decide it — on the approval card, in the approve dialog when it is not low,
+and in full on the request page ("Before you approve", with Assess again).
+The **facts** are the portal's, checked in code: who gets access and whether
+they are in the teams that own the project (`teamsOwning`, from the catalog);
+whether that project deploys to `prd`/`prd_dr`; whether the requester is in
+an owning team; near-duplicate names in ADO or Jira (`similar`: case,
+punctuation, a suffix, a typo or two); and a reason under six words. The
+**level** is the count of cautions — none, one, several: low, medium, high —
+so it is testable and no model can talk it up or down. The **model** adds only
+words: a one-line summary of those facts, and at most two notes on whether the
+reason explains the request, labelled as its reading. Without Ollama, or when
+it fails, the facts and the level still stand and the page says why there is
+no summary. One row per request (`request_assessments`), replaced on Assess
+again; the risk tests live in `requests.test.ts`, because that file deletes
+every request, and take the catalog lock (4202) around their own system.
+
 `check()` is what the form calls as someone types and what `submit()` runs, so
 the two can never disagree. Name rules are in `request-rules.ts`, from the ADO
 Server naming restrictions.
