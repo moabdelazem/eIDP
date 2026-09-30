@@ -80,6 +80,10 @@ const schema = z.object({
   JENKINS_URL: z.string().url().optional(),
   JENKINS_USER: z.string().min(1).optional(),
   JENKINS_TOKEN: z.string().min(1).optional(),
+  /** How often build history is pulled from Jenkins. 0 turns the timer off. */
+  JENKINS_SYNC_SECONDS: z.coerce.number().min(0).default(60),
+  /** Build history older than this is dropped. The page looks back 7 days. */
+  JENKINS_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
 
   /** Where the inventories repo lives inside that collection. */
   INVENTORIES_PROJECT: z.string().min(1).optional(),

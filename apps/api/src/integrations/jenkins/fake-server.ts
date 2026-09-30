@@ -6,57 +6,93 @@
  *   JENKINS_URL=http://localhost:4030/jenkins JENKINS_USER=eidp JENKINS_TOKEN=fake
  *
  * It implements only what e-IDP calls, in Jenkins' shapes: jobs nested in
- * folders and a multibranch project, builds newest first, a queue, agents,
- * and the 201 + Location a build request answers with. `tree` is ignored —
- * it always answers with everything, which is what the client asks for.
+ * folders and a multibranch project, builds newest first, a week of history
+ * with parameters, commits and agents, pipeline stages from `wfapi`, a queue,
+ * agents, and the 201 + Location a build request answers with. `tree` is
+ * honoured only for the `{0,n}` range on builds — otherwise it answers with
+ * everything, which is what the client asks for.
  */
 import { serve } from '@hono/node-server'
 import { Hono, type Context } from 'hono'
 
 type Parameter = { _class: string; name: string; value?: unknown }
-type Build = {
+type Outcome = 'SUCCESS' | 'FAILURE' | 'UNSTABLE' | 'ABORTED' | null
+export type FakeBuild = {
   number: number
-  result: 'SUCCESS' | 'FAILURE' | 'UNSTABLE' | 'ABORTED' | null
+  result: Outcome
   timestamp: number
   duration: number
   building: boolean
+  builtOn: string
   parameters: Parameter[]
   cause: string
+  changes: { commitId: string; msg: string; author: string }[]
   log: string
 }
-type Job = { kind: 'job'; name: string; builds: Build[] }
+type Job = { kind: 'job'; name: string; pipeline: boolean; builds: FakeBuild[] }
 type Folder = { kind: 'folder'; name: string; className: string; children: Node[] }
 type Node = Job | Folder
 type Queued = { id: number; job: string; since: number; why: string }
 
 const FOLDER = 'com.cloudbees.hudson.plugins.folder.Folder'
 const MULTIBRANCH = 'org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject'
-const PIPELINE = 'org.jenkinsci.plugins.workflow.job.WorkflowJob'
 const STRING = 'hudson.model.StringParameterValue'
+const BOOLEAN = 'hudson.model.BooleanParameterValue'
 const PASSWORD = 'hudson.model.PasswordParameterValue'
+const HOUR = 3_600_000
+const AGENTS = ['linux-01', 'linux-02', 'linux-03']
+const PEOPLE = ['alice', 'bob', 'carol']
 
-export function createFakeJenkins() {
+/**
+ * A job's history, newest first. `outcome(i)` decides build i (0 = newest),
+ * `params(i)` its parameters; builds are `every` hours apart, the newest
+ * `ago` hours old. Deterministic, so tests can recompute what they expect.
+ */
+function history(
+  now: number,
+  count: number,
+  { every, ago = 0.2, outcome, params = () => [] }: { every: number; ago?: number; outcome: (i: number) => Outcome; params?: (i: number) => Parameter[] },
+): FakeBuild[] {
+  return Array.from({ length: count }, (_, i) => {
+    const result = outcome(i)
+    const failed = result === 'FAILURE'
+    const who = PEOPLE[i % PEOPLE.length]!
+    return {
+      number: count - i,
+      result,
+      timestamp: now - (ago + i * every) * HOUR,
+      duration: result === null ? 0 : 60_000 + ((i * 37) % 11) * 15_000,
+      building: result === null,
+      builtOn: AGENTS[i % AGENTS.length]!,
+      parameters: params(i),
+      cause: i % 4 === 0 ? 'Started by an SCM change' : `Started by user ${who}`,
+      changes: i % 4 === 0 ? [{ commitId: `c0ffee${String(count - i).padStart(2, '0')}`, msg: `Fix scoring for build ${count - i}`, author: who }] : [],
+      log: [
+        `Started by user ${who}`,
+        `Running on ${AGENTS[i % AGENTS.length]} in /var/jenkins/workspace`,
+        '[Pipeline] Start of Pipeline',
+        '[Pipeline] { (Checkout)',
+        '+ git checkout main',
+        '[Pipeline] }',
+        '[Pipeline] { (Build)',
+        ...Array.from({ length: 40 }, (_, n) => `[INFO] Compiling module ${n + 1} of 40`),
+        'WARNING: deprecated API used in ScoreCalculator.java',
+        '[Pipeline] }',
+        '[Pipeline] { (Test)',
+        failed ? 'Tests run: 42, Failures: 3, Errors: 0' : 'Tests run: 42, Failures: 0, Errors: 0',
+        ...(failed ? ['[ERROR] ScoreCalculatorTest.rejectsNegativeIncome: expected <false> but was <true>', 'ERROR: script returned exit code 1'] : []),
+        '[Pipeline] }',
+        '[Pipeline] End of Pipeline',
+        `Finished: ${result ?? 'running'}`,
+        '',
+      ].join('\n'),
+    }
+  })
+}
+
+export function createFakeJenkins({ now = Date.now() } = {}) {
   const base = '/jenkins'
   let nextQueueId = 500
-  const now = Date.now()
-  const minutes = (n: number) => now - n * 60_000
-
-  function history(results: Build['result'][], params: Parameter[] = [], startMinutesAgo = 10): Build[] {
-    // Newest first, like Jenkins; the first entry is the latest build.
-    return results.map((result, index) => ({
-      number: results.length - index,
-      result,
-      timestamp: minutes(startMinutesAgo + index * 60),
-      duration: result === null ? 0 : 90_000 + index * 1000,
-      building: result === null,
-      parameters: params,
-      cause: 'Started by user alice',
-      log:
-        result === 'FAILURE'
-          ? `Started by user alice\n[Pipeline] stage (Test)\n${'noise line\n'.repeat(50)}Tests run: 42, Failures: 3\nERROR: script returned exit code 1\nFinished: FAILURE\n`
-          : `Started by user alice\n[Pipeline] stage (Build)\nFinished: ${result ?? 'running'}\n`,
-    }))
-  }
 
   const root: Folder = {
     kind: 'folder',
@@ -68,26 +104,37 @@ export function createFakeJenkins() {
         name: 'payments',
         className: FOLDER,
         children: [
-          // Failing three builds in a row, after a pass, with a plain parameter.
+          // Broken for its last three builds, after a week of mostly passing.
           {
             kind: 'job',
             name: 'loan-scoring-api',
-            builds: history(['FAILURE', 'FAILURE', 'FAILURE', 'SUCCESS'], [{ _class: STRING, name: 'BRANCH', value: 'main' }]),
+            pipeline: true,
+            builds: history(now, 40, {
+              every: 4,
+              outcome: (i) => (i < 3 || i % 9 === 5 ? 'FAILURE' : 'SUCCESS'),
+              params: (i) => [
+                { _class: STRING, name: 'BRANCH', value: i % 3 === 0 ? 'release/2.3' : 'main' },
+                { _class: STRING, name: 'ENV', value: i % 2 === 0 ? 'staging' : 'dev' },
+                { _class: BOOLEAN, name: 'SKIP_TESTS', value: false },
+              ],
+            }),
           },
-          { kind: 'job', name: 'payments-web', builds: history(['SUCCESS', 'SUCCESS'], [], 30) },
-          // Fails, but a password parameter means it cannot be re-run from here.
+          { kind: 'job', name: 'payments-web', pipeline: true, builds: history(now, 10, { every: 12, ago: 0.5, outcome: (i) => (i === 6 ? 'UNSTABLE' : 'SUCCESS') }) },
+          // Broken, and holding a password parameter: cannot be re-run from here.
           {
             kind: 'job',
             name: 'deploy-prod',
-            builds: history(
-              ['FAILURE', 'SUCCESS'],
-              [
-                { _class: STRING, name: 'VERSION', value: '1.4.2' },
+            pipeline: false,
+            builds: history(now, 5, {
+              every: 24,
+              ago: 0.3,
+              outcome: (i) => (i === 0 ? 'FAILURE' : 'SUCCESS'),
+              params: (i) => [
+                { _class: STRING, name: 'VERSION', value: `1.4.${5 - i}` },
                 { _class: STRING, name: 'API_TOKEN', value: 'tok-123' },
                 { _class: PASSWORD, name: 'DB_PASSWORD' },
               ],
-              20,
-            ),
+            }),
           },
         ],
       },
@@ -96,25 +143,34 @@ export function createFakeJenkins() {
         name: 'agriland-api',
         className: MULTIBRANCH,
         children: [
-          { kind: 'job', name: 'main', builds: history(['UNSTABLE', 'SUCCESS'], [], 40) },
-          { kind: 'job', name: 'feature%2Fscoring', builds: history(['SUCCESS'], [], 50) },
+          { kind: 'job', name: 'main', pipeline: true, builds: history(now, 20, { every: 8, ago: 0.7, outcome: (i) => (i === 0 ? 'UNSTABLE' : 'SUCCESS') }) },
+          { kind: 'job', name: 'feature%2Fscoring', pipeline: true, builds: history(now, 3, { every: 20, ago: 0.8, outcome: () => 'SUCCESS' }) },
         ],
       },
-      // Running now, with an earlier pass.
-      { kind: 'job', name: 'inventories-lint', builds: history([null, 'SUCCESS'], [], 1) },
-      { kind: 'job', name: 'never-built', builds: [] },
+      // Running now; every so often aborted.
+      {
+        kind: 'job',
+        name: 'inventories-lint',
+        pipeline: true,
+        builds: history(now, 50, { every: 2, ago: 0.05, outcome: (i) => (i === 0 ? null : i % 13 === 0 ? 'ABORTED' : 'SUCCESS') }),
+      },
+      // Last built two months ago: older than any window, and than retention.
+      { kind: 'job', name: 'legacy-batch', pipeline: false, builds: history(now, 3, { every: 24, ago: 24 * 60, outcome: () => 'SUCCESS' }) },
+      { kind: 'job', name: 'never-built', pipeline: false, builds: [] },
     ],
   }
 
-  const queue: Queued[] = [{ id: 499, job: 'payments/payments-web', since: minutes(3), why: 'Waiting for next available executor' }]
+  const queue: Queued[] = [{ id: 499, job: 'payments/payments-web', since: now - 3 * 60_000, why: 'Waiting for next available executor' }]
   const agents = [
     { displayName: 'Built-In Node', offline: false, temporarilyOffline: false, offlineCauseReason: '', numExecutors: 2, busy: 1 },
     { displayName: 'linux-02', offline: true, temporarilyOffline: true, offlineCauseReason: 'Disk full, taken offline by carol', numExecutors: 4, busy: 0 },
   ]
 
-  /** Every triggered build, for tests to inspect: job, parameters. */
+  /** What e-IDP did, for tests to inspect. */
   const triggered: { job: string; parameters: Record<string, string> }[] = []
   const stopped: string[] = []
+  /** Job-level build reads, by job — to check the sync reads only what changed. */
+  const reads: string[] = []
 
   function find(names: string[]): Node | null {
     let node: Node = root
@@ -127,9 +183,26 @@ export function createFakeJenkins() {
     return node
   }
 
-  function urlOf(names: string[]): string {
-    return `http://jenkins.example.com${base}/${names.map((n) => `job/${encodeURIComponent(n)}/`).join('')}`
+  /** Every job, flattened, with its full name. */
+  function jobs(): { fullName: string; job: Job }[] {
+    const found: { fullName: string; job: Job }[] = []
+    const walk = (node: Node, parents: string[]) => {
+      const names = node.name ? [...parents, node.name] : parents
+      if (node.kind === 'folder') node.children.forEach((child) => walk(child, names))
+      else found.push({ fullName: names.join('/'), job: node })
+    }
+    walk(root, [])
+    return found
   }
+
+  /** Adds a build to a job, as Jenkins would when one starts. */
+  function addBuild(fullName: string, build: Partial<FakeBuild> & { result: Outcome }) {
+    const job = find(fullName.split('/')) as Job
+    const number = (job.builds[0]?.number ?? 0) + 1
+    job.builds.unshift({ ...history(Date.now(), 1, { every: 1, ago: 0, outcome: () => build.result })[0]!, ...build, number })
+  }
+
+  const urlOf = (names: string[]) => `http://jenkins.example.com${base}/${names.map((n) => `job/${encodeURIComponent(n)}/`).join('')}`
 
   function serialise(node: Node, parents: string[]): Record<string, unknown> {
     const names = [...parents, node.name]
@@ -138,15 +211,15 @@ export function createFakeJenkins() {
       return { _class: node.className, ...common, jobs: node.children.map((child) => serialise(child, names)) }
     }
     return {
-      _class: PIPELINE,
+      _class: 'org.jenkinsci.plugins.workflow.job.WorkflowJob',
       ...common,
       buildable: true,
       inQueue: queue.some((q) => q.job === names.join('/')),
-      builds: node.builds.map((b) => buildJson(names, b)),
+      lastBuild: node.builds[0] ? { number: node.builds[0].number } : null,
     }
   }
 
-  function buildJson(names: string[], b: Build) {
+  function buildJson(names: string[], b: FakeBuild) {
     return {
       _class: 'org.jenkinsci.plugins.workflow.job.WorkflowRun',
       number: b.number,
@@ -154,7 +227,15 @@ export function createFakeJenkins() {
       timestamp: b.timestamp,
       duration: b.duration,
       building: b.building,
+      builtOn: b.builtOn,
       url: `${urlOf(names)}${b.number}/`,
+      actions: [
+        { _class: 'hudson.model.CauseAction', causes: [{ shortDescription: b.cause }] },
+        // Jenkins leaves null holes in actions, and password values out entirely.
+        null,
+        ...(b.parameters.length ? [{ _class: 'hudson.model.ParametersAction', parameters: b.parameters }] : []),
+      ],
+      changeSets: [{ items: b.changes.map((c) => ({ commitId: c.commitId, msg: c.msg, author: { fullName: c.author } })) }],
     }
   }
 
@@ -214,6 +295,14 @@ export function createFakeJenkins() {
     const job = node
     const fullName = names.join('/')
 
+    // The job itself: its builds, `{0,n}` honoured.
+    if (rest.join('/') === 'api/json') {
+      reads.push(fullName)
+      const range = /\{0,(\d+)\}/.exec(c.req.query('tree') ?? '')
+      const builds = range ? job.builds.slice(0, Number(range[1])) : job.builds
+      return c.json({ builds: builds.map((b) => buildJson(names, b)) })
+    }
+
     if (c.req.method === 'POST' && (rest[0] === 'build' || rest[0] === 'buildWithParameters')) {
       const form = rest[0] === 'buildWithParameters' ? Object.fromEntries(new URLSearchParams(await c.req.text())) : {}
       triggered.push({ job: fullName, parameters: form as Record<string, string> })
@@ -233,21 +322,24 @@ export function createFakeJenkins() {
       return c.redirect(urlOf(names), 302)
     }
     if (what === 'consoleText') return c.text(build.log)
-    if (what === 'api/json') {
+    if (what === 'api/json') return c.json(buildJson(names, build))
+    // Stage View, for pipelines only — a freestyle job has none, and a server
+    // without the plugin 404s the same way.
+    if (what === 'wfapi/describe' && job.pipeline) {
+      const failedAt = build.result === 'FAILURE' ? 'Test' : null
+      let reached = true
       return c.json({
-        ...buildJson(names, build),
-        actions: [
-          { _class: 'hudson.model.CauseAction', causes: [{ shortDescription: build.cause }] },
-          // Jenkins leaves null holes in actions, and password values out entirely.
-          null,
-          ...(build.parameters.length ? [{ _class: 'hudson.model.ParametersAction', parameters: build.parameters }] : []),
-        ],
+        stages: ['Checkout', 'Build', 'Test', 'Deploy'].map((name, n) => {
+          const status = !reached ? 'NOT_EXECUTED' : name === failedAt ? 'FAILED' : build.building && n === 2 ? 'IN_PROGRESS' : 'SUCCESS'
+          if (status !== 'SUCCESS') reached = false
+          return { name, status, startTimeMillis: build.timestamp + n * 15_000, durationMillis: status === 'NOT_EXECUTED' ? 0 : 15_000 }
+        }),
       })
     }
     return c.html('<html>Not found</html>', 404)
   })
 
-  return { app, root, queue, agents, triggered, stopped, find }
+  return { app, root, queue, agents, triggered, stopped, reads, find, jobs, addBuild }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

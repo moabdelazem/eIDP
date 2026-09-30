@@ -190,3 +190,50 @@ create table if not exists jenkins_audit (
   ok          boolean not null,
   error       text
 );
+
+-- Jenkins build history, so the Jenkins page can say what happened over a day
+-- or a week and search builds by their parameters without sweeping Jenkins
+-- for thousands of builds on every look. Derived data: rebuilt by the sync
+-- (services/jenkins-sync.ts) from Jenkins, never edited by hand. Keyed by the
+-- server, so a test's fake Jenkins never touches a real server's rows.
+create table if not exists jenkins_jobs (
+  server      text not null,
+  full_name   text not null,
+  url         text not null,
+  buildable   boolean not null default true,
+  in_queue    boolean not null default false,
+  last_number integer,
+  primary key (server, full_name)
+);
+
+create table if not exists jenkins_builds (
+  server      text not null,
+  job         text not null,
+  number      integer not null,
+  -- success | failure | unstable | aborted | not_built | running
+  result      text not null,
+  started_at  timestamptz not null,
+  duration_ms bigint not null default 0,
+  url         text not null,
+  built_on    text,
+  -- [{name, value, hidden}], secrets already '[hidden]' — they never reach this table.
+  parameters  jsonb not null default '[]'::jsonb,
+  causes      text[] not null default '{}',
+  primary key (server, job, number)
+);
+
+create index if not exists jenkins_builds_started_idx on jenkins_builds (server, started_at desc);
+create index if not exists jenkins_builds_running_idx on jenkins_builds (server, job) where result = 'running';
+
+-- One row per server: the outcome of the last sync, so the page can tell
+-- current from stale from never-synced.
+create table if not exists jenkins_sync (
+  server      text primary key,
+  started_at  timestamptz,
+  finished_at timestamptz,
+  ok          boolean not null default false,
+  error       text,
+  -- Builds written by the last sync, and jobs it had to read in detail.
+  builds      integer not null default 0,
+  jobs_read   integer not null default 0
+);

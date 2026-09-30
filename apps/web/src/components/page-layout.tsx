@@ -30,7 +30,8 @@ export function PageHeader({
         {description && <p className="mt-1 text-muted-foreground">{description}</p>}
         {children}
       </div>
-      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+      {/* Not shrink-0: with three actions on a phone that ran them off the screen. The header wraps them under the title instead. */}
+      {actions && <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div>}
     </header>
   )
 }

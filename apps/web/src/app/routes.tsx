@@ -16,6 +16,7 @@ import { NotFoundPage } from './not-found-page.tsx'
 import { RequirePermission } from './require-permission.tsx'
 import { AccessPage } from '@/features/admin/access-page.tsx'
 import { JenkinsPage } from '@/features/jenkins/jenkins-page.tsx'
+import { BuildPage } from '@/features/jenkins/build-page.tsx'
 import { RequireSession } from './require-session.tsx'
 
 export function AppRoutes() {
@@ -57,6 +58,7 @@ export function AppRoutes() {
           </Route>
           <Route element={<RequirePermission permission="jenkins.view" />}>
             <Route path="jenkins" element={<JenkinsPage />} />
+            <Route path="jenkins/build" element={<BuildPage />} />
           </Route>
           <Route element={<RequirePermission permission="rbac.manage" />}>
             <Route path="access" element={<AccessPage />} />

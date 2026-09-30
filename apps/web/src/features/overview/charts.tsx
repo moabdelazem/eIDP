@@ -64,23 +64,26 @@ export function RankedBars({
         </BarChart>
       </ChartContainer>
 
-      <table className="sr-only">
-        <caption>{label}</caption>
-        <thead>
-          <tr>
-            <th scope="col">Name</th>
-            <th scope="col">Applications</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((row) => (
-            <tr key={row.name}>
-              <td>{row.name}</td>
-              <td>{row.count}</td>
+      {/* In an sr-only div, not sr-only itself: a table ignores the 1px width and still widens the page on a phone. */}
+      <div className="sr-only">
+        <table>
+          <caption>{label}</caption>
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Applications</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {data.map((row) => (
+              <tr key={row.name}>
+                <td>{row.name}</td>
+                <td>{row.count}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </>
   )
 }
