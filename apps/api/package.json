@@ -10,6 +10,7 @@
     "ldap:doctor": "node --env-file-if-exists=../../.env src/integrations/ldap/doctor.ts",
     "ado:fake": "node src/integrations/ado/fake-server.ts",
     "jira:fake": "node src/integrations/jira/fake-server.ts",
+    "jenkins:fake": "node src/integrations/jenkins/fake-server.ts",
     "rbac:import": "node --env-file-if-exists=../../.env src/services/rbac-import.ts"
   },
   "dependencies": {

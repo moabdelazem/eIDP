@@ -174,3 +174,19 @@ create unique index if not exists requests_one_open_jira_name_idx on requests (l
   where status in ('pending', 'approved') and kind = 'create_jira_project';
 create unique index if not exists requests_one_open_jira_key_idx on requests (lower(project_key))
   where status in ('pending', 'approved') and kind = 'create_jira_project';
+
+-- Who asked the portal to act in Jenkins. Jenkins itself only sees the
+-- service account, so without this "who re-ran the prod deploy" has no answer.
+-- Refused attempts are kept too. Append-only.
+create table if not exists jenkins_audit (
+  id          bigserial primary key,
+  at          timestamptz not null default now(),
+  actor       text not null,
+  actor_name  text not null,
+  action      text not null check (action in ('rebuild', 'stop', 'cancel')),
+  job         text not null,
+  build       integer,
+  queue_id    bigint,
+  ok          boolean not null,
+  error       text
+);

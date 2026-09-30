@@ -25,6 +25,8 @@ export const PERMISSIONS = {
   'requests.decide_access': 'Approve or reject access requests — only within the binding’s scope',
   'rbac.manage': 'Grant and revoke roles, and read the audit log',
   'rbac.view_as': 'See the portal as someone else would, read-only',
+  'jenkins.view': 'See Jenkins jobs, recent runs, failures, the queue and agents',
+  'jenkins.operate': 'Re-run and stop Jenkins builds, and take them out of the queue',
 } as const
 
 export type Permission = keyof typeof PERMISSIONS
@@ -44,6 +46,11 @@ export const ROLES = {
     label: 'Approver',
     description: 'Decides every request and runs catalog syncs, without managing access.',
     permissions: ['requests.decide', 'requests.decide_access', 'catalog.sync'],
+  },
+  'build-operator': {
+    label: 'Build operator',
+    description: 'Watches Jenkins and re-runs, stops or dequeues builds. Bind it globally.',
+    permissions: ['jenkins.view', 'jenkins.operate'],
   },
   'devops-admin': {
     label: 'DevOps admin',

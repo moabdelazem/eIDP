@@ -31,6 +31,12 @@ const DEVOPS_ONLY: [method: string, path: string][] = [
   ['GET', '/rbac/explain/bob'],
   ['GET', '/rbac/audit'],
   ['POST', '/auth/assume'],
+  ['GET', '/jenkins'],
+  ['GET', '/jenkins/run?job=x&number=1'],
+  ['GET', '/jenkins/audit'],
+  ['POST', '/jenkins/rebuild'],
+  ['POST', '/jenkins/stop'],
+  ['POST', '/jenkins/queue/1/cancel'],
 ]
 
 async function login(username: string): Promise<string> {

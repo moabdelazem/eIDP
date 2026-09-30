@@ -15,6 +15,7 @@ import { AppShell } from './app-shell.tsx'
 import { NotFoundPage } from './not-found-page.tsx'
 import { RequirePermission } from './require-permission.tsx'
 import { AccessPage } from '@/features/admin/access-page.tsx'
+import { JenkinsPage } from '@/features/jenkins/jenkins-page.tsx'
 import { RequireSession } from './require-session.tsx'
 
 export function AppRoutes() {
@@ -53,6 +54,9 @@ export function AppRoutes() {
           {/* Every path in `manageItems` belongs here, behind the same permission. */}
           <Route element={<RequirePermission permission="requests.decide_access" scoped />}>
             <Route path="approvals" element={<ApprovalsPage />} />
+          </Route>
+          <Route element={<RequirePermission permission="jenkins.view" />}>
+            <Route path="jenkins" element={<JenkinsPage />} />
           </Route>
           <Route element={<RequirePermission permission="rbac.manage" />}>
             <Route path="access" element={<AccessPage />} />
