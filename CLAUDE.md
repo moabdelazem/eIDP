@@ -204,6 +204,16 @@ once more in the URL — don't "fix" the double encoding. Build logs are read as
 stream keeping only the last 64 KB, where a failure explains itself.
 `fake-server.ts` stands in for it (`pnpm --filter @eidp/api jenkins:fake`).
 
+`integrations/ollama/` — Ollama on our own machines (Qwen 2.5 by default,
+`OLLAMA_MODEL`), for the portal's AI features. Optional: without `OLLAMA_URL`
+every AI feature hides itself. Answers are asked for as JSON against a schema
+(`format`), not parsed from prose. `num_ctx` is sent on every call and input is
+trimmed to fit it: Ollama's default window is small, and past it the prompt is
+cut silently *from the front* — the instructions go, and the answer is about
+what is left. A model nobody pulled is a 404, reported as "ollama pull <model>".
+`fake-server.ts` answers like a model would (`pnpm --filter @eidp/api
+ollama:fake`), and can invent a line number or break its JSON on request.
+
 `integrations/inventories/` — parses that working copy into the catalog. Its
 rules and the traps they exist for are in `parse.ts`; `__fixtures__/repo` is a
 small tree covering both layout conventions, so the parser is tested without
@@ -524,6 +534,30 @@ jumps, errors-with-context, hiding `[Pipeline]` steps, and wrap. Find wins over
 those filters, or "3 of 40" steps through lines nobody can see. It scrolls the
 log box itself, never `scrollIntoView`, which also scrolled the page and
 shifted the sidebar rail.
+
+**"What went wrong"** on a failed or unstable build (`explain-panel.tsx`,
+`services/build-explainer.ts`) asks the model, on request — never
+automatically; a failure nobody opens needs no GPU time. It needs `ai.use`
+beside `jenkins.view` (`devops-admin` and `build-operator` hold it). The model
+gets the facts (failed stage, parameters, commits, agent) and an *excerpt* of
+the log, numbered as the build page numbers it: each error line with six
+before and three after, every stage heading, and the last 30 lines — or the
+last 120 when nothing reads as an error. "Error line" is the same regex on both
+sides (`ERROR` in `build-explainer.ts` and `log-viewer.tsx`); change them
+together. Over budget, the first error and the end are kept, then errors from
+the last backwards: the first is usually the cause, the last what stopped it.
+
+Three rules keep the answer honest, each tested in
+`routes/jenkins-explain.test.ts`: `redact` removes URL credentials,
+authorization headers, secret-named `key=value` and `--flag value`, private
+keys and token shapes before the model sees anything; a cited line must be one
+the model was shown, or it is dropped; and the cited text is the log's own, not
+the model's. Broken JSON is asked for once more, then reported. Answers are kept
+in `build_explanations` per build, prompt version (`PROMPT_VERSION`) and model —
+change the prompt, bump it — so each failure is explained once for everyone,
+and two people asking at once share one call. The panel says the answer is
+generated, by which model, for whom and when, and that it can be wrong; each
+cited line jumps the log viewer to it.
 
 `POST /catalog/sync` needs `catalog.sync`: a sync clones from Azure DevOps with
 the service account's token and rewrites the catalog. The map's **Refresh from

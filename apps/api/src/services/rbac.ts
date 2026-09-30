@@ -27,6 +27,7 @@ export const PERMISSIONS = {
   'rbac.view_as': 'See the portal as someone else would, read-only',
   'jenkins.view': 'See Jenkins jobs, recent runs, failures, the queue and agents',
   'jenkins.operate': 'Re-run and stop Jenkins builds, and take them out of the queue',
+  'ai.use': 'Ask the portal’s AI (Ollama, on our own machines) to explain what it shows',
 } as const
 
 export type Permission = keyof typeof PERMISSIONS
@@ -49,8 +50,8 @@ export const ROLES = {
   },
   'build-operator': {
     label: 'Build operator',
-    description: 'Watches Jenkins and re-runs, stops or dequeues builds. Bind it globally.',
-    permissions: ['jenkins.view', 'jenkins.operate'],
+    description: 'Watches Jenkins, has failed builds explained, and re-runs, stops or dequeues builds. Bind it globally.',
+    permissions: ['jenkins.view', 'jenkins.operate', 'ai.use'],
   },
   'devops-admin': {
     label: 'DevOps admin',

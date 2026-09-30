@@ -4,6 +4,8 @@ import { validate } from '../lib/validate.ts'
 import { requireAuth, requirePermission, type AppEnv } from '../middleware/auth.ts'
 import * as jenkins from '../services/jenkins.ts'
 import { syncJenkins } from '../services/jenkins-sync.ts'
+import * as explainer from '../services/build-explainer.ts'
+import { ollamaConfig } from '../integrations/ollama/index.ts'
 
 // A job's full name carries its folders ("payments/loan-api"), so it travels
 // as a value rather than as path segments.
@@ -39,6 +41,22 @@ export const jenkinsRoutes = new Hono<AppEnv>()
   .get('/run', requirePermission('jenkins.view'), validate('query', BuildRef), async (c) => {
     const { job, number } = c.req.valid('query')
     return c.json(await jenkins.run(job, number))
+  })
+
+  // "What went wrong?" — the kept explanation, and whether the AI is there to
+  // make one. Seeing the build is not enough: asking the model is `ai.use`.
+  .get('/explain', requirePermission('jenkins.view'), requirePermission('ai.use'), validate('query', BuildRef), async (c) => {
+    const { job, number } = c.req.valid('query')
+    const ai = ollamaConfig()
+    return c.json({
+      ai: { configured: ai !== null, model: ai?.model ?? null },
+      explanation: ai ? await explainer.cached(job, number) : null,
+    })
+  })
+
+  .post('/explain', requirePermission('jenkins.view'), requirePermission('ai.use'), validate('json', BuildRef.extend({ fresh: z.boolean().optional() })), async (c) => {
+    const { job, number, fresh } = c.req.valid('json')
+    return c.json(await explainer.explain(job, number, actor(c), { fresh }))
   })
 
   .get('/audit', requirePermission('jenkins.view'), async (c) => c.json(await jenkins.listAudit()))

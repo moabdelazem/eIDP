@@ -85,6 +85,20 @@ const schema = z.object({
   /** Build history older than this is dropped. The page looks back 7 days. */
   JENKINS_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
 
+  // Ollama, for the portal's AI features. Optional: without it they hide
+  // themselves. Runs on our own machines, so what it reads stays inside.
+  OLLAMA_URL: z.string().url().optional(),
+  /** An Ollama tag. `qwen2.5` is Qwen 2.5 7B; name a larger one if the host can carry it. */
+  OLLAMA_MODEL: z.string().min(1).default('qwen2.5'),
+  /**
+   * The context window asked for on every call. Ollama's own default is
+   * small and it cuts a longer prompt silently — from the front, where the
+   * instructions are — so this is always sent, and input is trimmed to fit it.
+   */
+  OLLAMA_NUM_CTX: z.coerce.number().int().min(2048).default(8192),
+  /** How long one answer may take. A 7B model on CPU needs most of a minute. */
+  OLLAMA_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(180),
+
   /** Where the inventories repo lives inside that collection. */
   INVENTORIES_PROJECT: z.string().min(1).optional(),
   INVENTORIES_REPO: z.string().min(1).default('inventories'),

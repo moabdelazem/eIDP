@@ -40,7 +40,18 @@ function parse(log: string, firstLine: number): Line[] {
  *
  * Opens at the first error when there is one, else at the end.
  */
-export function LogViewer({ log, truncated, fullUrl }: { log: string; truncated: boolean; fullUrl: string }) {
+export function LogViewer({
+  log,
+  truncated,
+  fullUrl,
+  jump,
+}: {
+  log: string
+  truncated: boolean
+  fullUrl: string
+  /** A line to show from outside — the explanation's evidence. `at` makes the same line jumpable twice. */
+  jump?: { line: number; at: number } | null
+}) {
   // A cut log starts mid-way; its numbers are relative to what is shown.
   const lines = useMemo(() => parse(log, 1), [log])
   const errors = useMemo(() => lines.filter((l) => l.kind === 'error').map((l) => l.n), [lines])
@@ -57,6 +68,20 @@ export function LogViewer({ log, truncated, fullUrl }: { log: string; truncated:
   const needle = find.trim().toLowerCase()
   const matches = useMemo(() => (needle ? lines.filter((l) => l.text.toLowerCase().includes(needle)).map((l) => l.n) : []), [lines, needle])
   // A new term starts from its first match.
+  // A jump from outside wins over find, and brings the log into view.
+  const [shownJump, setShownJump] = useState(jump)
+  if (jump && jump !== shownJump) {
+    setShownJump(jump)
+    setFind('')
+    setFocusLine(jump.line)
+  }
+  const outer = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!jump || !outer.current) return
+    // The window, not scrollIntoView: that scrolls every ancestor, and shifted the sidebar rail.
+    window.scrollTo({ top: outer.current.getBoundingClientRect().top + window.scrollY - 72 })
+  }, [jump])
+
   const [shownNeedle, setShownNeedle] = useState(needle)
   if (needle !== shownNeedle) {
     setShownNeedle(needle)
@@ -76,6 +101,7 @@ export function LogViewer({ log, truncated, fullUrl }: { log: string; truncated:
   const visible = lines.filter(
     (l) =>
       matched.has(l.n) ||
+      l.n === focusLine ||
       ((!hideSteps || l.kind !== 'step') && (!errorsOnly || nearError.has(l.n) || l.kind === 'stage')),
   )
 
@@ -87,7 +113,7 @@ export function LogViewer({ log, truncated, fullUrl }: { log: string; truncated:
     // and on a long page that shifts the sidebar rail out from under you.
     if (target === null || !el || !box.current) return
     box.current.scrollTop = el.offsetTop - box.current.clientHeight / 2
-  }, [target, errorsOnly, hideSteps])
+  }, [target, errorsOnly, hideSteps, jump])
 
   // With no error to open at, open at the end, where the build finished.
   const opened = useRef(false)
@@ -107,7 +133,7 @@ export function LogViewer({ log, truncated, fullUrl }: { log: string; truncated:
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border bg-card">
+    <div ref={outer} className="overflow-hidden rounded-xl border bg-card">
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
         <div className="relative min-w-48 flex-1 sm:max-w-xs">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
