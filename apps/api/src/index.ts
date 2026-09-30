@@ -3,6 +3,7 @@ import { createApp } from './app.ts'
 import { config } from './lib/config.ts'
 import { ensureSchema } from './lib/db.ts'
 import { syncCatalog } from './services/catalog.ts'
+import { syncJenkins } from './services/jenkins-sync.ts'
 import { recoverInterrupted } from './services/requests.ts'
 
 await ensureSchema()
@@ -28,4 +29,16 @@ function refreshCatalog(reason: string): void {
 refreshCatalog('boot')
 if (config.SYNC_INTERVAL_MINUTES > 0) {
   setInterval(() => refreshCatalog('timer'), config.SYNC_INTERVAL_MINUTES * 60_000).unref()
+}
+
+/**
+ * Jenkins build history, pulled in the background for the Jenkins page. Like
+ * the catalog, a failure is reported on the page (`jenkins_sync`), never by
+ * refusing to serve.
+ */
+if (config.JENKINS_URL && config.JENKINS_USER && config.JENKINS_TOKEN && config.JENKINS_SYNC_SECONDS > 0) {
+  const refreshJenkins = () =>
+    syncJenkins().catch((err) => console.error('jenkins sync failed:', err instanceof Error ? err.message : err))
+  void refreshJenkins()
+  setInterval(refreshJenkins, config.JENKINS_SYNC_SECONDS * 1000).unref()
 }

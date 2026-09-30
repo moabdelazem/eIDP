@@ -15,7 +15,8 @@ export type Build = {
   url: string
 }
 
-export type Job = { fullName: string; url: string; buildable: boolean; inQueue: boolean; builds: Build[] }
+/** A job as the sweep sees it: enough to tell whether it has built since last time. */
+export type JobHead = { fullName: string; url: string; buildable: boolean; inQueue: boolean; lastNumber: number | null }
 
 export type QueueItem = {
   id: number
@@ -40,14 +41,31 @@ export type Agent = {
 
 export type Parameter = { name: string; value: string | null; hidden: boolean }
 
-export type BuildDetail = Build & {
-  causes: string[]
-  parameters: Parameter[]
+/** A build as history keeps it: what ran, where, why, and with what. Secrets already hidden. */
+export type HistoryBuild = Build & { builtOn: string | null; causes: string[]; parameters: Parameter[] }
+
+export type Change = { commit: string | null; message: string; author: string | null }
+
+/** A pipeline stage, from the Pipeline Stage View plugin when the server has it. */
+export type Stage = { name: string; result: Result; startedAt: string | null; durationMs: number }
+
+export type BuildDetail = HistoryBuild & {
+  changes: Change[]
+  stages: Stage[]
   /** Why re-running it here is not possible, or null when it is. */
   notReplayable: string | null
 }
 
-type RawBuild = { number: number; result: string | null; timestamp: number; duration: number; building: boolean; url: string }
+type RawBuild = {
+  number: number
+  result: string | null
+  timestamp: number
+  duration: number
+  building: boolean
+  url: string
+  builtOn?: string
+  actions?: ({ parameters?: RawParameter[]; causes?: { shortDescription?: string }[] } | null)[]
+}
 type RawJob = {
   _class: string
   name: string
@@ -55,43 +73,73 @@ type RawJob = {
   url: string
   buildable?: boolean
   inQueue?: boolean
-  builds?: RawBuild[]
+  lastBuild?: { number: number } | null
   jobs?: RawJob[]
 }
 type RawParameter = { _class?: string; name: string; value?: unknown }
 
-/** How many recent builds per job are read — enough to tell a streak from a blip. */
-export const BUILDS_PER_JOB = 10
-
-const JOB = `_class,name,fullName,url,buildable,inQueue,builds[number,result,timestamp,duration,building,url]{0,${BUILDS_PER_JOB}}`
+const JOB = '_class,name,fullName,url,buildable,inQueue,lastBuild[number]'
 /**
  * Three levels: a folder, a multibranch project inside it, its branches.
  * `tree` has no recursion, so deeper jobs are not seen.
  */
 const JOBS_TREE = `jobs[${JOB},jobs[${JOB},jobs[${JOB}]]]`
 
-/** Every job that builds, flattened out of its folders, with its recent builds. */
-export async function listJobs(): Promise<Job[]> {
+/**
+ * Every job that builds, flattened out of its folders — with only its last
+ * build's number, so the sweep can tell which jobs have anything new and read
+ * just those. One light call however many builds there are.
+ */
+export async function listJobs(): Promise<JobHead[]> {
   const { jobs = [] } = await jenkinsGet<{ jobs?: RawJob[] }>('api/json', { tree: JOBS_TREE })
-  const found: Job[] = []
+  const found: JobHead[] = []
   const walk = (list: RawJob[], parent: string | null) => {
     for (const job of list) {
       const fullName = job.fullName ?? (parent ? `${parent}/${job.name}` : job.name)
       // Folders and multibranch projects hold jobs; only the leaves build.
       if (job.jobs) walk(job.jobs, fullName)
-      else if (job.builds) {
+      else {
         found.push({
           fullName,
           url: job.url,
           buildable: job.buildable ?? true,
           inQueue: job.inQueue ?? false,
-          builds: job.builds.map((build) => toBuild(fullName, build)),
+          lastNumber: job.lastBuild?.number ?? null,
         })
       }
     }
   }
   walk(jobs, null)
   return found
+}
+
+const BUILD = 'number,result,timestamp,duration,building,url,builtOn,actions[parameters[_class,name,value],causes[shortDescription]]'
+
+/** The newest `count` builds of one job, newest first, as history keeps them. */
+export async function jobBuilds(job: string, count: number): Promise<HistoryBuild[]> {
+  const { builds = [] } = await jenkinsGet<{ builds?: RawBuild[] }>(`${jobPath(job)}/api/json`, {
+    tree: `builds[${BUILD}]{0,${count}}`,
+  })
+  return builds.map((raw) => toHistory(job, raw))
+}
+
+function toHistory(job: string, raw: RawBuild): HistoryBuild {
+  const actions = (raw.actions ?? []).filter((a) => a !== null)
+  return {
+    ...toBuild(job, raw),
+    builtOn: raw.builtOn || null,
+    causes: actions.flatMap((a) => (a.causes ?? []).map((c) => c.shortDescription ?? '')).filter(Boolean),
+    parameters: actions.flatMap((a) => a.parameters ?? []).map(maskParameter),
+  }
+}
+
+function maskParameter(p: RawParameter): Parameter {
+  const hidden = isSecret(p)
+  return {
+    name: p.name,
+    value: hidden ? '[hidden]' : p.value === undefined || p.value === null ? null : String(p.value),
+    hidden,
+  }
 }
 
 export async function listQueue(): Promise<QueueItem[]> {
@@ -133,23 +181,67 @@ export async function listAgents(): Promise<Agent[]> {
   }))
 }
 
-/** One build: what started it, what it was given, and whether it can be run again from here. */
+/**
+ * One build in full: what started it, where it ran, what it was given, the
+ * commits it built, its pipeline stages, and whether it can be run again.
+ */
 export async function buildDetail(job: string, number: number): Promise<BuildDetail> {
-  const raw = await jenkinsGet<RawBuild & { actions?: ({ parameters?: RawParameter[]; causes?: { shortDescription?: string }[] } | null)[] }>(
-    `${jobPath(job)}/${number}/api/json`,
-    { tree: 'number,result,timestamp,duration,building,url,actions[parameters[_class,name,value],causes[shortDescription]]' },
-  )
-  const actions = (raw.actions ?? []).filter((a) => a !== null)
-  const rawParameters = actions.flatMap((a) => a.parameters ?? [])
+  type Items = { items?: { commitId?: string; msg?: string; author?: { fullName?: string } }[] }
+  const [raw, stages] = await Promise.all([
+    jenkinsGet<RawBuild & { changeSets?: Items[]; changeSet?: Items }>(`${jobPath(job)}/${number}/api/json`, {
+      // A pipeline has changeSets, a freestyle job changeSet; Jenkins ignores the one a build lacks.
+      tree: `${BUILD},changeSets[items[commitId,msg,author[fullName]]],changeSet[items[commitId,msg,author[fullName]]]`,
+    }),
+    buildStages(job, number),
+  ])
+  const sets = [...(raw.changeSets ?? []), ...(raw.changeSet ? [raw.changeSet] : [])]
+  const rawParameters = (raw.actions ?? []).flatMap((a) => a?.parameters ?? [])
   return {
-    ...toBuild(job, raw),
-    causes: actions.flatMap((a) => (a.causes ?? []).map((c) => c.shortDescription ?? '')).filter(Boolean),
-    parameters: rawParameters.map((p) => ({
-      name: p.name,
-      value: isSecret(p) ? '[hidden]' : p.value === undefined || p.value === null ? null : String(p.value),
-      hidden: isSecret(p),
-    })),
+    ...toHistory(job, raw),
+    changes: sets.flatMap((set) =>
+      (set.items ?? []).map((item) => ({ commit: item.commitId ?? null, message: (item.msg ?? '').trim(), author: item.author?.fullName ?? null })),
+    ),
+    stages,
     notReplayable: notReplayable(rawParameters),
+  }
+}
+
+/**
+ * A pipeline's stages from the Stage View plugin's `wfapi`. Not every server
+ * has it, and a freestyle job has no stages: either way, none.
+ */
+async function buildStages(job: string, number: number): Promise<Stage[]> {
+  type Raw = { stages?: { name: string; status: string; startTimeMillis?: number; durationMillis?: number }[] }
+  let described: Raw
+  try {
+    described = await jenkinsGet<Raw>(`${jobPath(job)}/${number}/wfapi/describe`)
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'jenkins_not_found') return []
+    throw err
+  }
+  return (described.stages ?? []).map((stage) => ({
+    name: stage.name,
+    result: stageResult(stage.status),
+    startedAt: stage.startTimeMillis ? new Date(stage.startTimeMillis).toISOString() : null,
+    durationMs: stage.durationMillis ?? 0,
+  }))
+}
+
+function stageResult(status: string): Result {
+  switch (status) {
+    case 'SUCCESS':
+      return 'success'
+    case 'FAILED':
+      return 'failure'
+    case 'UNSTABLE':
+      return 'unstable'
+    case 'ABORTED':
+      return 'aborted'
+    case 'IN_PROGRESS':
+    case 'PAUSED_PENDING_INPUT':
+      return 'running'
+    default:
+      return 'not_built'
   }
 }
 
@@ -188,7 +280,7 @@ function isSecret(p: RawParameter): boolean {
 }
 
 /** The end of a build's console log, where a failure says why. */
-export function logTail(job: string, number: number, maxBytes = 64 * 1024) {
+export function logTail(job: string, number: number, maxBytes = LOG_TAIL_BYTES) {
   return jenkinsTail(`${jobPath(job)}/${number}/consoleText`, maxBytes)
 }
 
@@ -215,6 +307,9 @@ export function webUrl(job?: string, number?: number): string {
   if (!job) return url
   return `${url}/${jobPath(job)}/${number === undefined ? '' : `${number}/`}`
 }
+
+/** How much of a log the build page shows: the end, where failures explain themselves. */
+export const LOG_TAIL_BYTES = 256 * 1024
 
 function toBuild(job: string, raw: RawBuild): Build {
   return {

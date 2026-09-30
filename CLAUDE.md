@@ -471,27 +471,59 @@ is a new entry in `PERMISSIONS` (and in `Permission` in
 surface.
 
 **Jenkins** (`/jenkins`, `features/jenkins/`) is a Manage page behind
-`jenkins.view`: failing jobs first (latest *finished* build failed or unstable,
-with how many in a row and since when), then recent runs across every job, the
-queue, agents, and Activity. `jenkins.operate` adds three actions — run a build
+`jenkins.view`. Its tabs — Dashboard, Failing, Builds, Queue, Agents,
+Activity — and the 24h/7d window and search all live in the URL, so a link
+lands on exactly one view. `jenkins.operate` adds three actions — run a build
 again, stop a running one, take one out of the queue — each behind a
 confirmation. Both are `devops-admin`'s, and `build-operator` bundles them to
 bind to anyone else. Every action goes to Jenkins as the service account, so
 `jenkins_audit` records who asked, refused attempts included; the Activity tab
 reads it, and the tests delete only rows they made (`id > ` the max before).
 
+**History is the portal's own copy.** A day or a week of builds, searchable by
+parameter, cannot be swept from Jenkins on every look, so
+`services/jenkins-sync.ts` keeps `jenkins_builds` (with parameters, causes and
+agent) and `jenkins_jobs` in step, every `JENKINS_SYNC_SECONDS` (60) and on
+Refresh, single-flight. A sync is one light call for the job list (each job's
+last build number) plus one call per job that built since, or had a build
+still running — a handful a minute; only the first reads every job, up to
+`BACKFILL` builds each. "Since" is the newest build stored *or* the last number
+the previous sync saw, whichever is higher: without the second, a job whose
+builds are all older than `JENKINS_RETENTION_DAYS` (30) would be backfilled on
+every sync. A job that cannot be read keeps its old mark, so its builds are
+read next time rather than skipped. Every table is keyed by `server`, so the
+tests' fake Jenkins never touches a real server's rows. Queue and agents are
+still asked live (15-second cache): only "now" matters for them.
+
+Secrets never reach the table: parameter values under secret-like names, and
+password parameters (Jenkins never returns their value), are `[hidden]` in
+the integration, before storing — so search cannot find them either. Search
+(`GET /jenkins/runs`) is words that must all match: `NAME=value` narrows to a
+parameter (either side partial), anything else matches job, parameter value,
+cause, agent or `#number`; `%` and `_` are characters, not wildcards.
+
+The Dashboard compares the window with the one before it (deltas on each KPI;
+colour says better or worse, the arrow says direction, builds count stays
+neutral). Builds by result stack failure → unstable → success → aborted from
+the baseline, in `--chart-failure/-unstable/-success/-aborted` (`index.css`,
+validated; the meaning colours' text tones failed CVD against the red).
+Success rate is its own chart — never a second axis on the first — with a
+marker on every point, or a lone hour between two empty ones draws nothing.
+The charts are `features/jenkins/charts.tsx`, lazy like the Overview's.
+
 "Run again" is a rebuild, not "Build now": the same parameters the build had,
 because a failed deploy re-run with defaults deploys something else. A build
-with a password parameter (Jenkins never returns its value) or a file one is
-refused rather than re-run blank. Parameter values under secret-like names are
-shown as `[hidden]`, as the inventories parser does. Acting from the run dialog
-closes it before the confirmation opens: two stacked Radix modals closing
-together (Escape during the exit animation) left the page inert.
+with a password parameter or a file one is refused rather than re-run blank.
 
-`services/jenkins.ts` serves one overview per 15 seconds to everyone —
-single-flight, and cleared by any action so its result shows at once — because
-each overview is a sweep of every job. `tree` is three levels deep (folder,
-multibranch, branch); `tree` has no recursion, so deeper jobs are not seen.
+A build has its own page (`/jenkins/build?job=a/b&number=12` — the job carries
+folders, so it rides in the query): stages from the Stage View plugin's
+`wfapi` (none on a freestyle job or a server without it), parameters (each a
+link to every build that had it), commits, agent, and the last 256 KB of the
+log in `log-viewer.tsx` — opened at the first error, with find, error-to-error
+jumps, errors-with-context, hiding `[Pipeline]` steps, and wrap. Find wins over
+those filters, or "3 of 40" steps through lines nobody can see. It scrolls the
+log box itself, never `scrollIntoView`, which also scrolled the page and
+shifted the sidebar rail.
 
 `POST /catalog/sync` needs `catalog.sync`: a sync clones from Azure DevOps with
 the service account's token and rewrites the catalog. The map's **Refresh from
@@ -557,6 +589,10 @@ can overlap, and two fetches into one checkout fight over git's lock.
   third of a desktop empty; don't reintroduce one. `RequestRow` lays itself
   out with container queries (`@container`/`@md:`), not screen breakpoints,
   because the same row sits in a full-width list and in a side column.
+- **A chart's table is inside an `sr-only` div**, never an `sr-only` table: a
+  table ignores the 1px width, so the invisible table widened every chart page
+  on a phone by its own width. `PageHeader`'s actions wrap (`min-w-0`, not
+  `shrink-0`) for the same reason — three buttons ran off a phone screen.
 - **Loading looks like what is loading.** `components/skeletons.tsx` has
   placeholders shaped like the real layouts (header, facts, request rows,
   approval cards, timeline, bar chart), each wrapped in `Loading` so screen

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog.tsx'
 import { ApiError } from '@/lib/api-client.ts'
-import { jenkinsApi, type Build, type QueueItem } from './api.ts'
+import { jenkinsApi, type QueueItem, type Run as Build } from './api.ts'
 import { JobName } from './result.tsx'
 
 /**

@@ -312,6 +312,31 @@
 }
 
 /*
+ * Build results, for the Jenkins charts — the one chart here with several
+ * series, because a build's result is a state and the state is the point.
+ * These are fills, a step off the meaning colours' text values (#1d6b47 and
+ * #8a5300 sat 3.9 apart for deuteranopes against the red). Stacked from the
+ * baseline in this order — failure, unstable, success, aborted — every
+ * adjacent pair passes the validator's CVD (worst 9.1) and normal-vision
+ * (17.7) checks. Aborted is grey on purpose: it is the neutral, not a hue.
+ * Below 3:1 on paper for amber and grey, so every chart that uses them keeps
+ * its legend, tooltip and sr-only table. Red stays red: a failed build is
+ * exactly what red is for here.
+ */
+:root {
+  --chart-failure: #c4142b;
+  --chart-unstable: #d4981c;
+  --chart-success: #2e9c6b;
+  --chart-aborted: #a898ad;
+}
+.dark {
+  --chart-failure: #f0506a;
+  --chart-unstable: #e0aa3a;
+  --chart-success: #4cbf8a;
+  --chart-aborted: #8a7a90;
+}
+
+/*
  * Syntax colours for DataView (Shiki's css-variables theme). Drawn from the
  * palette: eggplant for keys, a quiet teal for strings, amber for numbers and
  * booleans. Never red — red means "act", and a string is not asking for that.

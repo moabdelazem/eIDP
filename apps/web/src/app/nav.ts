@@ -43,6 +43,6 @@ export const requestItems: NavItem[] = [
 export const manageItems: (NavItem & { permission: Permission; scoped?: boolean })[] = [
   // Scoped: a team lead has an approvals queue too, holding only their teams'.
   { path: '/approvals', label: 'Approvals', icon: ListChecks, permission: 'requests.decide_access', scoped: true },
-  { path: '/jenkins', label: 'Jenkins', icon: JenkinsIcon, permission: 'jenkins.view' },
+  { path: '/jenkins', label: 'Jenkins', icon: JenkinsIcon, permission: 'jenkins.view', owns: (p) => p.startsWith('/jenkins/') },
   { path: '/access', label: 'Access', icon: ShieldCheck, permission: 'rbac.manage' },
 ]
