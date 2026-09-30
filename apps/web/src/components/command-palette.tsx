@@ -86,7 +86,7 @@ function Palette({ onDone }: { onDone: () => void }) {
   // and "azure" both find one; only the ones with a form are offered.
   const pages: NavItem[] = useMemo(
     () => [
-      ...browseItems,
+      ...browseItems.filter((item) => !item.permission || can(item.permission)),
       ...REQUEST_TYPES.filter(isAvailable).map((type) => ({ path: type.path, label: type.title, icon: type.icon })),
       ...requestItems,
       ...manageItems.filter((item) => (item.scoped ? canSomewhere(item.permission) : can(item.permission))),

@@ -31,7 +31,16 @@ function required(): OllamaConfig {
   return ollama
 }
 
-export type Message = { role: 'system' | 'user' | 'assistant'; content: string }
+export type ToolCall = { function: { name: string; arguments: Record<string, unknown> } }
+
+export type Message =
+  | { role: 'system' | 'user'; content: string }
+  | { role: 'assistant'; content: string; tool_calls?: ToolCall[] }
+  /** A tool's result, fed back to the model. */
+  | { role: 'tool'; content: string; tool_name: string }
+
+/** A tool the model may call, as Ollama takes it: a name, a description and a JSON schema. */
+export type ToolSpec = { type: 'function'; function: { name: string; description: string; parameters: object } }
 
 export type ChatResult = {
   /** The answer's text — JSON when a `format` was given. */
@@ -105,4 +114,91 @@ export async function status(): Promise<{ configured: boolean; model: string | n
   } catch {
     return { configured: true, model: ollama.model, reachable: false, hasModel: false }
   }
+}
+
+/**
+ * One turn, streamed: `onDelta` gets the answer's text as it is written, and
+ * the result says whether the model asked for tools instead. Qwen 2.5 decides
+ * between the two per turn — a turn that calls tools usually writes nothing.
+ *
+ * Ollama streams newline-delimited JSON; tool calls arrive whole in one chunk.
+ */
+export async function chatStream(
+  messages: Message[],
+  { tools, onDelta, signal }: { tools?: ToolSpec[]; onDelta: (text: string) => void; signal?: AbortSignal },
+): Promise<{ content: string; toolCalls: ToolCall[]; promptTokens: number; model: string }> {
+  const ollama = required()
+  const timeout = AbortSignal.timeout(ollama.timeoutMs)
+  let res: Response
+  try {
+    res = await fetch(`${ollama.url}/api/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: ollama.model,
+        messages,
+        stream: true,
+        ...(tools?.length ? { tools } : {}),
+        options: { temperature: 0.3, num_ctx: ollama.numCtx },
+      }),
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    })
+  } catch (err) {
+    throw fetchError(err, ollama)
+  }
+  if (!res.ok || !res.body) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null
+    if (res.status === 404) {
+      throw new ApiError(502, 'ollama_model_missing', `Ollama does not have ${ollama.model}. Pull it on the Ollama host (ollama pull ${ollama.model}) or set OLLAMA_MODEL.`)
+    }
+    throw new ApiError(502, 'ollama_error', body?.error ?? `Ollama returned ${res.status}.`)
+  }
+
+  let content = ''
+  const toolCalls: ToolCall[] = []
+  let promptTokens = 0
+  let model = ollama.model
+  let buffered = ''
+  const decoder = new TextDecoder()
+  const take = (line: string) => {
+    if (!line.trim()) return
+    const chunk = JSON.parse(line) as {
+      model?: string
+      message?: { content?: string; tool_calls?: ToolCall[] }
+      done?: boolean
+      error?: string
+      prompt_eval_count?: number
+    }
+    if (chunk.error) throw new ApiError(502, 'ollama_error', chunk.error)
+    if (chunk.model) model = chunk.model
+    if (chunk.message?.content) {
+      content += chunk.message.content
+      onDelta(chunk.message.content)
+    }
+    if (chunk.message?.tool_calls) toolCalls.push(...chunk.message.tool_calls)
+    if (chunk.done) promptTokens = chunk.prompt_eval_count ?? 0
+  }
+  try {
+    for await (const piece of res.body as unknown as AsyncIterable<Uint8Array>) {
+      buffered += decoder.decode(piece, { stream: true })
+      let newline: number
+      while ((newline = buffered.indexOf('\n')) >= 0) {
+        take(buffered.slice(0, newline))
+        buffered = buffered.slice(newline + 1)
+      }
+    }
+    take(buffered)
+  } catch (err) {
+    if (err instanceof ApiError) throw err
+    throw fetchError(err, ollama)
+  }
+  return { content, toolCalls, promptTokens, model }
+}
+
+function fetchError(err: unknown, ollama: OllamaConfig): ApiError {
+  if (err instanceof Error && err.name === 'TimeoutError') {
+    return new ApiError(504, 'ollama_timeout', `${ollama.model} took longer than ${ollama.timeoutMs / 1000}s to answer. Try again, or use a smaller model.`)
+  }
+  if (err instanceof Error && err.name === 'AbortError') return new ApiError(408, 'ollama_aborted', 'Stopped.')
+  return new ApiError(502, 'ollama_unreachable', 'Cannot reach Ollama.')
 }

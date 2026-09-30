@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { Boxes, Inbox, LayoutDashboard, ListChecks, ShieldCheck } from 'lucide-react'
+import { Boxes, Inbox, LayoutDashboard, ListChecks, ShieldCheck, Sparkles } from 'lucide-react'
 import { JenkinsIcon } from '@/components/brand-icons.tsx'
 import type { Permission } from '@/features/auth/profile-context.tsx'
 
@@ -10,6 +10,8 @@ export type NavItem = {
   icon: ComponentType<{ className?: string }>
   /** Other paths this item stays highlighted for, e.g. its detail pages. */
   owns?: (pathname: string) => boolean
+  /** Listed only to people who hold it; the route checks it again. */
+  permission?: Permission
 }
 
 /** Whether `pathname` is inside the section this item represents. */
@@ -23,6 +25,7 @@ const REQUEST_DETAIL = /^\/requests\/[0-9a-f-]{36}$/i
 export const browseItems: NavItem[] = [
   { path: '/', label: 'Overview', icon: LayoutDashboard },
   { path: '/map', label: 'Projects map', icon: Boxes, owns: (p) => p.startsWith('/projects') },
+  { path: '/assistant', label: 'Assistant', icon: Sparkles, owns: (p) => p.startsWith('/assistant/'), permission: 'ai.chat' },
 ]
 
 /**

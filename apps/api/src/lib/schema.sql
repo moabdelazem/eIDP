@@ -259,3 +259,29 @@ create table if not exists build_explanations (
   created_at       timestamptz not null default now(),
   primary key (server, job, number, prompt_version, model)
 );
+
+-- The assistant's conversations. Each belongs to one person, who alone can
+-- read it; deleting it deletes its messages. Tool results are not kept —
+-- only what was asked, what was answered, and what was looked up to answer.
+create table if not exists assistant_conversations (
+  id          uuid primary key default gen_random_uuid(),
+  uid         text not null,
+  title       text not null,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists assistant_conversations_uid_idx on assistant_conversations (uid, updated_at desc);
+
+create table if not exists assistant_messages (
+  id               bigserial primary key,
+  conversation_id  uuid not null references assistant_conversations(id) on delete cascade,
+  role             text not null check (role in ('user', 'assistant')),
+  content          text not null,
+  -- What the assistant looked up to answer, as shown to the person.
+  steps            jsonb not null default '[]'::jsonb,
+  model            text,
+  created_at       timestamptz not null default now()
+);
+
+create index if not exists assistant_messages_conversation_idx on assistant_messages (conversation_id, id);

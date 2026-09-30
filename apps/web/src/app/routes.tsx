@@ -16,6 +16,7 @@ import { NotFoundPage } from './not-found-page.tsx'
 import { RequirePermission } from './require-permission.tsx'
 import { AccessPage } from '@/features/admin/access-page.tsx'
 import { JenkinsPage } from '@/features/jenkins/jenkins-page.tsx'
+import { AssistantPage } from '@/features/assistant/assistant-page.tsx'
 import { BuildPage } from '@/features/jenkins/build-page.tsx'
 import { RequireSession } from './require-session.tsx'
 
@@ -51,6 +52,10 @@ export function AppRoutes() {
           <Route path="requests/new/project" element={<Navigate to="/requests/new/azure-devops/project" replace />} />
           <Route path="requests/:requestId" element={<RequestPage />} />
           <Route path="me" element={<ProfilePage />} />
+          {/* One route with an optional id: a new chat gets its URL mid-answer, and must not remount while it streams. */}
+          <Route element={<RequirePermission permission="ai.chat" />}>
+            <Route path="assistant/:conversationId?" element={<AssistantPage />} />
+          </Route>
 
           {/* Every path in `manageItems` belongs here, behind the same permission. */}
           <Route element={<RequirePermission permission="requests.decide_access" scoped />}>

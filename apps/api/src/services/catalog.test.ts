@@ -4,6 +4,8 @@ import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { parseInventories } from '../integrations/inventories/parse.ts'
+import pg from 'pg'
+import { config } from '../lib/config.ts'
 import { closeDb, ensureSchema, query } from '../lib/db.ts'
 import { readCatalog, syncCatalog, writeCatalog } from './catalog.ts'
 
@@ -12,11 +14,19 @@ const fixtures = fileURLToPath(
 )
 
 await ensureSchema()
+// The catalog is one set of tables, and this file replaces it wholesale. The
+// assistant's tests read it too, from their own process, so both hold this
+// lock while they use it (routes/assistant.test.ts).
+const lock = new pg.Client({ connectionString: config.DATABASE_URL })
+await lock.connect()
+await lock.query('select pg_advisory_lock(4202)')
 await writeCatalog((await parseInventories(fixtures)).systems)
 const catalog = await readCatalog()
 
 after(async () => {
   await query('delete from catalog_systems')
+  await lock.query('select pg_advisory_unlock(4202)')
+  await lock.end()
   await closeDb()
 })
 
