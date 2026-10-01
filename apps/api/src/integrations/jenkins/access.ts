@@ -19,7 +19,9 @@ import { jenkinsGet, jenkinsText, jobPath } from './client.ts'
  *    Job/ExtendedRead to read configuration.
  *
  * Only `Job/Read` (`hudson.model.Item.Read`) is taken — this decides seeing.
- * `authenticated` and `anonymous` are dropped: a grant to everyone names no team.
+ * A grant to `authenticated` or `anonymous` is kept as the group `authenticated`:
+ * it names no team, but it does let everyone read the job, which is how a
+ * shared build or deploy job is usually set up.
  */
 
 export type SidType = 'user' | 'group' | 'either'
@@ -36,6 +38,11 @@ export type AccessRules = {
 
 const READ = 'hudson.model.Item.Read'
 const EVERYONE = new Set(['authenticated', 'anonymous'])
+/** The one name every grant to everyone is stored under. */
+export const EVERYONE_SID = 'authenticated'
+
+const everyoneAs = (s: { sid: string; sidType: SidType }) =>
+  EVERYONE.has(s.sid.toLowerCase()) ? { sid: EVERYONE_SID, sidType: 'group' as const } : s
 /** Config reads at once, so a thousand jobs do not open a thousand connections. */
 const PARALLEL = 8
 
@@ -101,7 +108,7 @@ async function readRoleStrategy(items: Item[]): Promise<AccessRules | null> {
       warnings.push(`Role ${roleName}'s pattern ${role.pattern} is not a pattern the portal can read.`)
       continue
     }
-    const sids = (role.sids ?? listed).map(toSid).filter((s) => !EVERYONE.has(s.sid.toLowerCase()))
+    const sids = (role.sids ?? listed).map(toSid).map(everyoneAs)
     for (const job of jobs.filter((name) => pattern.test(name))) {
       for (const { sid, sidType } of sids) grants.push({ job, sid, sidType, via: `role ${roleName}` })
     }
@@ -182,8 +189,9 @@ export function parseMatrix(xml: string): ItemMatrix {
 
   const read: { sid: string; sidType: SidType }[] = []
   const add = (sid: string, sidType: SidType) => {
-    const name = decode(sid.trim())
-    if (name && !EVERYONE.has(name.toLowerCase()) && !read.some((r) => r.sid === name && r.sidType === sidType)) read.push({ sid: name, sidType })
+    if (!sid.trim()) return
+    const entry = everyoneAs({ sid: decode(sid.trim()), sidType })
+    if (!read.some((r) => r.sid === entry.sid && r.sidType === entry.sidType)) read.push(entry)
   }
   // Entries first, and taken out, so their bare <permission> is not read twice.
   const rest = block.replace(/<entry>([\s\S]*?)<\/entry>/g, (_, entry: string) => {

@@ -54,7 +54,7 @@ export const jenkinsRoutes = new Hono<AppEnv>()
 
   .get('/run', validate('query', BuildRef), async (c) => {
     const { job, number } = c.req.valid('query')
-    const { operate } = await pipelines.demandView(await accessFrom(c), me(c), job)
+    const { operate } = await pipelines.demandView(await accessFrom(c), me(c), job, number)
     return c.json({ ...(await jenkins.run(job, number)), canOperate: operate })
   })
 
@@ -62,7 +62,7 @@ export const jenkinsRoutes = new Hono<AppEnv>()
   // make one. Seeing the build is not enough: asking the model is `ai.use`.
   .get('/explain', requirePermission('ai.use'), validate('query', BuildRef), async (c) => {
     const { job, number } = c.req.valid('query')
-    await pipelines.demandView(await accessFrom(c), me(c), job)
+    await pipelines.demandView(await accessFrom(c), me(c), job, number)
     const ai = ollamaConfig()
     const explanation = ai ? await explainer.cached(job, number) : null
     return c.json({
@@ -75,7 +75,7 @@ export const jenkinsRoutes = new Hono<AppEnv>()
 
   .post('/explain', requirePermission('ai.use'), validate('json', BuildRef.extend({ fresh: z.boolean().optional() })), async (c) => {
     const { job, number, fresh } = c.req.valid('json')
-    await pipelines.demandView(await accessFrom(c), me(c), job)
+    await pipelines.demandView(await accessFrom(c), me(c), job, number)
     return c.json(await explainer.explain(job, number, actor(c), { fresh }))
   })
 
@@ -113,5 +113,8 @@ function actor(c: { get: (key: 'jwtPayload') => { sub: string; name: string } })
   return { uid: claims.sub, name: claims.name }
 }
 
-/** Who the caller is, as Jenkins would name them in "Started by user …". */
-const me = actor
+/** Who the caller is, every way Jenkins may name them: "Started by user …", or a commit's author. */
+function me(c: { get: (key: 'jwtPayload') => { sub: string; name: string; mail?: string } }) {
+  const claims = c.get('jwtPayload')
+  return { uid: claims.sub, name: claims.name, mail: claims.mail }
+}

@@ -3,30 +3,49 @@ import type { QueueItem, Result, Run, SyncState } from '@/features/jenkins/api.t
 
 /** Mirrors the API's services/pipelines.ts. */
 
-/** A system a pipeline belongs to: matched through an application's repository name. */
+/** A system a run belongs to, with the applications that tie it. */
 export type Owner = { system: string; project: string; applications: string[]; teams: string[] }
 
 export type Reason =
+  | { kind: 'started' }
+  /** It built a commit you wrote; `by` started it — a service account like maika, usually. */
+  | { kind: 'commit'; by: string | null }
   | { kind: 'team'; team: string; project: string }
-  /** Jenkins' own authorization lets this group (or you, by name) read it. */
+  /** Jenkins lets this group (or you, by name) read the job — for runs that name no project. */
   | { kind: 'jenkins'; sid: string; group: boolean; via: string }
   | { kind: 'scope'; via: string }
-  | { kind: 'started'; builds: number; last: string }
 
-export type Pipeline = {
+export type MyRun = Run & {
+  applications: string[]
+  /** Whether the run's parameters or its job's name said which project it is for. */
+  matchedBy: 'parameters' | 'job' | null
+  owners: Owner[]
+  reasons: Reason[]
+  personal: boolean
+  canOperate: boolean
+}
+
+export type MyPipeline = {
+  key: string
   job: string
+  /** For a shared job, the project these runs are for. */
+  applications: string[]
   url: string
   owners: Owner[]
   reasons: Reason[]
-  canOperate: boolean
-  last: Run | null
+  last: MyRun
   recent: { number: number; result: Result; startedAt: string }[]
   running: boolean
   inQueue: boolean
-  week: { builds: number; passed: number }
+  finished: { builds: number; passed: number }
 }
 
-export type MyPipelines = {
+export type MyQueueItem = QueueItem & { applications: string[]; matchedBy: MyRun['matchedBy']; reasons: Reason[]; canOperate: boolean }
+
+export type RunWindow = '24h' | '7d' | '30d'
+export const RUN_WINDOW_LABEL: Record<RunWindow, string> = { '24h': '24 hours', '7d': '7 days', '30d': '30 days' }
+
+export type MyRuns = {
   url: string
   sync: SyncState
   /** Where who-sees-what came from: Jenkins' rules when they can be read, else the catalog's teams. */
@@ -38,29 +57,27 @@ export type MyPipelines = {
     error: string | null
     warnings: string[]
   }
-  pipelines: Pipeline[]
-  queue: (QueueItem & { canOperate: boolean })[]
+  window: RunWindow
+  runs: MyRun[]
+  truncated: boolean
+  pipelines: MyPipeline[]
+  queue: MyQueueItem[]
   queueError: string | null
-  startedByYou: (Run & { canOperate: boolean })[]
 }
 
 export const pipelinesApi = {
-  mine: () => api<MyPipelines>('/pipelines'),
+  mine: (window: RunWindow) => api<MyRuns>(`/pipelines?window=${window}`),
 }
 
-/** Failing now: the latest finished build did not pass. */
-export function isBroken(p: Pipeline): boolean {
-  const finished = p.recent.find((b) => b.result !== 'running' && b.result !== 'not_built')
-  return finished?.result === 'failure' || finished?.result === 'unstable'
-}
-
-/** The groups that put this pipeline on your list — by catalog ownership or a Jenkins grant. */
-export function groupsOf(p: Pipeline): string[] {
-  const names = p.reasons.flatMap((r) => (r.kind === 'team' ? [r.team] : r.kind === 'jenkins' && r.group ? [r.sid] : []))
+/** The groups that make this yours — by catalog ownership or a Jenkins grant. */
+export function groupsOf(item: { reasons: Reason[] }): string[] {
+  const names = item.reasons.flatMap((r) => (r.kind === 'team' ? [r.team] : r.kind === 'jenkins' && r.group ? [r.sid] : []))
   return [...new Map(names.map((n) => [n.toLowerCase(), n])).values()]
 }
 
-/** "Just you": on your list by your name, not a group's. */
-export function isPersonal(p: Pipeline): boolean {
-  return p.reasons.some((r) => r.kind === 'started' || (r.kind === 'jenkins' && !r.group))
+/** Yours by name: you started it, or it built your commit. */
+export function isPersonal(item: { reasons: Reason[] }): boolean {
+  return item.reasons.some((r) => r.kind === 'started' || r.kind === 'commit')
 }
+
+export const isBroken = (result: Result) => result === 'failure' || result === 'unstable'

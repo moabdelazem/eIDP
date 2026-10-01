@@ -140,15 +140,16 @@ async function store(server: string, heads: JobHead[], builds: HistoryBuild[]): 
     // Batched, so a first sync of thousands of builds is a few statements.
     for (let i = 0; i < builds.length; i += 500) {
       await db.query(
-        `insert into jenkins_builds (server, job, number, result, started_at, duration_ms, url, built_on, parameters, causes)
+        `insert into jenkins_builds (server, job, number, result, started_at, duration_ms, url, built_on, parameters, causes, authors)
          select $1, b.job, b.number, b.result, b.started_at, b.duration_ms, b.url, b.built_on, b.parameters,
-                array(select jsonb_array_elements_text(b.causes))
+                array(select jsonb_array_elements_text(b.causes)), array(select jsonb_array_elements_text(b.authors))
            from json_to_recordset($2::json)
              as b(job text, number integer, result text, started_at timestamptz, duration_ms bigint,
-                  url text, built_on text, parameters jsonb, causes jsonb)
+                  url text, built_on text, parameters jsonb, causes jsonb, authors jsonb)
          on conflict (server, job, number) do update set
            result = excluded.result, started_at = excluded.started_at, duration_ms = excluded.duration_ms,
-           url = excluded.url, built_on = excluded.built_on, parameters = excluded.parameters, causes = excluded.causes`,
+           url = excluded.url, built_on = excluded.built_on, parameters = excluded.parameters, causes = excluded.causes,
+           authors = excluded.authors`,
         [
           server,
           JSON.stringify(
@@ -162,6 +163,7 @@ async function store(server: string, heads: JobHead[], builds: HistoryBuild[]): 
               built_on: b.builtOn,
               parameters: b.parameters,
               causes: b.causes,
+              authors: b.authors,
             })),
           ),
         ],

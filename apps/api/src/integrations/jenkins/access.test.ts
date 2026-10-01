@@ -34,13 +34,13 @@ test('every matrix spelling is read, and only Job/Read counts', () => {
   assert.deepEqual(new Set(matrix.read.map((r) => `${r.sidType}:${r.sid}`)), new Set(['either:carol', 'group:Payments', 'user:bob', 'group:DEV&OPS', 'either:frank']))
 })
 
-test('grants to everyone name no team and are dropped; a job that stops inheriting says so', () => {
+test('grants to everyone are kept as one name; a job that stops inheriting says so', () => {
   const matrix = parseMatrix(`<x><hudson.security.AuthorizationMatrixProperty>
     <inheritanceStrategy class="org.jenkinsci.plugins.matrixauth.inheritance.NonInheritingStrategy"/>
     <permission>GROUP:${READ}:authenticated</permission><permission>${READ}:anonymous</permission>
   </hudson.security.AuthorizationMatrixProperty></x>`)!
   assert.equal(matrix.inherits, false)
-  assert.deepEqual(matrix.read, [])
+  assert.deepEqual(matrix.read, [{ sid: 'authenticated', sidType: 'group' }])
   assert.equal(parseMatrix('<project><properties/></project>'), null)
 })
 
@@ -58,9 +58,12 @@ const EXPECTED = new Set([
   'payments/deploy-prod <- DEVOPS',
   'agriland-api/main <- user dave',
   'agriland-api/feature%2Fscoring <- user dave',
+  'inventories-lint <- authenticated',
+  'platform/build <- authenticated',
+  'platform/deploy <- authenticated',
 ])
 
-test('the role-based strategy: patterns over full names, Read only, everyone dropped', async () => {
+test('the role-based strategy: patterns over full names, Read only', async () => {
   fake.setAccess('role-strategy')
   const read = await rules()
   assert.equal(read.source, 'role-strategy')

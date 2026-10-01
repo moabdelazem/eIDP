@@ -1,5 +1,5 @@
 import * as jenkins from '../integrations/jenkins/index.ts'
-import type { SidType } from '../integrations/jenkins/index.ts'
+import { EVERYONE_SID, type SidType } from '../integrations/jenkins/index.ts'
 import { query, transaction } from '../lib/db.ts'
 
 /**
@@ -77,14 +77,14 @@ export async function accessState(): Promise<AccessState> {
 /** A grant that reaches one person: theirs by name, or one of their groups'. */
 export type Reach = { job: string; sid: string; sidType: SidType; via: string }
 
-/** Every job grant naming `uid` or one of `groups`, optionally only for `jobs`. */
+/** Every job grant naming `uid`, one of `groups`, or everyone — optionally only for `jobs`. */
 export async function grantsReaching(uid: string, groups: string[], jobs?: string[]): Promise<Reach[]> {
   const { rows } = await query<{ job: string; sid: string; sid_type: SidType; via: string }>(
     `select job, sid, sid_type, via from jenkins_job_access
       where server = $1 and ($4::text[] is null or job = any($4))
         and ((sid_type <> 'user' and lower(sid) = any($2)) or (sid_type <> 'group' and lower(sid) = lower($3)))
       order by job, sid`,
-    [jenkins.jenkinsConfig().url, groups.map((g) => g.toLowerCase()), uid, jobs ?? null],
+    [jenkins.jenkinsConfig().url, [...groups.map((g) => g.toLowerCase()), EVERYONE_SID], uid, jobs ?? null],
   )
   return rows.map((row) => ({ job: row.job, sid: row.sid, sidType: row.sid_type, via: row.via }))
 }
