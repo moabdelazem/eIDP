@@ -511,49 +511,67 @@ bind to anyone else. Every action goes to Jenkins as the service account, so
 reads it, and the tests delete only rows they made (`id > ` the max before).
 
 **My pipelines** (`/pipelines`, `features/pipelines/`, `services/pipelines.ts`)
-is the same Jenkins for everyone else: each person's own pipelines, a browse
-item behind `pipelines.view` (a `member` permission). Jenkins knows nothing of
-our teams, so a job is tied to the catalog by name — it belongs to every
-application whose `repository` is one of its path segments
-(`payments/loan-scoring-api`, multibranch `agriland-api/main`), and so to that
-system's teams. A pipeline is yours when Jenkins lets one of your groups (or
-you, by name) read it, when a team you are in owns it, when a scoped binding
-lets you operate it, or when you started a build history still holds
-(`Started by user <uid or display name>` — Jenkins writes whichever its realm
-gives). Each row says which, so nobody wonders why it is there, and the page
-narrows to one group at a time (`?group=Payments`, or `me` for just yours).
+is the same Jenkins for everyone else, a browse item behind `pipelines.view`
+(a `member` permission) — and it lists **runs**, not jobs, because a job is
+often shared: one build job and one deploy job for every project. A run is:
 
-**Jenkins decides what a team sees** when its rules can be read.
+- **yours** when you started it (`Started by user <uid or display name>`), or
+  when it built a commit you wrote — whoever started it. Pushes are built by
+  the service account maika, so the commit author is the person a push run is
+  for. The sync keeps each build's commit authors (`jenkins_builds.authors`:
+  name, Jenkins user id and email), matched to your login, name and `mail`.
+- **your team's** when it is for a project a team of yours owns. Its project
+  is what its **parameters** name (`APP_NAME=loan-scoring-api`,
+  `REPOSITORY=…/loan-scoring-api.git` — values matched whole, or by their last
+  path segment without `.git`, against the catalog's applications and
+  repositories), and only when they name none, what the job's own name does
+  (`payments/loan-scoring-api`, multibranch `agriland-api/main`). So a shared
+  deploy job shows each team only its own projects' runs, never every run of
+  the job. Don't key it on the job alone again.
+
+Each run says why (*You started it*, *Your commit · run by maika*,
+*Payments' project*), and the page narrows by group (`?group=Payments`, `me`
+for just yours), window (`24h`/`7d`/`30d`, newest 500) and view: Runs, or
+Pipelines — a row per job, and per project on a shared job, summed over the
+runs you may see. Queue items are judged the same way, from the parameters
+and causes Jenkins' queue carries.
+
+**Jenkins has the last word on a team's runs** when its rules can be read.
 `integrations/jenkins/access.ts` reads either the role-strategy plugin (project
 roles: a regex over full names, matched whole and case-sensitively, and their
 users and groups) or matrix grants in each folder's and job's `config.xml`
 (all three spellings matrix-auth has written; grants flow down folders unless
-an item stops inheriting). Only Job/Read counts; global roles and grants to
-`authenticated`/`anonymous` are dropped, because they name no team.
+an item stops inheriting). Only Job/Read counts; global roles are left out.
+Grants to `authenticated`/`anonymous` are kept as `authenticated`: they name
+no team, but they are how a shared job is readable by everyone.
 `services/jenkins-access.ts` keeps them in `jenkins_job_access` every
 `JENKINS_ACCESS_SYNC_MINUTES` (15); a failed read keeps the last rules. Once
-rules naming someone exist, catalog ownership alone no longer lists a pipeline
-— the portal reads with a service account that sees everything, and must not
-show a team what Jenkins hides from it. Without them (`source: none`, or the
-service account may not read roles — it needs to administer them, or
-Job/ExtendedRead for matrix), the catalog decides, and the page's *Who sees
-what* says which. The fake has both (`FAKE_JENKINS_ACCESS=role-strategy|matrix`),
-stating one rule set two ways so tests expect one answer from either.
+rules exist, a team's run shows only if Jenkins lets the person read its job —
+the portal reads with a service account that sees everything, and must not
+show a team what Jenkins hides from it. A grant on a job also makes its runs
+someone's, but only runs that name no project: a grant on a shared job says
+nothing about whose each run is. Without rules (`source: none`, or the service
+account may not read roles — it needs to administer them, or Job/ExtendedRead
+for matrix), the catalog decides, and the page says which. The fake has both
+(`FAKE_JENKINS_ACCESS=role-strategy|matrix`), stating one rule set two ways,
+and the shared `platform/build` (maika, on push, with commit authors) and
+`platform/deploy` (`APP_NAME`) jobs.
 
-Acting is `jenkins.operate`, **scoped**: bound globally it reaches every job
-(`build-operator`), bound to a team or project only the pipelines that team or
-project owns (`pipeline-operator`, which also carries `pipelines.view`). Being
-in the owning team shows a pipeline but never lets you act on it — a rerun can
-deploy to production, so that is a binding someone made on purpose. The
+Acting is `jenkins.operate`, **scoped**, and judged per run: bound globally it
+reaches every run (`build-operator`), bound to a team or project only runs for
+the projects that team or project owns (`pipeline-operator`, which also
+carries `pipelines.view`) — on a shared deploy job, the runs for its apps and
+no others. Writing the commit or being in the team never lets you act; a rerun
+can deploy to production, so that is a binding someone made on purpose. The
 `/jenkins` action routes take anyone holding `jenkins.operate` anywhere and the
-service checks the job (`demandOperate`); a queue id says nothing about whose
-it is, so `cancel` reads the job from the queue first. A build of your own
-pipeline opens at `/pipelines/build` on the Jenkins build page (`BuildPage`,
-one of `features/jenkins`' public pieces with `ActionDialog`, `result.tsx` and
-the types): `GET /jenkins/run` answers a job that is not yours with 404, and
-returns `canOperate` so the page never guesses. Links into the Jenkins page's
-search show only to `jenkins.view`. The tests are `routes/pipelines.test.ts`;
-they put their own system in the catalog under lock 4202.
+service judges the stored run (`demandOperate`); `cancel` judges the queued
+item by what it will run with. A run opens at `/pipelines/build` on the Jenkins
+build page (`BuildPage`, one of `features/jenkins`' public pieces with
+`ActionDialog`, `result.tsx` and the types): `GET /jenkins/run` answers a run
+that is not yours with 404, and returns `canOperate` so the page never guesses.
+Links into the Jenkins page's search show only to `jenkins.view`. The tests are
+`routes/pipelines.test.ts`; they put their own systems in the catalog under
+lock 4202.
 
 **History is the portal's own copy.** A day or a week of builds, searchable by
 parameter, cannot be swept from Jenkins on every look, so

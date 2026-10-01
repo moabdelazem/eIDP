@@ -87,8 +87,8 @@ test('someone without the permission is refused, with the reason', async () => {
 test('the first sync reads every job that has built, and keeps only what is inside retention', async () => {
   const state = await sync()
   assert.equal(state.ok, true, state.error)
-  // Seven jobs have builds; never-built has nothing to read.
-  assert.equal(state.jobsRead, 7)
+  // Nine jobs have builds; never-built has nothing to read.
+  assert.equal(state.jobsRead, 9)
   const expected = fake.jobs().flatMap(({ job }) => job.builds).filter((b) => b.timestamp > Date.now() - 30 * 86_400_000).length
   assert.equal(state.builds, expected)
   const { rows } = await query<{ n: string }>(`select count(*) as n from jenkins_builds where server = $1 and job = 'legacy-batch'`, [url])
@@ -112,7 +112,7 @@ test('later syncs read only jobs that built since, or had a build still running'
 test('the overview says what is broken now, and for how long', async () => {
   const overview = await json(await call('alice', 'GET', '/jenkins'))
   assert.equal(overview.sync.ok, true)
-  assert.equal(overview.counts.jobs, 8)
+  assert.equal(overview.counts.jobs, 10)
   assert.equal(overview.counts.running, 1)
   assert.equal(overview.counts.agentsOffline, 1)
 

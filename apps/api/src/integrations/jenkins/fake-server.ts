@@ -32,7 +32,7 @@ export type FakeBuild = {
 type Job = { kind: 'job'; name: string; pipeline: boolean; builds: FakeBuild[] }
 type Folder = { kind: 'folder'; name: string; className: string; children: Node[] }
 type Node = Job | Folder
-type Queued = { id: number; job: string; since: number; why: string }
+type Queued = { id: number; job: string; since: number; why: string; parameters?: Record<string, string>; cause?: string }
 
 const FOLDER = 'com.cloudbees.hudson.plugins.folder.Folder'
 const MULTIBRANCH = 'org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject'
@@ -99,7 +99,8 @@ function history(
  * role-strategy plugin, or matrix grants in folders' and jobs' config.xml.
  * Both rule sets say the same thing — Payments reads loan-scoring-api and
  * payments-web, DEVOPS all of payments, dave (by name) agriland-api, and
- * everyone inventories-lint — so tests can expect one answer from either.
+ * everyone inventories-lint and the shared platform jobs — so tests can
+ * expect one answer from either.
  */
 export type FakeAccess = 'none' | 'role-strategy' | 'matrix'
 
@@ -109,6 +110,8 @@ const ROLES: Record<string, { pattern: string; read: boolean; sids: { type: 'USE
   'payments-ops': { pattern: 'payments/.*', read: true, sids: [{ type: 'GROUP', sid: 'DEVOPS' }] },
   'agri-dave': { pattern: 'agriland-api/.*', read: true, sids: [{ type: 'USER', sid: 'dave' }] },
   'everyone-lint': { pattern: 'inventories-lint', read: true, sids: [{ type: 'GROUP', sid: 'authenticated' }] },
+  // The shared jobs: everyone may read them; whose a run is, its parameters say.
+  platform: { pattern: 'platform/.*', read: true, sids: [{ type: 'GROUP', sid: 'authenticated' }] },
   // Build without Read: not a grant to see.
   builders: { pattern: '.*', read: false, sids: [{ type: 'GROUP', sid: 'Payments' }] },
 }
@@ -128,9 +131,46 @@ const MATRIX: Record<string, string> = {
   'agriland-api': `<com.cloudbees.hudson.plugins.folder.properties.AuthorizationMatrixProperty>
       <entry><user><name>dave</name><permission>${READ}</permission></user></entry>
     </com.cloudbees.hudson.plugins.folder.properties.AuthorizationMatrixProperty>`,
+  platform: `<com.cloudbees.hudson.plugins.folder.properties.AuthorizationMatrixProperty>
+      <permission>GROUP:${READ}:authenticated</permission>
+    </com.cloudbees.hudson.plugins.folder.properties.AuthorizationMatrixProperty>`,
   'inventories-lint': `<hudson.security.AuthorizationMatrixProperty>
       <permission>${READ}:authenticated</permission>
     </hudson.security.AuthorizationMatrixProperty>`,
+}
+
+/** A push to loan-scoring-api is bob's, to nfp-backend carol's; maika starts both. */
+const PUSHES = [
+  { repository: 'loan-scoring-api', author: 'bob' },
+  { repository: 'nfp-backend', author: 'carol' },
+]
+
+function pushed(now: number): FakeBuild[] {
+  return history(now, 12, { every: 6, ago: 1, outcome: (i) => (i === 3 ? 'FAILURE' : 'SUCCESS') }).map((build, i) => {
+    const push = PUSHES[i % PUSHES.length]!
+    return {
+      ...build,
+      cause: 'Started by user maika',
+      parameters: [
+        { _class: STRING, name: 'REPOSITORY', value: `https://git.example.com/projects/${push.repository}.git` },
+        { _class: STRING, name: 'BRANCH', value: 'main' },
+      ],
+      changes: [{ commitId: `face${String(build.number).padStart(4, '0')}`, msg: `Push to ${push.repository}`, author: push.author }],
+    }
+  })
+}
+
+/** Deploys of one app or another, by name in APP_NAME — started by a person, with no commits. */
+function deploys(now: number): FakeBuild[] {
+  return history(now, 8, { every: 9, ago: 2, outcome: () => 'SUCCESS' }).map((build, i) => ({
+    ...build,
+    cause: 'Started by user alice',
+    parameters: [
+      { _class: STRING, name: 'APP_NAME', value: i % 2 === 0 ? 'loan-scoring-api' : 'agriland-mobile' },
+      { _class: STRING, name: 'ENV', value: 'uat' },
+    ],
+    changes: [],
+  }))
 }
 
 export function createFakeJenkins({ now = Date.now() } = {}) {
@@ -199,6 +239,18 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
         name: 'inventories-lint',
         pipeline: true,
         builds: history(now, 50, { every: 2, ago: 0.05, outcome: (i) => (i === 0 ? null : i % 13 === 0 ? 'ABORTED' : 'SUCCESS') }),
+      },
+      // Shared jobs every project runs through, told apart by their parameters.
+      {
+        kind: 'folder',
+        name: 'platform',
+        className: FOLDER,
+        children: [
+          // Started by maika, the service account, on every push: the commit
+          // author is the person the build is for.
+          { kind: 'job', name: 'build', pipeline: true, builds: pushed(now) },
+          { kind: 'job', name: 'deploy', pipeline: true, builds: deploys(now) },
+        ],
       },
       // Last built two months ago: older than any window, and than retention.
       { kind: 'job', name: 'legacy-batch', pipeline: false, builds: history(now, 3, { every: 24, ago: 24 * 60, outcome: () => 'SUCCESS' }) },
@@ -281,7 +333,16 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
         null,
         ...(b.parameters.length ? [{ _class: 'hudson.model.ParametersAction', parameters: b.parameters }] : []),
       ],
-      changeSets: [{ items: b.changes.map((c) => ({ commitId: c.commitId, msg: c.msg, author: { fullName: c.author } })) }],
+      changeSets: [
+        {
+          items: b.changes.map((c) => ({
+            commitId: c.commitId,
+            msg: c.msg,
+            authorEmail: `${c.author}@eidp.local`,
+            author: { fullName: c.author, absoluteUrl: `http://jenkins.example.com${base}/user/${c.author}` },
+          })),
+        },
+      ],
     }
   }
 
@@ -317,6 +378,10 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
         stuck: false,
         blocked: false,
         task: { name: q.job.split('/').pop(), url: urlOf(q.job.split('/')) },
+        actions: [
+          { causes: [{ shortDescription: q.cause ?? 'Started by user eidp' }] },
+          ...(q.parameters ? [{ parameters: Object.entries(q.parameters).map(([name, value]) => ({ _class: STRING, name, value })) }] : []),
+        ],
       })),
     }),
   )
@@ -370,7 +435,7 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
       const form = rest[0] === 'buildWithParameters' ? Object.fromEntries(new URLSearchParams(await c.req.text())) : {}
       triggered.push({ job: fullName, parameters: form as Record<string, string> })
       const id = nextQueueId++
-      queue.push({ id, job: fullName, since: Date.now(), why: 'Waiting for next available executor' })
+      queue.push({ id, job: fullName, since: Date.now(), why: 'Waiting for next available executor', parameters: form as Record<string, string> })
       c.header('Location', `http://jenkins.example.com${base}/queue/item/${id}/`)
       return c.body(null, 201)
     }

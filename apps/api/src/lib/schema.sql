@@ -222,6 +222,10 @@ create table if not exists jenkins_builds (
   primary key (server, job, number)
 );
 
+-- Who wrote the commits each build built: a push builds as the service account
+-- that triggered it, so the author is who the run is for (My pipelines).
+alter table jenkins_builds add column if not exists authors text[] not null default '{}';
+
 create index if not exists jenkins_builds_started_idx on jenkins_builds (server, started_at desc);
 create index if not exists jenkins_builds_running_idx on jenkins_builds (server, job) where result = 'running';
 

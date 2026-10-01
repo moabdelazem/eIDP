@@ -457,10 +457,10 @@ export async function stop(job: string, number: number, actor: Actor): Promise<v
  * the audit comes from it, and so does the check of whether the caller may
  * (`authorize`), since a queue id says nothing about whose pipeline it is.
  */
-export async function cancel(id: number, actor: Actor, authorize?: (job: string) => Promise<void>): Promise<void> {
+export async function cancel(id: number, actor: Actor, authorize?: (job: string, item: QueueItem) => Promise<void>): Promise<void> {
   const item = (await jenkins.listQueue()).find((q) => q.id === id)
   if (!item) throw new ApiError(404, 'jenkins_not_queued', 'That build is no longer waiting — it has started or been removed.')
-  await authorize?.(item.job ?? item.name)
+  await authorize?.(item.job ?? item.name, item)
   await audited(actor, 'cancel', item.job ?? item.name, null, async () => {
     await jenkins.cancelQueueItem(id)
     return { result: undefined, queueId: id }

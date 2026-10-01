@@ -2,7 +2,7 @@ import { ApiError } from '../../lib/errors.ts'
 import { fullNameFromUrl, jenkinsConfig, jenkinsGet, jenkinsPost, jenkinsTail, jobPath } from './client.ts'
 
 export { jenkinsConfig } from './client.ts'
-export { readAccess, parseMatrix, type AccessRules, type JobGrant, type SidType } from './access.ts'
+export { EVERYONE_SID, readAccess, parseMatrix, type AccessRules, type JobGrant, type SidType } from './access.ts'
 
 /** A build's outcome, with a build still going as `running` rather than Jenkins' null. */
 export type Result = 'success' | 'failure' | 'unstable' | 'aborted' | 'not_built' | 'running'
@@ -28,6 +28,9 @@ export type QueueItem = {
   why: string | null
   stuck: boolean
   blocked: boolean
+  /** What it will run with — a shared job's say which project it is for. Secrets hidden. */
+  parameters: Parameter[]
+  causes: string[]
 }
 
 export type Agent = {
@@ -43,7 +46,17 @@ export type Agent = {
 export type Parameter = { name: string; value: string | null; hidden: boolean }
 
 /** A build as history keeps it: what ran, where, why, and with what. Secrets already hidden. */
-export type HistoryBuild = Build & { builtOn: string | null; causes: string[]; parameters: Parameter[] }
+export type HistoryBuild = Build & {
+  builtOn: string | null
+  causes: string[]
+  parameters: Parameter[]
+  /**
+   * Who wrote the commits it built — each author's name, Jenkins user id and
+   * email, as Jenkins knows them. A push builds as whoever triggered it (a
+   * service account like maika); the author is the person it was for.
+   */
+  authors: string[]
+}
 
 export type Change = { commit: string | null; message: string; author: string | null }
 
@@ -57,7 +70,10 @@ export type BuildDetail = HistoryBuild & {
   notReplayable: string | null
 }
 
+type ChangeItems = { items?: { commitId?: string; msg?: string; authorEmail?: string; author?: { fullName?: string; absoluteUrl?: string } }[] }
 type RawBuild = {
+  changeSets?: ChangeItems[]
+  changeSet?: ChangeItems
   number: number
   result: string | null
   timestamp: number
@@ -114,7 +130,10 @@ export async function listJobs(): Promise<JobHead[]> {
   return found
 }
 
-const BUILD = 'number,result,timestamp,duration,building,url,builtOn,actions[parameters[_class,name,value],causes[shortDescription]]'
+const CHANGE_ITEMS = 'items[commitId,msg,authorEmail,author[fullName,absoluteUrl]]'
+/** A pipeline has changeSets, a freestyle job changeSet; Jenkins ignores the one a build lacks. */
+const CHANGES = `changeSets[${CHANGE_ITEMS}],changeSet[${CHANGE_ITEMS}]`
+const BUILD = `number,result,timestamp,duration,building,url,builtOn,actions[parameters[_class,name,value],causes[shortDescription]],${CHANGES}`
 
 /** The newest `count` builds of one job, newest first, as history keeps them. */
 export async function jobBuilds(job: string, count: number): Promise<HistoryBuild[]> {
@@ -131,7 +150,24 @@ function toHistory(job: string, raw: RawBuild): HistoryBuild {
     builtOn: raw.builtOn || null,
     causes: actions.flatMap((a) => (a.causes ?? []).map((c) => c.shortDescription ?? '')).filter(Boolean),
     parameters: actions.flatMap((a) => a.parameters ?? []).map(maskParameter),
+    authors: authorsOf(raw),
   }
+}
+
+function changeItems(raw: RawBuild) {
+  return [...(raw.changeSets ?? []), ...(raw.changeSet ? [raw.changeSet] : [])].flatMap((set) => set.items ?? [])
+}
+
+/** Every way Jenkins names each commit's author, once each: name, user id, email. */
+function authorsOf(raw: RawBuild): string[] {
+  const names = new Map<string, string>()
+  for (const item of changeItems(raw)) {
+    const id = /\/user\/([^/]+)\/?$/.exec(item.author?.absoluteUrl ?? '')?.[1]
+    for (const name of [item.author?.fullName, id ? decodeURIComponent(id) : undefined, item.authorEmail]) {
+      if (name?.trim()) names.set(name.trim().toLowerCase(), name.trim())
+    }
+  }
+  return [...names.values()]
 }
 
 function maskParameter(p: RawParameter): Parameter {
@@ -145,8 +181,16 @@ function maskParameter(p: RawParameter): Parameter {
 
 export async function listQueue(): Promise<QueueItem[]> {
   const { items = [] } = await jenkinsGet<{
-    items?: { id: number; inQueueSince: number; why?: string | null; stuck?: boolean; blocked?: boolean; task?: { name?: string; url?: string } }[]
-  }>('queue/api/json', { tree: 'items[id,inQueueSince,why,stuck,blocked,task[name,url]]' })
+    items?: {
+      id: number
+      inQueueSince: number
+      why?: string | null
+      stuck?: boolean
+      blocked?: boolean
+      task?: { name?: string; url?: string }
+      actions?: RawBuild['actions']
+    }[]
+  }>('queue/api/json', { tree: 'items[id,inQueueSince,why,stuck,blocked,task[name,url],actions[parameters[_class,name,value],causes[shortDescription]]]' })
   return items.map((item) => ({
     id: item.id,
     job: item.task?.url ? fullNameFromUrl(item.task.url) : null,
@@ -156,6 +200,8 @@ export async function listQueue(): Promise<QueueItem[]> {
     why: item.why ?? null,
     stuck: item.stuck ?? false,
     blocked: item.blocked ?? false,
+    parameters: (item.actions ?? []).flatMap((a) => a?.parameters ?? []).map(maskParameter),
+    causes: (item.actions ?? []).flatMap((a) => (a?.causes ?? []).map((c) => c.shortDescription ?? '')).filter(Boolean),
   }))
 }
 
@@ -187,21 +233,11 @@ export async function listAgents(): Promise<Agent[]> {
  * commits it built, its pipeline stages, and whether it can be run again.
  */
 export async function buildDetail(job: string, number: number): Promise<BuildDetail> {
-  type Items = { items?: { commitId?: string; msg?: string; author?: { fullName?: string } }[] }
-  const [raw, stages] = await Promise.all([
-    jenkinsGet<RawBuild & { changeSets?: Items[]; changeSet?: Items }>(`${jobPath(job)}/${number}/api/json`, {
-      // A pipeline has changeSets, a freestyle job changeSet; Jenkins ignores the one a build lacks.
-      tree: `${BUILD},changeSets[items[commitId,msg,author[fullName]]],changeSet[items[commitId,msg,author[fullName]]]`,
-    }),
-    buildStages(job, number),
-  ])
-  const sets = [...(raw.changeSets ?? []), ...(raw.changeSet ? [raw.changeSet] : [])]
+  const [raw, stages] = await Promise.all([jenkinsGet<RawBuild>(`${jobPath(job)}/${number}/api/json`, { tree: BUILD }), buildStages(job, number)])
   const rawParameters = (raw.actions ?? []).flatMap((a) => a?.parameters ?? [])
   return {
     ...toHistory(job, raw),
-    changes: sets.flatMap((set) =>
-      (set.items ?? []).map((item) => ({ commit: item.commitId ?? null, message: (item.msg ?? '').trim(), author: item.author?.fullName ?? null })),
-    ),
+    changes: changeItems(raw).map((item) => ({ commit: item.commitId ?? null, message: (item.msg ?? '').trim(), author: item.author?.fullName ?? null })),
     stages,
     notReplayable: notReplayable(rawParameters),
   }

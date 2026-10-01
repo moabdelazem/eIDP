@@ -41,6 +41,9 @@ export type QueueItem = {
   why: string | null
   stuck: boolean
   blocked: boolean
+  /** What it will run with — a shared job's say which project it is for. */
+  parameters: Parameter[]
+  causes: string[]
 }
 
 export type Agent = {
