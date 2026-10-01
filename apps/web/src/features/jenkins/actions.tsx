@@ -52,7 +52,7 @@ export function ActionDialog({ pending, onClose, onDone }: { pending: Pending | 
         <p>
           <JobName name={job} className="text-foreground" /> <span className="font-mono">#{number}</span>
         </p>
-        <p>Jenkins queues a new build with the same parameters #{number} had. It runs as the portal’s service account; the Activity tab records that you asked.</p>
+        <p>Jenkins queues a new build with the same parameters #{number} had. It runs as the portal’s service account; the portal records that you asked.</p>
       </ConfirmDialog>
     )
   }

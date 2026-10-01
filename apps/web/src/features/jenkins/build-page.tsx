@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { Link, useLocation, useSearchParams } from 'react-router'
 import { Copy, ExternalLink, GitCommitHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 import { JenkinsIcon } from '@/components/brand-icons.tsx'
@@ -25,12 +25,18 @@ import { RunAction } from './runs.tsx'
  * dialog, because reading a failed log is the task, not a glance.
  *
  * The job carries folders, so it arrives in the query: `?job=a/b&number=12`.
+ *
+ * It is also how My pipelines opens a build (`/pipelines/build`), for people
+ * who cannot see the Jenkins page: the API lets them read a build only of
+ * their own pipelines, and says per build whether they may act on it. Links
+ * into the Jenkins page's search show only to those who can open it.
  */
 export function BuildPage() {
   const [params] = useSearchParams()
   const job = params.get('job') ?? ''
   const number = Number(params.get('number'))
-  usePageTitle(job ? `${job.split('/').pop()} #${number} — Jenkins` : 'Build — Jenkins')
+  const fromPipelines = useLocation().pathname.startsWith('/pipelines')
+  usePageTitle(job ? `${job.split('/').pop()} #${number} — ${fromPipelines ? 'My pipelines' : 'Jenkins'}` : 'Build — Jenkins')
 
   const [following, setFollowing] = useState(true)
   const run = useResource(() => jenkinsApi.run(job, number), [job, number], {
@@ -41,7 +47,8 @@ export function BuildPage() {
   if (r && r.result !== 'running' && following) setFollowing(false)
 
   const { can } = useProfile()
-  const canOperate = can('jenkins.operate')
+  const canOperate = r?.canOperate ?? false
+  const canSearch = can('jenkins.view')
   const [pending, setPending] = useState<Pending | null>(null)
   // A line the explanation points at, for the log to show.
   const [jump, setJump] = useState<{ line: number; at: number } | null>(null)
@@ -49,7 +56,7 @@ export function BuildPage() {
   if (!job || !Number.isInteger(number) || number < 1) {
     return (
       <div className={PAGE}>
-        <EmptyState title="No build named">Open a build from the Jenkins page.</EmptyState>
+        <EmptyState title="No build named">Open a build from {fromPipelines ? 'My pipelines' : 'the Jenkins page'}.</EmptyState>
       </div>
     )
   }
@@ -97,9 +104,15 @@ export function BuildPage() {
         }
         actions={
           <>
-            <Button asChild size="sm" variant="outline">
-              <Link to={`/jenkins?tab=runs&q=${encodeURIComponent(job)}`}>All builds of this job</Link>
-            </Button>
+            {canSearch ? (
+              <Button asChild size="sm" variant="outline">
+                <Link to={`/jenkins?tab=runs&q=${encodeURIComponent(job)}`}>All builds of this job</Link>
+              </Button>
+            ) : (
+              <Button asChild size="sm" variant="outline">
+                <Link to={`/pipelines?q=${encodeURIComponent(job)}`}>My pipelines</Link>
+              </Button>
+            )}
             <Button asChild size="sm" variant="outline">
               <a href={r.url} target="_blank" rel="noreferrer">
                 <JenkinsIcon /> Open in Jenkins <ExternalLink />
@@ -128,7 +141,7 @@ export function BuildPage() {
                 <p className="mt-4 text-sm text-muted-foreground">{r.notReplayable}</p>
               )}
             </Section>
-            <Parameters run={r} />
+            <Parameters run={r} searchable={canSearch} />
             <Changes run={r} />
           </>
         }
@@ -186,10 +199,10 @@ function Stages({ stages }: { stages: Stage[] }) {
 }
 
 /** What the build ran with; each value searchable across every build, and copyable. */
-function Parameters({ run: r }: { run: RunDetail }) {
+function Parameters({ run: r, searchable }: { run: RunDetail; searchable: boolean }) {
   if (r.parameters.length === 0) return null
   return (
-    <Section title="Parameters" description="Pick a value to find every build that ran with it.">
+    <Section title="Parameters" description={searchable ? 'Pick a value to find every build that ran with it.' : undefined}>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
         {r.parameters.map((p) => (
           <div key={p.name} className="contents">
@@ -199,13 +212,17 @@ function Parameters({ run: r }: { run: RunDetail }) {
                 <span className="font-mono text-xs leading-5 text-muted-foreground italic">{p.hidden ? 'hidden' : 'not set'}</span>
               ) : (
                 <>
-                  <Link
-                    to={`/jenkins?tab=runs&q=${encodeURIComponent(`${p.name}=${p.value}`)}`}
-                    className="min-w-0 font-mono text-xs leading-5 break-words hover:underline"
-                    title={`Every build with ${p.name}=${p.value}`}
-                  >
-                    {p.value}
-                  </Link>
+                  {searchable ? (
+                    <Link
+                      to={`/jenkins?tab=runs&q=${encodeURIComponent(`${p.name}=${p.value}`)}`}
+                      className="min-w-0 font-mono text-xs leading-5 break-words hover:underline"
+                      title={`Every build with ${p.name}=${p.value}`}
+                    >
+                      {p.value}
+                    </Link>
+                  ) : (
+                    <span className="min-w-0 font-mono text-xs leading-5 break-words">{p.value}</span>
+                  )}
                   <button
                     type="button"
                     className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"

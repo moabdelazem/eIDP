@@ -110,6 +110,8 @@ export type RunDetail = Run & {
   log: string
   logTruncated: boolean
   logUrl: string
+  /** Whether the caller may run it again or stop it — worked out per job, since an operator may be bound to one team. */
+  canOperate: boolean
 }
 
 export type Category = 'test_failure' | 'compilation' | 'dependency' | 'infrastructure' | 'configuration' | 'permission' | 'timeout' | 'flaky' | 'unknown'
@@ -177,9 +179,13 @@ export const jenkinsApi = {
   cancel: (id: number) => post(`/jenkins/queue/${id}/cancel`),
 }
 
-/** Where a build's own page is. The job carries folders, so it rides in the query. */
-export function buildPath(build: { job: string; number: number }): string {
-  return `/jenkins/build?${params({ job: build.job, number: build.number })}`
+/**
+ * Where a build's own page is. The job carries folders, so it rides in the
+ * query. The same page opens under My pipelines for people without the
+ * Jenkins page, so the trail and the sidebar stay where they came from.
+ */
+export function buildPath(build: { job: string; number: number }, base: '/jenkins' | '/pipelines' = '/jenkins'): string {
+  return `${base}/build?${params({ job: build.job, number: build.number })}`
 }
 
 /** "1m 32s" — build durations are read at a glance, not to the millisecond. */

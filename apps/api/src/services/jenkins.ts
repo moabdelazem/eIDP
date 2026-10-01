@@ -129,6 +129,11 @@ function liveState({ fresh = false } = {}) {
   return liveInFlight
 }
 
+/** What is waiting in Jenkins' queue now, from the same 15-second cache as the page. */
+export async function queueNow({ fresh = false } = {}): Promise<QueueItem[]> {
+  return (await liveState({ fresh })).queue
+}
+
 /** What needs attention now: jobs failing, what is running and waiting, agents down. */
 export async function overview({ fresh = false, withExplanations = false } = {}): Promise<Overview> {
   const url = server()
@@ -447,10 +452,15 @@ export async function stop(job: string, number: number, actor: Actor): Promise<v
   })
 }
 
-/** Takes an item out of the queue. It must still be there — the job's name for the audit comes from it. */
-export async function cancel(id: number, actor: Actor): Promise<void> {
+/**
+ * Takes an item out of the queue. It must still be there — the job's name for
+ * the audit comes from it, and so does the check of whether the caller may
+ * (`authorize`), since a queue id says nothing about whose pipeline it is.
+ */
+export async function cancel(id: number, actor: Actor, authorize?: (job: string) => Promise<void>): Promise<void> {
   const item = (await jenkins.listQueue()).find((q) => q.id === id)
   if (!item) throw new ApiError(404, 'jenkins_not_queued', 'That build is no longer waiting — it has started or been removed.')
+  await authorize?.(item.job ?? item.name)
   await audited(actor, 'cancel', item.job ?? item.name, null, async () => {
     await jenkins.cancelQueueItem(id)
     return { result: undefined, queueId: id }
@@ -511,7 +521,7 @@ export async function listAudit(limit = 50): Promise<AuditEntry[]> {
   }))
 }
 
-type RunRow = {
+export type RunRow = {
   job: string
   number: number
   result: Result
@@ -523,7 +533,7 @@ type RunRow = {
   causes: string[]
 }
 
-function toRun(row: RunRow): Run {
+export function toRun(row: RunRow): Run {
   return {
     job: row.job,
     number: row.number,
