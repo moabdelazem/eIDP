@@ -82,6 +82,11 @@ export async function jenkinsGet<T>(path: string, query?: Record<string, string 
   return (await res.json()) as T
 }
 
+/** A text resource whole — an item's `config.xml`. */
+export async function jenkinsText(path: string): Promise<string> {
+  return (await send('GET', path)).text()
+}
+
 /** A POST that acts. Returns the response for the headers some actions answer with. */
 export function jenkinsPost(path: string, form?: URLSearchParams, query?: Record<string, string | number>): Promise<Response> {
   return send('POST', path, query, form)

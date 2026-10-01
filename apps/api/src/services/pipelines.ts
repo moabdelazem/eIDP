@@ -3,6 +3,7 @@ import type { QueueItem } from '../integrations/jenkins/index.ts'
 import { query } from '../lib/db.ts'
 import { ApiError } from '../lib/errors.ts'
 import * as jenkins from './jenkins.ts'
+import { accessState, grantsReaching, syncJenkinsAccess, type AccessState, type Reach } from './jenkins-access.ts'
 import { syncState, type SyncState } from './jenkins-sync.ts'
 import { can, canSomewhere, type Access, type Target } from './rbac.ts'
 import type { Actor } from './requests.ts'
@@ -18,10 +19,18 @@ import type { Actor } from './requests.ts'
  * that system (any environment's team in `team.yml`) owns the pipeline.
  *
  * A pipeline is someone's when:
- *   - a team they are in owns it,
+ *   - Jenkins lets one of their groups, or them by name, read it — its own
+ *     role-based or matrix authorization (`jenkins-access.ts`),
+ *   - a team they are in owns it in the catalog,
  *   - a scoped binding lets them operate it (a `pipeline-operator` bound to
  *     its team or project), or
  *   - they started a build of it that history still holds.
+ *
+ * When Jenkins' rules can be read and name anyone, **Jenkins decides what a
+ * team sees**: catalog ownership alone no longer puts a pipeline on the list
+ * (it still labels the ones that are there), because the portal reads with a
+ * service account that sees everything, and must not show a team what
+ * Jenkins hides from it. Without readable rules, the catalog decides.
  *
  * Seeing is `pipelines.view`, which every member holds. Acting — run again,
  * stop, dequeue — is `jenkins.operate`: everywhere when bound globally (a
@@ -38,6 +47,8 @@ export type Owner = { system: string; project: string; applications: string[]; t
 /** Why a pipeline is on someone's list — shown, so nobody wonders why it is there. */
 export type Reason =
   | { kind: 'team'; team: string; project: string }
+  /** Jenkins' own authorization lets this group, or this person, read it. */
+  | { kind: 'jenkins'; sid: string; group: boolean; via: string }
   | { kind: 'scope'; via: string }
   | { kind: 'started'; builds: number; last: string }
 
@@ -59,6 +70,8 @@ export type Pipeline = {
 export type MyPipelines = {
   url: string
   sync: SyncState
+  /** Where who-sees-what came from, and whether it is current. */
+  access: AccessState & { decides: 'jenkins' | 'catalog' }
   pipelines: Pipeline[]
   /** What is waiting in Jenkins for these pipelines, each saying whether the caller may take it out. */
   queue: (QueueItem & { canOperate: boolean })[]
@@ -126,9 +139,13 @@ async function startedBy(server: string, me: Me, jobs?: string[]): Promise<Map<s
 const targetOf = (owner: Owner): Target => ({ project: owner.project, teams: owner.teams })
 
 /** Why this job is the caller's, if it is. Empty means it is not. */
-function reasonsFor(access: Access, owners: Owner[], started: { builds: number; last: string } | undefined): Reason[] {
+function reasonsFor(access: Access, owners: Owner[], started: { builds: number; last: string } | undefined, reaches: Reach[] = []): Reason[] {
   const reasons: Reason[] = []
   const groups = new Set(access.groups.map((g) => g.toLowerCase()))
+  for (const reach of reaches) {
+    const group = reach.sidType === 'group' || (reach.sidType === 'either' && groups.has(reach.sid.toLowerCase()))
+    if (!reasons.some((r) => r.kind === 'jenkins' && r.sid === reach.sid)) reasons.push({ kind: 'jenkins', sid: reach.sid, group, via: reach.via })
+  }
   for (const owner of owners) {
     for (const team of owner.teams) {
       if (groups.has(team.toLowerCase()) && !reasons.some((r) => r.kind === 'team' && r.team.toLowerCase() === team.toLowerCase())) {
@@ -151,6 +168,23 @@ function reasonsFor(access: Access, owners: Owner[], started: { builds: number; 
   return reasons
 }
 
+/**
+ * Whether these reasons put the pipeline on the list. When Jenkins decides,
+ * the catalog's team label alone does not: Jenkins may hide it from that team.
+ */
+function visible(reasons: Reason[], decides: 'jenkins' | 'catalog'): boolean {
+  return reasons.some((r) => decides === 'catalog' || r.kind !== 'team')
+}
+
+/** Jenkins decides once its rules have been read and name someone; until then, the catalog. */
+async function whoDecides(): Promise<AccessState & { decides: 'jenkins' | 'catalog' }> {
+  const state = await accessState()
+  // Never read: start a read now, so the next look has it.
+  if (!state.readAt && !state.error) void syncJenkinsAccess().catch(() => {})
+  const decides = state.readAt && (state.source === 'role-strategy' || state.source === 'matrix') && state.grants > 0 ? 'jenkins' : 'catalog'
+  return { ...state, decides }
+}
+
 /** Whether the caller may run again, stop or dequeue builds of a job owned by these systems. */
 function mayOperate(access: Access, owners: Owner[]): boolean {
   return can(access, 'jenkins.operate') || owners.some((owner) => can(access, 'jenkins.operate', targetOf(owner)))
@@ -161,13 +195,21 @@ function mayOperate(access: Access, owners: Owner[]): boolean {
 /** The caller's pipelines, failing ones first, then by latest activity. */
 export async function mine(access: Access, me: Me): Promise<MyPipelines> {
   const url = jenkinsConfig().url
-  const [sync, owners, started] = await Promise.all([syncState(), ownersOf(url), startedBy(url, me)])
+  const [sync, rules, owners, started, reaches] = await Promise.all([
+    syncState(),
+    whoDecides(),
+    ownersOf(url),
+    startedBy(url, me),
+    grantsReaching(me.uid, access.groups),
+  ])
+  const reachByJob = new Map<string, Reach[]>()
+  for (const reach of reaches) reachByJob.set(reach.job, [...(reachByJob.get(reach.job) ?? []), reach])
 
   const related = new Map<string, { owners: Owner[]; reasons: Reason[] }>()
-  for (const job of new Set([...owners.keys(), ...started.keys()])) {
+  for (const job of new Set([...owners.keys(), ...started.keys(), ...reachByJob.keys()])) {
     const jobOwners = owners.get(job) ?? []
-    const reasons = reasonsFor(access, jobOwners, started.get(job))
-    if (reasons.length > 0) related.set(job, { owners: jobOwners, reasons })
+    const reasons = reasonsFor(access, jobOwners, started.get(job), reachByJob.get(job))
+    if (visible(reasons, rules.decides)) related.set(job, { owners: jobOwners, reasons })
   }
   const jobs = [...related.keys()]
 
@@ -240,6 +282,7 @@ export async function mine(access: Access, me: Me): Promise<MyPipelines> {
   return {
     url,
     sync,
+    access: rules,
     pipelines,
     queue,
     queueError,
@@ -263,10 +306,15 @@ export async function accessTo(access: Access, me: Me, job: string): Promise<{ v
   if (!mayView && !mayAct) return { view: false, operate: false }
 
   const url = jenkinsConfig().url
-  const [owners, started] = await Promise.all([ownersOf(url, [job]), startedBy(url, me, [job])])
+  const [owners, started, reaches, rules] = await Promise.all([
+    ownersOf(url, [job]),
+    startedBy(url, me, [job]),
+    grantsReaching(me.uid, access.groups, [job]),
+    whoDecides(),
+  ])
   const jobOwners = owners.get(job) ?? []
   const operate = mayOperate(access, jobOwners)
-  const view = viewAll || operate || (mayView && reasonsFor(access, jobOwners, started.get(job)).length > 0)
+  const view = viewAll || operate || (mayView && visible(reasonsFor(access, jobOwners, started.get(job), reaches), rules.decides))
   return { view, operate }
 }
 

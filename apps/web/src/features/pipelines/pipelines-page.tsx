@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { ExternalLink, RefreshCw, Search, ShieldCheck, UserRound, Users, Workflow, X } from 'lucide-react'
+import { ExternalLink, KeyRound, RefreshCw, Search, ShieldCheck, UserRound, Users, Workflow, X } from 'lucide-react'
 import { JenkinsIcon } from '@/components/brand-icons.tsx'
 import { EmptyState } from '@/components/empty-state.tsx'
 import { PAGE, PageHeader, Section, Split } from '@/components/page-layout.tsx'
@@ -13,7 +13,7 @@ import { JobName, RESULT, ResultBadge } from '@/features/jenkins/result.tsx'
 import { since } from '@/features/requests/status.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
-import { isBroken, pipelinesApi, type MyPipelines, type Pipeline, type Reason } from './api.ts'
+import { groupsOf, isBroken, isPersonal, pipelinesApi, type MyPipelines, type Pipeline, type Reason } from './api.ts'
 
 type Show = 'all' | 'failing' | 'running' | 'waiting' | 'operable'
 
@@ -26,9 +26,10 @@ const TILES: { show: Show; label: string; dot?: string; count: (p: Pipeline) => 
 ]
 
 /**
- * My pipelines: the Jenkins jobs that are yours — your team owns the system,
- * or you started a build — each with how it is doing and, where your role
- * reaches it, Run again and Stop.
+ * My pipelines: the Jenkins jobs that are yours and your groups' — Jenkins
+ * lets your group (or you) see them, your team owns the system, or you
+ * started a build — each with how it is doing and, where your role reaches
+ * it, Run again and Stop. One group at a time, or just yours.
  *
  * What you may do is decided per pipeline by the API and only shown here: a
  * Pipeline operator bound to one team acts on that team's pipelines and sees
@@ -39,6 +40,8 @@ export function PipelinesPage() {
   const [params, setParams] = useSearchParams()
   const show = (TILES.some((t) => t.show === params.get('show')) ? params.get('show') : 'all') as Show
   const q = params.get('q') ?? ''
+  /** A group's name, `me` for just yours, or empty for everything. */
+  const group = params.get('group') ?? ''
 
   const [watching, setWatching] = useState(false)
   // While something runs or waits, look again every 15 seconds; otherwise only on Refresh.
@@ -49,7 +52,7 @@ export function PipelinesPage() {
 
   const [pending, setPending] = useState<Pending | null>(null)
 
-  const set = (key: 'show' | 'q', value: string) =>
+  const set = (key: 'show' | 'q' | 'group', value: string) =>
     setParams(
       (prev) => {
         const next = new URLSearchParams(prev)
@@ -89,9 +92,14 @@ export function PipelinesPage() {
     )
   }
 
+  const groups = groupCounts(data.pipelines)
+  const inGroup = (p: Pipeline) =>
+    !group || (group === 'me' ? isPersonal(p) : groupsOf(p).some((g) => g.toLowerCase() === group.toLowerCase()))
+  const scoped = data.pipelines.filter(inGroup)
+
   const words = q.toLowerCase().split(/\s+/).filter(Boolean)
   const tile = TILES.find((t) => t.show === show)!
-  const shown = data.pipelines.filter(
+  const shown = scoped.filter(
     (p) =>
       tile.count(p) &&
       words.every((w) => [p.job, ...p.owners.flatMap((o) => [o.project, o.system, ...o.applications])].some((text) => text.toLowerCase().includes(w))),
@@ -103,7 +111,7 @@ export function PipelinesPage() {
         title="My pipelines"
         description={
           <>
-            The Jenkins pipelines your teams own and the ones you have started.
+            The Jenkins pipelines your groups can see and the ones you have started.
             {data.sync.finishedAt && <> History as of {since(data.sync.finishedAt)}.</>}
           </>
         }
@@ -121,9 +129,37 @@ export function PipelinesPage() {
         }
       />
 
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      {groups.length > 0 && (
+        <div className="mt-6 flex flex-wrap items-center gap-2" role="group" aria-label="Whose pipelines">
+          <span className="mr-1 text-xs text-muted-foreground">Whose</span>
+          {[
+            { value: '', label: 'Everything', n: data.pipelines.length, icon: null },
+            ...groups.map(({ name, n }) => ({ value: name, label: name, n, icon: Users })),
+            { value: 'me', label: 'Just you', n: data.pipelines.filter(isPersonal).length, icon: UserRound },
+          ].map(({ value, label, n, icon: Icon }) => {
+            const selected = group.toLowerCase() === value.toLowerCase()
+            return (
+              <button
+                key={value || 'all'}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => set('group', selected ? '' : value)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors hover:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none ${
+                  selected ? 'border-ring bg-secondary text-secondary-foreground' : 'bg-card'
+                }`}
+              >
+                {Icon && <Icon className="size-3.5 text-muted-foreground" aria-hidden />}
+                {label}
+                <span className="text-xs text-muted-foreground tabular-nums">{n}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {TILES.map(({ show: value, label, dot, count }) => {
-          const n = data.pipelines.filter(count).length
+          const n = scoped.filter(count).length
           const selected = show === value
           return (
             <button
@@ -148,7 +184,7 @@ export function PipelinesPage() {
       <Split aside={<Aside data={data} onAct={setPending} />} className="mt-6">
         <Section
           flush
-          title={show === 'all' ? 'Pipelines' : `${tile.label} pipelines`}
+          title={`${show === 'all' ? 'Pipelines' : `${tile.label} pipelines`}${group === 'me' ? ' — just yours' : group ? ` — ${groups.find((g) => g.name.toLowerCase() === group.toLowerCase())?.name ?? group}` : ''}`}
           description="Failing first, then by latest build. Each dot is a build, oldest on the left."
         >
           <div className="border-b px-4 py-3 sm:px-6">
@@ -273,6 +309,10 @@ function Reasons({ reasons }: { reasons: Reason[] }) {
         const [Icon, text, title] =
           r.kind === 'team'
             ? [Users, `${r.team} owns it`, `${r.team} owns ${r.project} in the inventories, and you are in ${r.team}`]
+            : r.kind === 'jenkins'
+              ? r.group
+                ? [KeyRound, `${r.sid} sees it in Jenkins`, `Jenkins lets ${r.sid} read this job (${r.via}), and you are in ${r.sid}`]
+                : [KeyRound, 'Jenkins lets you see it', `Jenkins grants you by name (${r.via})`]
             : r.kind === 'scope'
               ? [ShieldCheck, 'You operate it', r.via]
               : [UserRound, `You started ${r.builds} ${r.builds === 1 ? 'build' : 'builds'}`, `Most recently ${since(r.last)}`]
@@ -332,6 +372,8 @@ function Aside({ data, onAct }: { data: MyPipelines; onAct: (pending: Pending) =
         </div>
       </Section>
 
+      <WhoSees access={data.access} />
+
       <Section title="Waiting in the queue" description={data.queueError ? `Jenkins’ queue could not be read: ${data.queueError}` : undefined}>
         {data.queue.length === 0 ? (
           !data.queueError && <p className="text-sm text-muted-foreground">Nothing of yours is waiting.</p>
@@ -389,4 +431,45 @@ function lastSegment(job: string): string {
   } catch {
     return part
   }
+}
+
+/** The groups behind your pipelines, most pipelines first. */
+function groupCounts(pipelines: Pipeline[]): { name: string; n: number }[] {
+  const counts = new Map<string, { name: string; n: number }>()
+  for (const p of pipelines) {
+    for (const name of groupsOf(p)) {
+      const entry = counts.get(name.toLowerCase()) ?? { name, n: 0 }
+      entry.n++
+      counts.set(name.toLowerCase(), entry)
+    }
+  }
+  return [...counts.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name))
+}
+
+const STRATEGY = { 'role-strategy': 'its role-based strategy', matrix: 'the permissions on its folders and jobs' } as const
+
+/** Where who-sees-what comes from, so a missing pipeline has an explanation. */
+function WhoSees({ access }: { access: MyPipelines['access'] }) {
+  return (
+    <Section title="Who sees what">
+      <div className="space-y-2 text-sm text-muted-foreground">
+        {access.decides === 'jenkins' && (access.source === 'role-strategy' || access.source === 'matrix') ? (
+          <p>
+            Jenkins decides: a pipeline is listed when {STRATEGY[access.source]} lets one of your groups, or you, see it
+            {access.readAt && <>, as read {since(access.readAt)}</>}. Pipelines you started are listed too.
+          </p>
+        ) : (
+          <p>
+            Your teams’ pipelines come from the inventories: the systems a team you are in owns. Jenkins has no per-team rules the portal could read, so it does not narrow them.
+          </p>
+        )}
+        {!access.ok && access.error && <p className="text-warning">The last read of Jenkins’ rules failed: {access.error}{access.readAt && ' The rules read before still apply.'}</p>}
+        {access.warnings.map((w) => (
+          <p key={w} className="text-warning">
+            {w}
+          </p>
+        ))}
+      </div>
+    </Section>
+  )
 }

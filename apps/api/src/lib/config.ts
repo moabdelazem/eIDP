@@ -84,6 +84,8 @@ const schema = z.object({
   JENKINS_SYNC_SECONDS: z.coerce.number().min(0).default(60),
   /** Build history older than this is dropped. The page looks back 7 days. */
   JENKINS_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  /** How often who-may-see-which-job is read from Jenkins' authorization. 0 turns the timer off. */
+  JENKINS_ACCESS_SYNC_MINUTES: z.coerce.number().min(0).default(15),
 
   // Ollama, for the portal's AI features. Optional: without it they hide
   // themselves. Runs on our own machines, so what it reads stays inside.

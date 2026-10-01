@@ -94,9 +94,51 @@ function history(
   })
 }
 
+/**
+ * How the fake authorizes, for My pipelines: no per-team rules, the
+ * role-strategy plugin, or matrix grants in folders' and jobs' config.xml.
+ * Both rule sets say the same thing — Payments reads loan-scoring-api and
+ * payments-web, DEVOPS all of payments, dave (by name) agriland-api, and
+ * everyone inventories-lint — so tests can expect one answer from either.
+ */
+export type FakeAccess = 'none' | 'role-strategy' | 'matrix'
+
+const READ = 'hudson.model.Item.Read'
+const ROLES: Record<string, { pattern: string; read: boolean; sids: { type: 'USER' | 'GROUP'; sid: string }[] }> = {
+  'payments-devs': { pattern: 'payments/(loan-scoring-api|payments-web)', read: true, sids: [{ type: 'GROUP', sid: 'Payments' }] },
+  'payments-ops': { pattern: 'payments/.*', read: true, sids: [{ type: 'GROUP', sid: 'DEVOPS' }] },
+  'agri-dave': { pattern: 'agriland-api/.*', read: true, sids: [{ type: 'USER', sid: 'dave' }] },
+  'everyone-lint': { pattern: 'inventories-lint', read: true, sids: [{ type: 'GROUP', sid: 'authenticated' }] },
+  // Build without Read: not a grant to see.
+  builders: { pattern: '.*', read: false, sids: [{ type: 'GROUP', sid: 'Payments' }] },
+}
+
+/** Each matrix-auth spelling once, so the parser is tested on all three. */
+const MATRIX: Record<string, string> = {
+  payments: `<com.cloudbees.hudson.plugins.folder.properties.AuthorizationMatrixProperty>
+      <inheritanceStrategy class="org.jenkinsci.plugins.matrixauth.inheritance.InheritParentStrategy"/>
+      <permission>GROUP:${READ}:Payments</permission>
+      <permission>GROUP:${READ}:DEVOPS</permission>
+      <permission>GROUP:hudson.model.Item.Build:Payments</permission>
+    </com.cloudbees.hudson.plugins.folder.properties.AuthorizationMatrixProperty>`,
+  'payments/deploy-prod': `<hudson.security.AuthorizationMatrixProperty>
+      <inheritanceStrategy class="org.jenkinsci.plugins.matrixauth.inheritance.NonInheritingStrategy"/>
+      <permission>GROUP:${READ}:DEVOPS</permission>
+    </hudson.security.AuthorizationMatrixProperty>`,
+  'agriland-api': `<com.cloudbees.hudson.plugins.folder.properties.AuthorizationMatrixProperty>
+      <entry><user><name>dave</name><permission>${READ}</permission></user></entry>
+    </com.cloudbees.hudson.plugins.folder.properties.AuthorizationMatrixProperty>`,
+  'inventories-lint': `<hudson.security.AuthorizationMatrixProperty>
+      <permission>${READ}:authenticated</permission>
+    </hudson.security.AuthorizationMatrixProperty>`,
+}
+
 export function createFakeJenkins({ now = Date.now() } = {}) {
   const base = '/jenkins'
   let nextQueueId = 500
+  let access: FakeAccess = 'none'
+  /** config.xml reads, for tests to see what was asked. */
+  const configReads: string[] = []
 
   const root: Folder = {
     kind: 'folder',
@@ -255,6 +297,17 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
 
   app.get('/api/json', (c) => c.json({ _class: 'hudson.model.Hudson', jobs: root.children.map((child) => serialise(child, [])) }))
 
+  // The role-strategy plugin's REST API; a 404 when it is not installed.
+  app.get('/role-strategy/strategy/getAllRoles', (c) => {
+    if (access !== 'role-strategy') return c.html('<html>Not found</html>', 404)
+    return c.json(Object.fromEntries(Object.entries(ROLES).map(([name, role]) => [name, role.sids])))
+  })
+  app.get('/role-strategy/strategy/getRole', (c) => {
+    const role = access === 'role-strategy' ? ROLES[c.req.query('roleName') ?? ''] : undefined
+    if (!role) return c.html('<html>Not found</html>', 404)
+    return c.json({ permissionIds: { [role.read ? READ : 'hudson.model.Item.Build']: true }, pattern: role.pattern, sids: role.sids })
+  })
+
   app.get('/queue/api/json', (c) =>
     c.json({
       items: queue.map((q) => ({
@@ -295,6 +348,12 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
     }
     const rest = segments.slice(i)
     const node = find(names)
+    // Any item's configuration, folders included — where matrix grants live.
+    if (node && rest.join('/') === 'config.xml') {
+      configReads.push(names.join('/'))
+      const property = access === 'matrix' ? (MATRIX[names.join('/')] ?? '') : ''
+      return c.body(`<?xml version='1.1' encoding='UTF-8'?>\n<item>\n  <properties>\n    ${property}\n  </properties>\n</item>\n`, 200, { 'content-type': 'application/xml' })
+    }
     if (!node || node.kind !== 'job') return c.html('<html>Not found</html>', 404)
     const job = node
     const fullName = names.join('/')
@@ -343,12 +402,30 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
     return c.html('<html>Not found</html>', 404)
   })
 
-  return { app, root, queue, agents, triggered, stopped, reads, find, jobs, addBuild }
+  return {
+    app,
+    root,
+    queue,
+    agents,
+    triggered,
+    stopped,
+    reads,
+    configReads,
+    find,
+    jobs,
+    addBuild,
+    setAccess: (next: FakeAccess) => {
+      access = next
+    },
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const port = Number(process.env.FAKE_JENKINS_PORT ?? 4030)
-  serve({ fetch: createFakeJenkins().app.fetch, port })
-  console.log(`fake Jenkins on http://localhost:${port}/jenkins`)
+  const fake = createFakeJenkins()
+  // FAKE_JENKINS_ACCESS=role-strategy or matrix for per-team rules.
+  fake.setAccess((process.env.FAKE_JENKINS_ACCESS as FakeAccess | undefined) ?? 'none')
+  serve({ fetch: fake.app.fetch, port })
+  console.log(`fake Jenkins on http://localhost:${port}/jenkins (access rules: ${process.env.FAKE_JENKINS_ACCESS ?? 'none'})`)
   console.log(`  JENKINS_URL=http://localhost:${port}/jenkins JENKINS_USER=eidp JENKINS_TOKEN=fake`)
 }

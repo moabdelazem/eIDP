@@ -4,6 +4,7 @@ import { config } from './lib/config.ts'
 import { ensureSchema } from './lib/db.ts'
 import { syncCatalog } from './services/catalog.ts'
 import { syncJenkins } from './services/jenkins-sync.ts'
+import { syncJenkinsAccess } from './services/jenkins-access.ts'
 import { explainNewFailures } from './services/auto-explain.ts'
 import { recoverInterrupted } from './services/requests.ts'
 
@@ -47,4 +48,18 @@ if (config.JENKINS_URL && config.JENKINS_USER && config.JENKINS_TOKEN && config.
       .catch((err) => console.error('jenkins sync failed:', err instanceof Error ? err.message : err))
   void refreshJenkins()
   setInterval(refreshJenkins, config.JENKINS_SYNC_SECONDS * 1000).unref()
+}
+
+/**
+ * Who Jenkins lets see which job, for My pipelines. Slower to change than
+ * builds and costlier to read (one call per item under matrix), so on its own
+ * timer. A failed read keeps the previous rules and reports why.
+ */
+if (config.JENKINS_URL && config.JENKINS_USER && config.JENKINS_TOKEN && config.JENKINS_ACCESS_SYNC_MINUTES > 0) {
+  const refreshAccess = () =>
+    syncJenkinsAccess()
+      .then((state) => !state.ok && console.error('jenkins access read failed:', state.error))
+      .catch((err) => console.error('jenkins access read failed:', err instanceof Error ? err.message : err))
+  void refreshAccess()
+  setInterval(refreshAccess, config.JENKINS_ACCESS_SYNC_MINUTES * 60_000).unref()
 }
