@@ -31,7 +31,11 @@ let auditFloor = 0
 let binding: string | null = null
 
 const forget = () =>
-  Promise.all(['jenkins_builds', 'jenkins_jobs', 'jenkins_sync'].map((table) => query(`delete from ${table} where server = $1`, [url])))
+  Promise.all(
+    ['jenkins_builds', 'jenkins_jobs', 'jenkins_sync', 'jenkins_job_access', 'jenkins_access_sync'].map((table) =>
+      query(`delete from ${table} where server = $1`, [url]),
+    ),
+  )
 
 before(async () => {
   await ensureSchema()
@@ -40,7 +44,9 @@ before(async () => {
   await forget()
   await query('delete from catalog_systems where dir = $1', [SYSTEM])
   await query(`insert into catalog_systems (dir, project_name, teams) values ($1, 'PipeLab', '{"dev":"Payments","prd":"DEVOPS"}')`, [SYSTEM])
-  for (const app of ['loan-scoring-api', 'payments-web']) {
+  // legacy-batch last built two months ago, past retention: nobody "started" it,
+  // so only ownership can put it on a list.
+  for (const app of ['loan-scoring-api', 'payments-web', 'legacy-batch']) {
     await query(
       `insert into catalog_applications (id, system_dir, group_name, name, environment, repository) values ($1, $2, $3, $3, null, $3)`,
       [`${SYSTEM}/${app}`, SYSTEM, app],
@@ -97,7 +103,7 @@ async function startedBy(uid: string): Promise<string[]> {
 
 test('a pipeline is yours when your team owns it or you started it, and says which', async () => {
   const list = await mine('bob')
-  const expected = new Set(['payments/loan-scoring-api', 'payments/payments-web', ...(await startedBy('bob'))])
+  const expected = new Set(['payments/loan-scoring-api', 'payments/payments-web', 'legacy-batch', ...(await startedBy('bob'))])
   assert.deepEqual(new Set(list.pipelines.map((p) => p.job)), expected)
 
   const owned = pipeline(list, 'payments/loan-scoring-api')
@@ -188,4 +194,56 @@ test('a pipeline operator bound to the team may act on its pipelines, and only t
 
   // The Jenkins page itself stays DevOps': a scoped operator is not a viewer.
   assert.equal((await call('bob', 'GET', '/jenkins')).status, 403)
+
+  await query('delete from rbac_bindings where id = $1', [binding])
+  binding = null
+})
+
+// ---- Jenkins' own rules -------------------------------------------------------------
+
+const { syncJenkinsAccess } = await import('../services/jenkins-access.ts')
+
+for (const strategy of ['role-strategy', 'matrix'] as const) {
+  test(`with ${strategy} rules, Jenkins decides what each group sees`, async () => {
+    fake.setAccess(strategy)
+    const state = await syncJenkinsAccess()
+    assert.equal(state.ok, true, state.error ?? '')
+    assert.equal(state.source, strategy)
+
+    const bobs = await mine('bob')
+    assert.equal((bobs as any).access.decides, 'jenkins')
+    // Payments may read these two, and bob's list says it is Jenkins that lets him.
+    for (const job of ['payments/loan-scoring-api', 'payments/payments-web']) {
+      const reason = pipeline(bobs, job).reasons.find((r: any) => r.kind === 'jenkins')
+      assert.deepEqual({ sid: reason.sid, group: reason.group }, { sid: 'Payments', group: true }, job)
+    }
+    // The catalog says Payments owns legacy-batch, but Jenkins lets nobody in
+    // Payments read it — and bob never started it — so it is not his to see.
+    assert.equal(pipeline(bobs, 'legacy-batch'), undefined)
+    const number = (await query<{ number: number }>('select max(number) as number from jenkins_builds where server = $1 and job = $2', [url, 'payments/loan-scoring-api'])).rows[0]!.number
+    assert.equal((await call('bob', 'GET', `/jenkins/run?job=legacy-batch&number=3`)).status, 404)
+    assert.equal((await call('bob', 'GET', `/jenkins/run?job=payments/loan-scoring-api&number=${number}`)).status, 200)
+
+    // dave is in no group, but Jenkins grants him agriland-api by name.
+    const daves = await mine('dave')
+    assert.deepEqual(daves.pipelines.map((p) => p.job).sort(), ['agriland-api/feature%2Fscoring', 'agriland-api/main'])
+    assert.deepEqual(
+      daves.pipelines[0].reasons.map((r: any) => ({ kind: r.kind, sid: r.sid, group: r.group })),
+      [{ kind: 'jenkins', sid: 'dave', group: false }],
+    )
+    const daveBuild = daves.pipelines.find((p) => p.job === 'agriland-api/main').last.number
+    assert.equal((await call('dave', 'GET', `/jenkins/run?job=agriland-api/main&number=${daveBuild}`)).status, 200)
+    // Seeing is not acting.
+    assert.equal(daves.pipelines.every((p) => p.canOperate === false), true)
+  })
+}
+
+test('with no per-team rules in Jenkins, the catalog decides again', async () => {
+  fake.setAccess('none')
+  const state = await syncJenkinsAccess()
+  assert.equal(state.source, 'none')
+  const bobs = await mine('bob')
+  assert.equal((bobs as any).access.decides, 'catalog')
+  assert.ok(pipeline(bobs, 'legacy-batch'), 'owned in the catalog, so shown')
+  assert.deepEqual((await mine('dave')).pipelines, [])
 })

@@ -516,10 +516,29 @@ item behind `pipelines.view` (a `member` permission). Jenkins knows nothing of
 our teams, so a job is tied to the catalog by name — it belongs to every
 application whose `repository` is one of its path segments
 (`payments/loan-scoring-api`, multibranch `agriland-api/main`), and so to that
-system's teams. A pipeline is yours when a team you are in owns it, when a
-scoped binding lets you operate it, or when you started a build history still
-holds (`Started by user <uid or display name>` — Jenkins writes whichever its
-realm gives). Each row says which, so nobody wonders why it is there.
+system's teams. A pipeline is yours when Jenkins lets one of your groups (or
+you, by name) read it, when a team you are in owns it, when a scoped binding
+lets you operate it, or when you started a build history still holds
+(`Started by user <uid or display name>` — Jenkins writes whichever its realm
+gives). Each row says which, so nobody wonders why it is there, and the page
+narrows to one group at a time (`?group=Payments`, or `me` for just yours).
+
+**Jenkins decides what a team sees** when its rules can be read.
+`integrations/jenkins/access.ts` reads either the role-strategy plugin (project
+roles: a regex over full names, matched whole and case-sensitively, and their
+users and groups) or matrix grants in each folder's and job's `config.xml`
+(all three spellings matrix-auth has written; grants flow down folders unless
+an item stops inheriting). Only Job/Read counts; global roles and grants to
+`authenticated`/`anonymous` are dropped, because they name no team.
+`services/jenkins-access.ts` keeps them in `jenkins_job_access` every
+`JENKINS_ACCESS_SYNC_MINUTES` (15); a failed read keeps the last rules. Once
+rules naming someone exist, catalog ownership alone no longer lists a pipeline
+— the portal reads with a service account that sees everything, and must not
+show a team what Jenkins hides from it. Without them (`source: none`, or the
+service account may not read roles — it needs to administer them, or
+Job/ExtendedRead for matrix), the catalog decides, and the page's *Who sees
+what* says which. The fake has both (`FAKE_JENKINS_ACCESS=role-strategy|matrix`),
+stating one rule set two ways so tests expect one answer from either.
 
 Acting is `jenkins.operate`, **scoped**: bound globally it reaches every job
 (`build-operator`), bound to a team or project only the pipelines that team or

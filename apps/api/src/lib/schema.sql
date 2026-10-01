@@ -238,6 +238,34 @@ create table if not exists jenkins_sync (
   jobs_read   integer not null default 0
 );
 
+-- Who Jenkins itself lets read each job, from its role-based strategy or its
+-- matrix grants (integrations/jenkins/access.ts). Derived data, replaced
+-- whole by each read (services/jenkins-access.ts); grants to everyone
+-- (authenticated, anonymous) are never stored — they name no team.
+create table if not exists jenkins_job_access (
+  server   text not null,
+  job      text not null,
+  sid      text not null,
+  -- user | group | either (an old matrix grant does not say which)
+  sid_type text not null,
+  -- what grants it: "role payments-devs", "folder payments", "the job"
+  via      text not null,
+  primary key (server, job, sid, sid_type, via)
+);
+
+create index if not exists jenkins_job_access_sid_idx on jenkins_job_access (server, lower(sid));
+
+create table if not exists jenkins_access_sync (
+  server      text primary key,
+  read_at     timestamptz,
+  -- role-strategy | matrix | none, from the last read that worked
+  source      text,
+  grants      integer not null default 0,
+  ok          boolean not null default false,
+  error       text,
+  warnings    text[] not null default '{}'
+);
+
 -- A model's explanation of a failed Jenkins build, kept so each failure is
 -- explained once however many people open it. Keyed by prompt version and
 -- model too: a new prompt or a bigger model is a new answer, not the old one
