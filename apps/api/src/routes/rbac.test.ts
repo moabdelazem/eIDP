@@ -33,7 +33,6 @@ const DEVOPS_ONLY: [method: string, path: string][] = [
   ['GET', '/rbac/audit'],
   ['POST', '/auth/assume'],
   ['GET', '/jenkins'],
-  ['GET', '/jenkins/run?job=x&number=1'],
   ['GET', '/jenkins/audit'],
   ['GET', '/jenkins/stats'],
   ['GET', '/jenkins/runs'],

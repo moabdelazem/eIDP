@@ -4,6 +4,7 @@ import { validate } from '../lib/validate.ts'
 import { accessFrom, requireAuth, requirePermission, type AppEnv } from '../middleware/auth.ts'
 import { can } from '../services/rbac.ts'
 import * as jenkins from '../services/jenkins.ts'
+import * as pipelines from '../services/pipelines.ts'
 import { syncJenkins } from '../services/jenkins-sync.ts'
 import * as explainer from '../services/build-explainer.ts'
 import * as autoExplain from '../services/auto-explain.ts'
@@ -22,7 +23,12 @@ const RunFilter = Window.extend({
   offset: z.coerce.number().int().min(0).max(100_000).default(0),
 })
 
-/** The Jenkins page's API. Reading needs `jenkins.view`; acting, `jenkins.operate`. */
+/**
+ * The Jenkins page's API. Reading needs `jenkins.view`. One build, and acting
+ * on it, are also open to people whose pipeline it is (`services/pipelines.ts`):
+ * seeing it to anyone it is theirs, acting to `jenkins.operate` bound
+ * globally or to its team or project.
+ */
 export const jenkinsRoutes = new Hono<AppEnv>()
   .use('*', requireAuth)
 
@@ -46,15 +52,17 @@ export const jenkinsRoutes = new Hono<AppEnv>()
     c.json(await jenkins.parameters(c.req.valid('query').window)),
   )
 
-  .get('/run', requirePermission('jenkins.view'), validate('query', BuildRef), async (c) => {
+  .get('/run', validate('query', BuildRef), async (c) => {
     const { job, number } = c.req.valid('query')
-    return c.json(await jenkins.run(job, number))
+    const { operate } = await pipelines.demandView(await accessFrom(c), me(c), job)
+    return c.json({ ...(await jenkins.run(job, number)), canOperate: operate })
   })
 
   // "What went wrong?" — the kept explanation, and whether the AI is there to
   // make one. Seeing the build is not enough: asking the model is `ai.use`.
-  .get('/explain', requirePermission('jenkins.view'), requirePermission('ai.use'), validate('query', BuildRef), async (c) => {
+  .get('/explain', requirePermission('ai.use'), validate('query', BuildRef), async (c) => {
     const { job, number } = c.req.valid('query')
+    await pipelines.demandView(await accessFrom(c), me(c), job)
     const ai = ollamaConfig()
     const explanation = ai ? await explainer.cached(job, number) : null
     return c.json({
@@ -65,8 +73,9 @@ export const jenkinsRoutes = new Hono<AppEnv>()
     })
   })
 
-  .post('/explain', requirePermission('jenkins.view'), requirePermission('ai.use'), validate('json', BuildRef.extend({ fresh: z.boolean().optional() })), async (c) => {
+  .post('/explain', requirePermission('ai.use'), validate('json', BuildRef.extend({ fresh: z.boolean().optional() })), async (c) => {
     const { job, number, fresh } = c.req.valid('json')
+    await pipelines.demandView(await accessFrom(c), me(c), job)
     return c.json(await explainer.explain(job, number, actor(c), { fresh }))
   })
 
@@ -81,19 +90,21 @@ export const jenkinsRoutes = new Hono<AppEnv>()
     return c.json(state)
   })
 
-  .post('/rebuild', requirePermission('jenkins.operate'), validate('json', BuildRef), async (c) => {
+  // Acting needs `jenkins.operate` somewhere to get past the guard; the
+  // service then checks it covers this pipeline's team or project.
+  .post('/rebuild', requirePermission('jenkins.operate', { scoped: true }), validate('json', BuildRef), async (c) => {
     const { job, number } = c.req.valid('json')
-    return c.json(await jenkins.rebuild(job, number, actor(c)), 202)
+    return c.json(await pipelines.rebuild(await accessFrom(c), me(c), job, number, actor(c)), 202)
   })
 
-  .post('/stop', requirePermission('jenkins.operate'), validate('json', BuildRef), async (c) => {
+  .post('/stop', requirePermission('jenkins.operate', { scoped: true }), validate('json', BuildRef), async (c) => {
     const { job, number } = c.req.valid('json')
-    await jenkins.stop(job, number, actor(c))
+    await pipelines.stop(await accessFrom(c), me(c), job, number, actor(c))
     return c.json({ ok: true }, 202)
   })
 
-  .post('/queue/:id/cancel', requirePermission('jenkins.operate'), async (c) => {
-    await jenkins.cancel(Number(c.req.param('id')) || 0, actor(c))
+  .post('/queue/:id/cancel', requirePermission('jenkins.operate', { scoped: true }), async (c) => {
+    await pipelines.cancel(await accessFrom(c), me(c), Number(c.req.param('id')) || 0, actor(c))
     return c.json({ ok: true })
   })
 
@@ -101,3 +112,6 @@ function actor(c: { get: (key: 'jwtPayload') => { sub: string; name: string } })
   const claims = c.get('jwtPayload')
   return { uid: claims.sub, name: claims.name }
 }
+
+/** Who the caller is, as Jenkins would name them in "Started by user …". */
+const me = actor

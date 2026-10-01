@@ -35,6 +35,7 @@ export type Permission =
   | 'rbac.view_as'
   | 'jenkins.view'
   | 'jenkins.operate'
+  | 'pipelines.view'
   | 'ai.use'
   | 'ai.chat'
 export type ScopeType = 'global' | 'team' | 'project'

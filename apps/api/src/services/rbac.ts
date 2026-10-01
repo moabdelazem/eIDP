@@ -26,7 +26,8 @@ export const PERMISSIONS = {
   'rbac.manage': 'Grant and revoke roles, and read the audit log',
   'rbac.view_as': 'See the portal as someone else would, read-only',
   'jenkins.view': 'See Jenkins jobs, recent runs, failures, the queue and agents',
-  'jenkins.operate': 'Re-run and stop Jenkins builds, and take them out of the queue',
+  'jenkins.operate': 'Re-run and stop Jenkins builds, and take them out of the queue — scoped, only the pipelines its team or project owns',
+  'pipelines.view': 'See the Jenkins pipelines your teams own and the builds you started',
   'ai.use': 'Ask the portal’s AI (Ollama, on our own machines) to explain what it shows',
   'ai.chat': 'Chat with the portal’s assistant, which looks up only what you may already see',
 } as const
@@ -37,7 +38,7 @@ export const ROLES = {
   member: {
     label: 'Member',
     description: 'Everyone who can sign in. Built in; never bound by hand.',
-    permissions: ['catalog.view', 'requests.create', 'ai.chat'],
+    permissions: ['catalog.view', 'requests.create', 'ai.chat', 'pipelines.view'],
   },
   'team-lead': {
     label: 'Team lead',
@@ -48,6 +49,11 @@ export const ROLES = {
     label: 'Approver',
     description: 'Decides every request and runs catalog syncs, without managing access.',
     permissions: ['requests.decide', 'requests.decide_access', 'catalog.sync'],
+  },
+  'pipeline-operator': {
+    label: 'Pipeline operator',
+    description: 'Re-runs, stops and dequeues builds of the pipelines its scope owns. Bind it with a team or project scope.',
+    permissions: ['pipelines.view', 'jenkins.operate'],
   },
   'build-operator': {
     label: 'Build operator',

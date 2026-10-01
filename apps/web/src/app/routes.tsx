@@ -18,6 +18,7 @@ import { AccessPage } from '@/features/admin/access-page.tsx'
 import { JenkinsPage } from '@/features/jenkins/jenkins-page.tsx'
 import { AssistantPage } from '@/features/assistant/assistant-page.tsx'
 import { BuildPage } from '@/features/jenkins/build-page.tsx'
+import { PipelinesPage } from '@/features/pipelines/pipelines-page.tsx'
 import { RequireSession } from './require-session.tsx'
 
 export function AppRoutes() {
@@ -53,6 +54,11 @@ export function AppRoutes() {
           <Route path="requests/:requestId" element={<RequestPage />} />
           <Route path="me" element={<ProfilePage />} />
           {/* One route with an optional id: a new chat gets its URL mid-answer, and must not remount while it streams. */}
+          {/* A build of your own pipeline opens on the Jenkins build page; the API checks it is yours. */}
+          <Route element={<RequirePermission permission="pipelines.view" />}>
+            <Route path="pipelines" element={<PipelinesPage />} />
+            <Route path="pipelines/build" element={<BuildPage />} />
+          </Route>
           <Route element={<RequirePermission permission="ai.chat" />}>
             <Route path="assistant/:conversationId?" element={<AssistantPage />} />
           </Route>

@@ -429,7 +429,7 @@ that, a `.env` copied from `.env.example` failed to boot on its blank
 | Layer | What | Where |
 |---|---|---|
 | **Permission** | one thing the portal can do (`requests.decide`, `rbac.manage`, …) | `PERMISSIONS`, in code |
-| **Role** | a named bundle of permissions (`member`, `team-lead`, `approver`, `build-operator`, `devops-admin`) | `ROLES`, in code |
+| **Role** | a named bundle of permissions (`member`, `team-lead`, `approver`, `pipeline-operator`, `build-operator`, `devops-admin`) | `ROLES`, in code |
 | **Binding** | a directory group or one user → a role, everywhere or limited to a `team` or `project` | `rbac_bindings`, managed on the Access page (`/access`) |
 
 Two bindings are **built in** and are not rows: everyone is a `member`
@@ -509,6 +509,32 @@ confirmation. Both are `devops-admin`'s, and `build-operator` bundles them to
 bind to anyone else. Every action goes to Jenkins as the service account, so
 `jenkins_audit` records who asked, refused attempts included; the Activity tab
 reads it, and the tests delete only rows they made (`id > ` the max before).
+
+**My pipelines** (`/pipelines`, `features/pipelines/`, `services/pipelines.ts`)
+is the same Jenkins for everyone else: each person's own pipelines, a browse
+item behind `pipelines.view` (a `member` permission). Jenkins knows nothing of
+our teams, so a job is tied to the catalog by name — it belongs to every
+application whose `repository` is one of its path segments
+(`payments/loan-scoring-api`, multibranch `agriland-api/main`), and so to that
+system's teams. A pipeline is yours when a team you are in owns it, when a
+scoped binding lets you operate it, or when you started a build history still
+holds (`Started by user <uid or display name>` — Jenkins writes whichever its
+realm gives). Each row says which, so nobody wonders why it is there.
+
+Acting is `jenkins.operate`, **scoped**: bound globally it reaches every job
+(`build-operator`), bound to a team or project only the pipelines that team or
+project owns (`pipeline-operator`, which also carries `pipelines.view`). Being
+in the owning team shows a pipeline but never lets you act on it — a rerun can
+deploy to production, so that is a binding someone made on purpose. The
+`/jenkins` action routes take anyone holding `jenkins.operate` anywhere and the
+service checks the job (`demandOperate`); a queue id says nothing about whose
+it is, so `cancel` reads the job from the queue first. A build of your own
+pipeline opens at `/pipelines/build` on the Jenkins build page (`BuildPage`,
+one of `features/jenkins`' public pieces with `ActionDialog`, `result.tsx` and
+the types): `GET /jenkins/run` answers a job that is not yours with 404, and
+returns `canOperate` so the page never guesses. Links into the Jenkins page's
+search show only to `jenkins.view`. The tests are `routes/pipelines.test.ts`;
+they put their own system in the catalog under lock 4202.
 
 **History is the portal's own copy.** A day or a week of builds, searchable by
 parameter, cannot be swept from Jenkins on every look, so
