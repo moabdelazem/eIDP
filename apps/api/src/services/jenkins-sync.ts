@@ -73,6 +73,7 @@ async function run(): Promise<SyncState> {
     // builds are read next time rather than skipped for good.
     const marked = heads.map((h) => (unreadable.includes(h.fullName) ? { ...h, lastNumber: seen.get(h.fullName) ?? null } : h))
     await store(server, marked, kept)
+    await resolveAgents(server)
 
     const error = unreadable.length ? `Could not read ${unreadable.length} job(s): ${unreadable.slice(0, 5).join(', ')}` : null
     return await finish(server, true, error, kept.length, plans.length)
@@ -148,7 +149,7 @@ async function store(server: string, heads: JobHead[], builds: HistoryBuild[]): 
                   url text, built_on text, parameters jsonb, causes jsonb, authors jsonb)
          on conflict (server, job, number) do update set
            result = excluded.result, started_at = excluded.started_at, duration_ms = excluded.duration_ms,
-           url = excluded.url, built_on = excluded.built_on, parameters = excluded.parameters, causes = excluded.causes,
+           url = excluded.url, built_on = coalesce(excluded.built_on, jenkins_builds.built_on), parameters = excluded.parameters, causes = excluded.causes,
            authors = excluded.authors`,
         [
           server,
@@ -202,6 +203,36 @@ function toState(row: SyncRow): SyncState {
     builds: row.builds,
     jobsRead: row.jobs_read,
   }
+}
+
+/** Builds whose agent is looked up in one sync — newest first; the rest wait for the next. */
+const AGENTS_PER_SYNC = 200
+
+/**
+ * Fills in the agent of builds Jenkins did not name one for — every Pipeline
+ * run — from its stages or its log (`pipelineAgents`). A running build is
+ * asked again until it ends, since its later stages may move; a finished one
+ * once, found or not. A build that cannot be read is left to try next time.
+ */
+async function resolveAgents(server: string): Promise<void> {
+  const { rows } = await query<{ job: string; number: number; result: string }>(
+    `select job, number, result from jenkins_builds
+      where server = $1 and built_on is null and not agent_checked
+      order by started_at desc limit $2`,
+    [server, AGENTS_PER_SYNC],
+  )
+  await pool(rows, CONCURRENCY, async ({ job, number, result }) => {
+    let agents: string[]
+    try {
+      agents = await jenkins.pipelineAgents(job, number)
+    } catch {
+      return
+    }
+    await query(
+      `update jenkins_builds set built_on = $4, agent_checked = $5 where server = $1 and job = $2 and number = $3`,
+      [server, job, number, agents.length ? agents.join(', ') : null, result !== 'running'],
+    )
+  })
 }
 
 /** Runs `work` over `items`, `size` at a time. */

@@ -191,6 +191,30 @@ create table if not exists jenkins_audit (
   error       text
 );
 
+-- Ignoring a failure is recorded beside the actions: it changes what DevOps
+-- see as broken. `note` carries the reason given.
+alter table jenkins_audit add column if not exists note text;
+alter table jenkins_audit drop constraint if exists jenkins_audit_action_check;
+alter table jenkins_audit add constraint jenkins_audit_action_check
+  check (action in ('rebuild', 'stop', 'cancel', 'ignore', 'unignore'));
+
+-- Failing jobs set aside on purpose — a job known to be broken and being dealt
+-- with, or abandoned — so "failing now" is what still needs someone. One row
+-- per job; it holds until the job passes after `from_number`, or until
+-- `expires_at` (null: until someone stops ignoring it).
+create table if not exists jenkins_ignored (
+  server          text not null,
+  job             text not null,
+  from_number     integer not null,
+  until_pass      boolean not null,
+  expires_at      timestamptz,
+  reason          text not null,
+  ignored_by      text not null,
+  ignored_by_name text not null,
+  created_at      timestamptz not null default now(),
+  primary key (server, job)
+);
+
 -- Jenkins build history, so the Jenkins page can say what happened over a day
 -- or a week and search builds by their parameters without sweeping Jenkins
 -- for thousands of builds on every look. Derived data: rebuilt by the sync
@@ -225,6 +249,11 @@ create table if not exists jenkins_builds (
 -- Who wrote the commits each build built: a push builds as the service account
 -- that triggered it, so the author is who the run is for (My pipelines).
 alter table jenkins_builds add column if not exists authors text[] not null default '{}';
+
+-- A Pipeline run does not say which agent it ran on (only freestyle builds
+-- report builtOn), so the sync asks its stages or its log afterwards, a batch
+-- at a time; this marks a finished build already asked, found or not.
+alter table jenkins_builds add column if not exists agent_checked boolean not null default false;
 
 create index if not exists jenkins_builds_started_idx on jenkins_builds (server, started_at desc);
 create index if not exists jenkins_builds_running_idx on jenkins_builds (server, job) where result = 'running';

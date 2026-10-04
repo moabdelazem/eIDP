@@ -8,19 +8,8 @@ import { useProfile } from '@/features/auth/profile-context.tsx'
 import { since } from '@/features/requests/status.tsx'
 import { ApiError } from '@/lib/api-client.ts'
 import { useResource } from '@/lib/use-resource.ts'
-import { jenkinsApi, type Category, type Explanation, type Result } from './api.ts'
+import { CATEGORY, jenkinsApi, type Explanation, type Result } from './api.ts'
 
-const CATEGORY: Record<Category, string> = {
-  test_failure: 'Test failure',
-  compilation: 'Compilation',
-  dependency: 'Dependency',
-  infrastructure: 'Infrastructure',
-  configuration: 'Configuration',
-  permission: 'Permission',
-  timeout: 'Timeout',
-  flaky: 'Looks flaky',
-  unknown: 'Unclear',
-}
 
 /**
  * "What went wrong?" on a failed build: the model on our own Ollama reads the

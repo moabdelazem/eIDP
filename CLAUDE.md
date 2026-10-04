@@ -200,7 +200,15 @@ fetched, and a password in `JENKINS_TOKEN` would fail every POST. A job's full
 name carries its folders (`payments/loan-api`), so `jobPath` turns it into
 repeated `job/` segments and the routes take it as a value, not a path.
 Multibranch branches are named with an encoded slash (`feature%2Fx`), encoded
-once more in the URL — don't "fix" the double encoding. Build logs are read as a
+once more in the URL — don't "fix" the double encoding. **Only freestyle builds
+report `builtOn`**; a Pipeline run never does, so the agent comes from its
+stages' `execNode` (Stage View), else the "Running on X in …" lines at the
+start of its log (`pipelineAgents`, reading only the first 64 KB). The sync
+fills `built_on` for builds without one, newest first, `AGENTS_PER_SYNC` at a
+time (`agent_checked` marks a finished build already asked); a run that moved
+lists them `a, b`. The fake reports `builtOn` only for freestyle jobs, as
+Jenkins does — it once reported it for all, which is how an empty Agent column
+shipped. Build logs are read as a
 stream keeping only the last 64 KB, where a failure explains itself.
 `fake-server.ts` stands in for it (`pnpm --filter @eidp/api jenkins:fake`).
 
@@ -572,6 +580,26 @@ that is not yours with 404, and returns `canOperate` so the page never guesses.
 Links into the Jenkins page's search show only to `jenkins.view`. The tests are
 `routes/pipelines.test.ts`; they put their own systems in the catalog under
 lock 4202.
+
+**Ignoring a failure** (`jenkins_ignored`, `POST /jenkins/ignore` and
+`/unignore`, global `jenkins.operate`) sets a failing job aside — known broken,
+being dealt with, or abandoned — so "failing now" is what still needs someone.
+A reason is required; it holds until the job passes again after the build it
+was ignored at, or for 1/7/30 days, or until someone stops it
+(`IGNORE_HOLDS`, the one SQL every reader uses). Ignored jobs leave the
+Failing tab, its count and the automatic explanations, are listed under
+Ignored with who, why and until when, and are marked in "Failed most". Both
+are written to `jenkins_audit` (`note` holds the reason), so the Activity tab
+shows them.
+
+The **Dashboard** also answers, each in its own chart: build time (typical and
+slowest 5%, one hue, dashed for the tail — never a second axis), what starts
+builds (by person or service account, SCM, timer, upstream), builds per agent
+(with failure rate and busy time in the tooltip), why builds failed (the
+model's categories, labelled as its reading), and time to fix — the median from
+a job's first failure to its next pass, against the window before. Ranked
+charts are top eight plus "Other", from the API. `RankedBars` and
+`DurationChart` live in the lazy `charts.tsx` with the rest.
 
 **History is the portal's own copy.** A day or a week of builds, searchable by
 parameter, cannot be swept from Jenkins on every look, so
