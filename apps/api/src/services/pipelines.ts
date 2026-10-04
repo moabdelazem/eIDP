@@ -1,7 +1,9 @@
 import { EVERYONE_SID, jenkinsConfig, webUrl } from '../integrations/jenkins/index.ts'
 import type { Parameter, QueueItem } from '../integrations/jenkins/index.ts'
+import { ollamaConfig } from '../integrations/ollama/index.ts'
 import { query } from '../lib/db.ts'
 import { ApiError } from '../lib/errors.ts'
+import * as explainer from './build-explainer.ts'
 import * as jenkins from './jenkins.ts'
 import { accessState, grantsReaching, syncJenkinsAccess, type AccessState, type Reach } from './jenkins-access.ts'
 import { syncState, type SyncState } from './jenkins-sync.ts'
@@ -62,6 +64,8 @@ export type RunView = jenkins.Run & {
   /** Yours by name: you started it, or it built your commit. */
   personal: boolean
   canOperate: boolean
+  /** For a failed or unstable run, the AI's kept answer on why — when the caller may use it and one was made. */
+  explanation: explainer.Brief | null
 }
 
 /** One job — or, for a shared job, one job for one project — summed over the runs you may see. */
@@ -99,6 +103,8 @@ export type MyRuns = {
   queue: QueueView[]
   /** Why the queue could not be read, when it could not. History still shows. */
   queueError: string | null
+  /** Whether the caller can ask the AI why a run failed: null when they may not, else whether it is set up. */
+  ai: { configured: boolean; model: string | null } | null
 }
 
 /** Who someone is, every way Jenkins may write them: login, display name, email. */
@@ -308,7 +314,14 @@ export async function mine(access: Access, me: Me, window: RunWindow = '7d'): Pr
   for (const row of rows.slice(0, RUN_LIMIT)) {
     const run = jenkins.toRun(row)
     const verdict = judge(ctx, { job: run.job, parameters: run.parameters, causes: run.causes, authors: row.authors })
-    if (verdict.reasons.length > 0) runs.push({ ...run, ...verdict })
+    if (verdict.reasons.length > 0) runs.push({ ...run, ...verdict, explanation: null })
+  }
+
+  // Why each failed run failed, where the AI has already said — one query for the lot.
+  const ai = can(access, 'ai.chat') ? ollamaConfig() : undefined
+  if (ai) {
+    const kept = await explainer.keptFor(runs.filter((r) => r.result === 'failure' || r.result === 'unstable'))
+    for (const run of runs) run.explanation = kept.get(`${run.job}#${run.number}`) ?? null
   }
 
   let queue: QueueView[] = []
@@ -322,7 +335,10 @@ export async function mine(access: Access, me: Me, window: RunWindow = '7d'): Pr
     queueError = err instanceof Error ? err.message : String(err)
   }
 
-  return { url, sync, access: ctx.rules, window, runs, truncated, pipelines: pipelinesOf(runs, queue), queue, queueError }
+  return {
+    url, sync, access: ctx.rules, window, runs, truncated, pipelines: pipelinesOf(runs, queue), queue, queueError,
+    ai: ai === undefined ? null : { configured: ai !== null, model: ai?.model ?? null },
+  }
 }
 
 /** A job's runs, split per project when its runs name one — so a shared job is a row per project. */

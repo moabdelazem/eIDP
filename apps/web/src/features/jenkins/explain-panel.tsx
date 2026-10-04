@@ -23,7 +23,8 @@ import { CATEGORY, jenkinsApi, type Explanation, type Result } from './api.ts'
  * an answer is kept for everyone. It says it is generated, by which model, for whom and when,
  * because an explanation is only as good as the reader's check of it.
  *
- * Shows only to holders of `ai.use`, on a failed or unstable build, when
+ * Shows to anyone who may see the build — the Jenkins page and My pipelines
+ * alike, `ai.chat` being everyone's — on a failed or unstable build, when
  * Ollama is configured.
  */
 export function ExplainPanel({
@@ -38,7 +39,7 @@ export function ExplainPanel({
   onJump: (line: number) => void
 }) {
   const { can } = useProfile()
-  const allowed = can('ai.use') && (result === 'failure' || result === 'unstable')
+  const allowed = can('ai.chat') && (result === 'failure' || result === 'unstable')
   // While an explanation is on its way without anyone asking, look again every few seconds.
   const [waiting, setWaiting] = useState(false)
   const kept = useResource(() => (allowed ? jenkinsApi.explanation(job, number) : Promise.resolve(null)), [allowed, job, number], {

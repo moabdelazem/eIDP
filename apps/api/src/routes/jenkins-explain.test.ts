@@ -72,9 +72,10 @@ async function json<T = Record<string, any>>(res: Response): Promise<T> {
   return (await res.json()) as T
 }
 
-test('only someone who may see Jenkins and use the AI may ask', async () => {
-  assert.equal((await explain('bob')).status, 403)
-  assert.equal((await call('bob', 'GET', `/jenkins/explain?job=x&number=1`)).status, 403)
+test('only someone who may see the run may ask about it; anyone else is told it is not there', async () => {
+  // bob has no Jenkins-wide view, and no team owns these jobs in this test's catalog.
+  assert.equal((await explain('bob', { job: 'x', number: 1 })).status, 404)
+  assert.equal((await call('bob', 'GET', `/jenkins/explain?job=x&number=1`)).status, 404)
 })
 
 test('before anyone asks, there is no answer, and the page is told the AI is there', async () => {

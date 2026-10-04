@@ -7,6 +7,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { useSession } from '@/features/auth/session-context.tsx'
+import { onAskChatbot } from '@/lib/ask-chatbot.ts'
 import { chatbotApi, type Conversation, type Home } from './api.ts'
 import { ChatThread } from './chat-thread.tsx'
 import { currentPage, useChat } from './use-chat.ts'
@@ -35,6 +36,7 @@ function keep(id: string | null) {
  * this build fail?" is about the build underneath. Its conversation carries on
  * from page to page for the session, and opens in the full page with one
  * click. Following a link in an answer closes the panel onto that page.
+ * Other pages can hand it a question (`askChatbot` in lib/ask-chatbot.ts).
  *
  * Shown to everyone who holds `ai.chat`, but not on the chatbot's own page.
  */
@@ -93,6 +95,18 @@ function Dock() {
     onTitle: useCallback((c: Conversation) => setConversation(c), []),
     context: currentPage,
   })
+
+  // Another page asks on the person's behalf ("Ask the chatbot" on a failed run): open and send it.
+  // While an answer is still coming, it only opens: `send` refuses a second question.
+  const { send } = chat
+  useEffect(
+    () =>
+      onAskChatbot((question) => {
+        setOpen(true)
+        void send(question)
+      }),
+    [send],
+  )
 
   const fresh = () => {
     chat.stop()

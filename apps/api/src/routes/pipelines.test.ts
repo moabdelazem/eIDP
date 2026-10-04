@@ -10,15 +10,24 @@ import { after, before, test } from 'node:test'
 import { serve } from '@hono/node-server'
 import pg from 'pg'
 import { createFakeJenkins } from '../integrations/jenkins/fake-server.ts'
+import { createFakeOllama } from '../integrations/ollama/fake-server.ts'
 
 const fake = createFakeJenkins()
 const server = serve({ fetch: fake.app.fetch, port: 0 })
 await new Promise((resolve) => server.once('listening', resolve))
 const url = `http://localhost:${(server.address() as AddressInfo).port}/jenkins`
+const ollama = createFakeOllama()
+const model = serve({ fetch: ollama.app.fetch, port: 0 })
+await new Promise((resolve) => model.once('listening', resolve))
 
 process.env.JENKINS_URL = url
 process.env.JENKINS_USER = 'eidp'
 process.env.JENKINS_TOKEN = 'fake'
+process.env.OLLAMA_URL = `http://localhost:${(model.address() as AddressInfo).port}`
+process.env.OLLAMA_MODEL = 'qwen2.5'
+process.env.OLLAMA_NUM_CTX = '8192'
+// Only what a test asks for is explained: no background run after the sync.
+process.env.OLLAMA_AUTO_EXPLAIN = 'false'
 
 const { createApp } = await import('../app.ts')
 const { closeDb, ensureSchema, query } = await import('../lib/db.ts')
@@ -43,7 +52,7 @@ let binding: string | null = null
 
 const forget = () =>
   Promise.all(
-    ['jenkins_builds', 'jenkins_jobs', 'jenkins_sync', 'jenkins_job_access', 'jenkins_access_sync'].map((table) =>
+    ['jenkins_builds', 'jenkins_jobs', 'jenkins_sync', 'jenkins_job_access', 'jenkins_access_sync', 'build_explanations'].map((table) =>
       query(`delete from ${table} where server = $1`, [url]),
     ),
   )
@@ -85,6 +94,7 @@ after(async () => {
   await catalogLock.end()
   await closeDb()
   server.close()
+  model.close()
 })
 
 function call(who: string, method: string, path: string, body?: unknown) {
@@ -100,7 +110,7 @@ async function json<T = Record<string, any>>(res: Response): Promise<T> {
   return (await res.json()) as T
 }
 
-type Mine = { runs: any[]; pipelines: any[]; queue: any[]; access: { decides: string } }
+type Mine = { runs: any[]; pipelines: any[]; queue: any[]; access: { decides: string }; ai: { configured: boolean; model: string | null } | null }
 const mine = async (who: string, window = '7d') => json<Mine>(await call(who, 'GET', `/pipelines?window=${window}`))
 const param = (run: { parameters: { name: string; value: string | null }[] }, name: string) => run.parameters.find((p) => p.name === name)?.value
 const kinds = (run: { reasons: { kind: string }[] }) => run.reasons.map((r) => r.kind)
@@ -270,4 +280,39 @@ test('with no per-team rules in Jenkins, the catalog decides again', async () =>
   assert.equal(state.source, 'none')
   assert.equal((await mine('bob')).access.decides, 'catalog')
   assert.deepEqual((await mine('dave')).runs, [])
+})
+
+test('a member asks the AI why their team’s run failed, and My pipelines then says why', async () => {
+  const failed = await stored('payments/loan-scoring-api', (r) => r.result === 'failure')
+  const before = await mine('bob')
+  assert.deepEqual(before.ai, { configured: true, model: 'qwen2.5' })
+  const listed = before.runs.find((r) => r.job === 'payments/loan-scoring-api' && r.number === failed.number)
+  assert.ok(listed, 'the failed run is bob’s team’s')
+  assert.equal(listed.explanation, null)
+
+  // bob holds neither jenkins.view nor ai.use — seeing the run is enough to ask about it.
+  const answer = await json(await call('bob', 'POST', '/jenkins/explain', { job: 'payments/loan-scoring-api', number: failed.number }))
+  assert.ok(answer.summary)
+  const kept = await json(await call('bob', 'GET', `/jenkins/explain?job=payments/loan-scoring-api&number=${failed.number}`))
+  assert.equal(kept.explanation.summary, answer.summary)
+
+  const after = (await mine('bob')).runs.find((r) => r.job === 'payments/loan-scoring-api' && r.number === failed.number)
+  assert.equal(after.explanation.summary, answer.summary)
+  assert.deepEqual(after.explanation.nextSteps, answer.nextSteps)
+  // A list carries the gist; the evidence is the build page's.
+  assert.equal(after.explanation.evidence, undefined)
+})
+
+test('a run that is not yours cannot be explained, or learnt of, through the AI', async () => {
+  const failed = await stored('payments/loan-scoring-api', (r) => r.result === 'failure')
+  const calls = ollama.requests.length
+  for (const method of ['GET', 'POST'] as const) {
+    const res =
+      method === 'GET'
+        ? await call('dave', 'GET', `/jenkins/explain?job=payments/loan-scoring-api&number=${failed.number}`)
+        : await call('dave', 'POST', '/jenkins/explain', { job: 'payments/loan-scoring-api', number: failed.number, fresh: true })
+    assert.equal(res.status, 404)
+    assert.equal((await res.json()).error.code, 'pipeline_not_found')
+  }
+  assert.equal(ollama.requests.length, calls, 'the model was not asked')
 })

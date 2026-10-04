@@ -258,6 +258,30 @@ export async function cached(job: string, number: number): Promise<Explanation |
   return rows[0] ? toExplanation(rows[0]) : null
 }
 
+/** What a list shows of an answer: enough to say why, and what to try. */
+export type Brief = Pick<Explanation, 'summary' | 'category' | 'confidence' | 'nextSteps' | 'createdAt' | 'automatic'>
+
+/**
+ * The kept answers for many builds at once, keyed `job#number` — one query,
+ * for a list of runs. Only answers made with the current prompt and model.
+ */
+export async function keptFor(builds: { job: string; number: number }[]): Promise<Map<string, Brief>> {
+  const ai = ollama.ollamaConfig()
+  const found = new Map<string, Brief>()
+  if (!ai || builds.length === 0) return found
+  const { rows } = await query<ExplanationRow & { job: string; number: number }>(
+    `select e.* from build_explanations e
+       join unnest($4::text[], $5::int[]) as b(job, number) on b.job = e.job and b.number = e.number
+      where e.server = $1 and e.prompt_version = $2 and e.model = $3`,
+    [jenkins.jenkinsConfig().url, PROMPT_VERSION, ai.model, builds.map((b) => b.job), builds.map((b) => b.number)],
+  )
+  for (const row of rows) {
+    const { summary, category, confidence, nextSteps, createdAt, automatic } = toExplanation(row)
+    found.set(`${row.job}#${row.number}`, { summary, category, confidence, nextSteps, createdAt, automatic })
+  }
+  return found
+}
+
 /**
  * Explains a failed or unstable build: the kept answer unless `fresh`, else
  * one asked of the model now. Two calls for the same build share one answer.

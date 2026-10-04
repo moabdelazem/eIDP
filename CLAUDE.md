@@ -599,7 +599,15 @@ often shared: one build job and one deploy job for every project. A run is:
   the job. Don't key it on the job alone again.
 
 Each run says why (*You started it*, *Your commit · run by maika*,
-*Payments' project*), and the page narrows by group (`?group=Payments`, `me`
+*Payments' project*). **Failing now** (`failing-now.tsx`) leads the page:
+each pipeline whose latest finished run broke, how many in a row, and the AI's
+reading of it — summary, category, what to try — with *See why* (the build
+page, where the cited lines are), *Ask the chatbot*, or *Explain this failure*
+when the automatic run has not reached it. `mine()` carries each failed run's
+kept answer (`explanation`, a `Brief`: no evidence, that is the build page's),
+read for the whole list in one query (`keptFor`), and `ai` says whether the
+caller may ask and whether Ollama is there; the section hides without it. The
+page narrows by group (`?group=Payments`, `me`
 for just yours), window (`24h`/`7d`/`30d`, newest 500) and view: Runs, or
 Pipelines — a row per job, and per project on a shared job, summed over the
 runs you may see. Queue items are judged the same way, from the parameters
@@ -809,8 +817,12 @@ counting it against the build, and the next sync tries again. Automatic
 answers are by `e-idp` ("e-IDP, automatically"); the explainer's single
 flight means a click during an automatic run shares its call. The Failing tab
 and the chatbot's `jenkins_failing` carry each failure's one-line summary.
-`OLLAMA_AUTO_EXPLAIN=false` turns it off. It needs `ai.use`
-beside `jenkins.view` (`devops-admin` and `build-operator` hold it). The model
+`OLLAMA_AUTO_EXPLAIN=false` turns it off. Asking about one build
+(`GET`/`POST /jenkins/explain`) needs only `ai.chat` — everyone's — and the run
+itself, through `demandView`: anyone who may see a run may ask why it failed,
+and a run that is not theirs is a 404 before the model is asked. `ai.use`
+(`devops-admin`, `build-operator`) still decides whether Jenkins-wide lists —
+the Failing tab, the chatbot's `jenkins_failing` — carry every job's summary. The model
 gets the facts (failed stage, parameters, commits, agent) and an *excerpt* of
 the log, numbered as the build page numbers it: each error line with six
 before and three after, every stage heading, and the last 30 lines — or the
@@ -884,7 +896,9 @@ The UI is one `ChatThread` and one `useChat` hook in two places: the full page
 **dock** (`chatbot-dock.tsx`, mounted in `AppShell`): a launcher in the corner
 of every page but the chatbot's own, or Ctrl/⌘ J, opens the chat in a sheet
 over the page, with questions to start from that fit the page and the
-person's permissions; its conversation carries on from page to page for the
+person's permissions; other pages hand it a question with `askChatbot`
+(`lib/ask-chatbot.ts`, a window event, so no feature imports the chatbot's
+internals) and it opens and sends it; its conversation carries on from page to page for the
 session (`sessionStorage`), opens in the full page with one click, and a link
 in an answer closes it onto that page. Steps fold into "Looked up N things"
 once the answer is written; the thinking dots move only under `no-preference`.

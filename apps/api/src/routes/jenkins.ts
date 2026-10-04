@@ -59,8 +59,10 @@ export const jenkinsRoutes = new Hono<AppEnv>()
   })
 
   // "What went wrong?" — the kept explanation, and whether the AI is there to
-  // make one. Seeing the build is not enough: asking the model is `ai.use`.
-  .get('/explain', requirePermission('ai.use'), validate('query', BuildRef), async (c) => {
+  // make one. Anyone who may see the run may ask about it (`ai.chat`, which
+  // everyone holds — the chatbot already answers from the same model); a run
+  // that is not theirs is a 404 here as on the build page.
+  .get('/explain', requirePermission('ai.chat'), validate('query', BuildRef), async (c) => {
     const { job, number } = c.req.valid('query')
     await pipelines.demandView(await accessFrom(c), me(c), job, number)
     const ai = ollamaConfig()
@@ -73,7 +75,7 @@ export const jenkinsRoutes = new Hono<AppEnv>()
     })
   })
 
-  .post('/explain', requirePermission('ai.use'), validate('json', BuildRef.extend({ fresh: z.boolean().optional() })), async (c) => {
+  .post('/explain', requirePermission('ai.chat'), validate('json', BuildRef.extend({ fresh: z.boolean().optional() })), async (c) => {
     const { job, number, fresh } = c.req.valid('json')
     await pipelines.demandView(await accessFrom(c), me(c), job, number)
     return c.json(await explainer.explain(job, number, actor(c), { fresh }))
