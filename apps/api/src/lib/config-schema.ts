@@ -87,6 +87,11 @@ export const schema = z.object({
   /** How often who-may-see-which-job is read from Jenkins' authorization. 0 turns the timer off. */
   JENKINS_ACCESS_SYNC_MINUTES: z.coerce.number().min(0).default(15),
 
+  /** How often every component's health is sampled for the history on System health. 0 turns it off. */
+  HEALTH_SAMPLE_MINUTES: z.coerce.number().min(0).default(5),
+  /** How long health samples are kept — the uptime bars show this many days. */
+  HEALTH_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+
   // Ollama, for the portal's AI features. Optional: without it they hide
   // themselves. Runs on our own machines, so what it reads stays inside.
   OLLAMA_URL: z.string().url().optional(),
