@@ -1,65 +1,17 @@
-import { serve } from '@hono/node-server'
-import { createApp } from './app.ts'
-import { config } from './lib/config.ts'
-import { ensureSchema } from './lib/db.ts'
-import { syncCatalog } from './services/catalog.ts'
-import { syncJenkins } from './services/jenkins-sync.ts'
-import { syncJenkinsAccess } from './services/jenkins-access.ts'
-import { explainNewFailures } from './services/auto-explain.ts'
-import { recoverInterrupted } from './services/requests.ts'
-
-await ensureSchema()
-
-const interrupted = await recoverInterrupted()
-if (interrupted > 0) console.warn(`${interrupted} request(s) were interrupted by a restart; marked failed for retry`)
-
-serve({ fetch: createApp().fetch, port: config.PORT })
-console.log(`api on http://localhost:${config.PORT}`)
-
 /**
- * The catalog refreshes in the background. A failure here must never stop the
- * API from serving — a stale or empty map is reported through /catalog, not by
- * refusing to start.
+ * The API's entry point. Secrets come first: Vault, when configured, fills the
+ * environment before anything reads `lib/config.ts` — which is why the rest is
+ * a dynamic import. A static one would be evaluated before this file's
+ * `await`, and config would parse `.env` alone.
  */
-function refreshCatalog(reason: string): void {
-  if (!config.INVENTORIES_PROJECT) return
-  syncCatalog()
-    .then((state) => console.log(`catalog sync (${reason}) ok at ${state.commit?.slice(0, 8)}`))
-    .catch((err) => console.error(`catalog sync (${reason}) failed:`, err.message))
+import { loadSecrets } from './integrations/vault/index.ts'
+
+const secrets = await loadSecrets()
+if (secrets.source === 'vault') {
+  console.log(`secrets: ${secrets.loaded.length} setting(s) from Vault (${secrets.paths.join(', ')}): ${secrets.loaded.join(', ') || 'none'}`)
+  if (secrets.ignored.length) console.warn(`secrets: ignored names the API does not read: ${secrets.ignored.join(', ')}`)
+} else if (secrets.source === 'env-fallback') {
+  console.warn(`secrets: ${secrets.error} Using .env.`)
 }
 
-refreshCatalog('boot')
-if (config.SYNC_INTERVAL_MINUTES > 0) {
-  setInterval(() => refreshCatalog('timer'), config.SYNC_INTERVAL_MINUTES * 60_000).unref()
-}
-
-/**
- * Jenkins build history, pulled in the background for the Jenkins page. Like
- * the catalog, a failure is reported on the page (`jenkins_sync`), never by
- * refusing to serve.
- */
-if (config.JENKINS_URL && config.JENKINS_USER && config.JENKINS_TOKEN && config.JENKINS_SYNC_SECONDS > 0) {
-  // Each sync is followed by explaining the failures it found (auto-explain.ts),
-  // one at a time; a slow model never holds up the next sync's timer.
-  const refreshJenkins = () =>
-    syncJenkins()
-      .then(() => explainNewFailures())
-      .then(({ explained, failed }) => explained + failed > 0 && console.log(`auto-explain: ${explained} explained, ${failed} could not be`))
-      .catch((err) => console.error('jenkins sync failed:', err instanceof Error ? err.message : err))
-  void refreshJenkins()
-  setInterval(refreshJenkins, config.JENKINS_SYNC_SECONDS * 1000).unref()
-}
-
-/**
- * Who Jenkins lets see which job, for My pipelines. Slower to change than
- * builds and costlier to read (one call per item under matrix), so on its own
- * timer. A failed read keeps the previous rules and reports why.
- */
-if (config.JENKINS_URL && config.JENKINS_USER && config.JENKINS_TOKEN && config.JENKINS_ACCESS_SYNC_MINUTES > 0) {
-  const refreshAccess = () =>
-    syncJenkinsAccess()
-      .then((state) => !state.ok && console.error('jenkins access read failed:', state.error))
-      .catch((err) => console.error('jenkins access read failed:', err instanceof Error ? err.message : err))
-  void refreshAccess()
-  setInterval(refreshAccess, config.JENKINS_ACCESS_SYNC_MINUTES * 60_000).unref()
-}
+await import('./server.ts')
