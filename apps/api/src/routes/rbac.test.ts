@@ -31,6 +31,8 @@ const DEVOPS_ONLY: [method: string, path: string][] = [
   ['DELETE', '/rbac/bindings/00000000-0000-0000-0000-000000000000'],
   ['GET', '/rbac/explain/bob'],
   ['GET', '/rbac/audit'],
+  ['GET', '/rbac/suggestions'],
+  ['PATCH', '/rbac/bindings/00000000-0000-0000-0000-000000000000'],
   ['POST', '/auth/assume'],
   ['GET', '/jenkins'],
   ['GET', '/jenkins/audit'],
@@ -194,6 +196,37 @@ test('granting a role takes effect at once, revoking it too, and both are audite
   const mine = audit.filter((e) => e.binding.id === created.id)
   assert.deepEqual(mine.map((e) => e.action).sort(), ['grant', 'revoke'])
   assert.ok(mine.every((e) => e.actor === 'alice'))
+})
+
+test('a binding’s reason and expiry can be changed, audited with what they were', async () => {
+  const created = await json<{ id: string }>(
+    await call(alice, 'POST', '/rbac/bindings', { subjectType: 'user', subject: 'dave', role: 'approver', scopeType: 'global', reason: 'on call' }),
+  )
+  const until = new Date(Date.now() + 7 * 86_400_000).toISOString()
+  const res = await call(alice, 'PATCH', `/rbac/bindings/${created.id}`, { reason: 'on call, second week', expiresAt: until })
+  assert.equal(res.status, 200)
+  const changed = await json<{ reason: string; expiresAt: string; role: string }>(res)
+  assert.equal(changed.reason, 'on call, second week')
+  assert.equal(changed.expiresAt, until)
+  assert.equal(changed.role, 'approver')
+
+  // A person's binding keeps a reason; an expiry is in the future.
+  assert.equal((await call(alice, 'PATCH', `/rbac/bindings/${created.id}`, { reason: '  ' })).status, 400)
+  assert.equal((await call(alice, 'PATCH', `/rbac/bindings/${created.id}`, { expiresAt: new Date(Date.now() - 1000).toISOString() })).status, 400)
+  assert.equal((await call(alice, 'PATCH', '/rbac/bindings/built-in:admin', { reason: 'x' })).status, 400)
+
+  const audit = await json<{ action: string; binding: { id: string; reason: string }; previous: { reason: string } | null }[]>(await call(alice, 'GET', '/rbac/audit'))
+  const update = audit.find((e) => e.action === 'update' && e.binding.id === created.id)!
+  assert.equal(update.previous!.reason, 'on call')
+  assert.equal(update.binding.reason, 'on call, second week')
+  await clearDave()
+})
+
+test('the grant form is offered the groups, teams and projects the portal knows', async () => {
+  const s = await json<{ teams: string[]; projects: string[]; groups: string[] }>(await call(alice, 'GET', '/rbac/suggestions'))
+  assert.ok(s.groups.includes('DEVOPS'), 'the admin group is always there')
+  for (const team of s.teams) assert.ok(s.groups.some((g) => g.toLowerCase() === team.toLowerCase()), `team ${team} is a group too`)
+  assert.ok(Array.isArray(s.projects))
 })
 
 test('an expired binding grants nothing', async () => {

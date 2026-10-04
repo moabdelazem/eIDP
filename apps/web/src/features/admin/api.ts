@@ -34,13 +34,20 @@ export type Explanation = {
 }
 
 export type AuditEntry =
-  | { id: string; at: string; actor: string; action: 'grant' | 'revoke'; binding: Binding; target: null }
-  | { id: string; at: string; actor: string; action: 'assume'; binding: null; target: string }
+  | { id: string; at: string; actor: string; action: 'grant' | 'revoke'; binding: Binding; previous: null; target: null }
+  | { id: string; at: string; actor: string; action: 'update'; binding: Binding; previous: Binding; target: null }
+  | { id: string; at: string; actor: string; action: 'assume'; binding: null; previous: null; target: string }
+
+/** Names the grant form offers as someone types. */
+export type Suggestions = { teams: string[]; projects: string[]; groups: string[] }
 
 export const rbacApi = {
   catalogue: () => api<Catalogue>('/rbac/roles'),
   bindings: () => api<Binding[]>('/rbac/bindings'),
   add: (binding: NewBinding) => api<Binding>('/rbac/bindings', { method: 'POST', body: JSON.stringify(binding) }),
+  update: (id: string, change: { reason?: string | null; expiresAt?: string | null }) =>
+    api<Binding>(`/rbac/bindings/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(change) }),
+  suggestions: () => api<Suggestions>('/rbac/suggestions'),
   remove: (id: string) => api<void>(`/rbac/bindings/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   explain: (uid: string) => api<Explanation>(`/rbac/explain/${encodeURIComponent(uid)}`),
   audit: () => api<AuditEntry[]>('/rbac/audit'),

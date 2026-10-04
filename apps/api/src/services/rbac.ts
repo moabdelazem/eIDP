@@ -276,16 +276,68 @@ export async function removeBinding(id: string, actor: string): Promise<void> {
   await audit(actor, 'revoke', toBinding(rows[0]))
 }
 
-export type AuditEntry =
-  | { id: string; at: string; actor: string; action: 'grant' | 'revoke'; binding: Binding; target: null }
-  | { id: string; at: string; actor: string; action: 'assume'; binding: null; target: string }
+/**
+ * Changes what can change about a binding after the fact: its reason and its
+ * expiry. Who, which role and where stay as granted — that is a different
+ * binding, granted and removed as such. Audited with the binding as it was.
+ */
+export async function updateBinding(id: string, change: { reason?: string | null; expiresAt?: string | null }, actor: string): Promise<Binding> {
+  if (id.startsWith('built-in:')) {
+    throw new ApiError(400, 'built_in_binding', 'Built-in bindings come from configuration and cannot be changed here.')
+  }
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new ApiError(404, 'binding_not_found', 'There is no such binding.')
+  const { rows: found } = await query<BindingRow>('select * from rbac_bindings where id = $1', [id])
+  if (!found[0]) throw new ApiError(404, 'binding_not_found', 'There is no such binding.')
+  const before = toBinding(found[0])
+  const reason = change.reason === undefined ? before.reason : change.reason?.trim() || null
+  const expiresAt = change.expiresAt === undefined ? before.expiresAt : change.expiresAt || null
+  if (before.subjectType === 'user' && !reason) {
+    throw new ApiError(400, 'invalid_binding', 'Say why this person needs it — grants to one person need a reason.')
+  }
+  if (expiresAt && Number.isNaN(Date.parse(expiresAt))) throw new ApiError(400, 'invalid_binding', 'That expiry is not a date.')
+  if (expiresAt && expiresAt !== before.expiresAt && Date.parse(expiresAt) <= Date.now()) {
+    throw new ApiError(400, 'invalid_binding', 'That expiry is already in the past.')
+  }
+  const { rows } = await query<BindingRow>('update rbac_bindings set reason = $2, expires_at = $3 where id = $1 returning *', [id, reason, expiresAt])
+  const after = toBinding(rows[0]!)
+  await query(`insert into rbac_audit (actor, action, binding, previous) values ($1, 'update', $2, $3)`, [actor, after, before])
+  return after
+}
 
-export async function listAudit(limit = 100): Promise<AuditEntry[]> {
-  const { rows } = await query<{ id: string; at: Date; actor: string; action: AuditEntry['action']; binding: Binding | null; target: string | null }>(
+/**
+ * What the grant form can offer as someone types: the teams and projects the
+ * catalog knows (for a scope), and the groups the portal has heard of — the
+ * catalog's teams, the groups already bound, and the admin group.
+ */
+export async function suggestions(): Promise<{ teams: string[]; projects: string[]; groups: string[] }> {
+  const [teams, projects, bound] = await Promise.all([
+    query<{ v: string }>(`select distinct t.value as v from catalog_systems s, jsonb_each_text(s.teams) t where t.value <> '' order by 1`),
+    query<{ v: string }>('select distinct project_name as v from catalog_systems order by 1'),
+    query<{ v: string }>(`select distinct subject as v from rbac_bindings where subject_type = 'group' order by 1`),
+  ])
+  const uniq = (values: string[]) => {
+    const seen = new Set<string>()
+    return values.filter((v) => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase())).sort((a, b) => a.localeCompare(b))
+  }
+  const teamNames = uniq(teams.rows.map((r) => r.v))
+  return {
+    teams: teamNames,
+    projects: uniq(projects.rows.map((r) => r.v)),
+    groups: uniq([config.APPROVER_GROUP, ...teamNames, ...bound.rows.map((r) => r.v)]),
+  }
+}
+
+export type AuditEntry =
+  | { id: string; at: string; actor: string; action: 'grant' | 'revoke'; binding: Binding; previous: null; target: null }
+  | { id: string; at: string; actor: string; action: 'update'; binding: Binding; previous: Binding; target: null }
+  | { id: string; at: string; actor: string; action: 'assume'; binding: null; previous: null; target: string }
+
+export async function listAudit(limit = 500): Promise<AuditEntry[]> {
+  const { rows } = await query<{ id: string; at: Date; actor: string; action: AuditEntry['action']; binding: Binding | null; previous: Binding | null; target: string | null }>(
     'select * from rbac_audit order by at desc, id desc limit $1',
     [limit],
   )
-  return rows.map((r) => ({ id: String(r.id), at: r.at.toISOString(), actor: r.actor, action: r.action, binding: r.binding, target: r.target }) as AuditEntry)
+  return rows.map((r) => ({ id: String(r.id), at: r.at.toISOString(), actor: r.actor, action: r.action, binding: r.binding, previous: r.previous ?? null, target: r.target }) as AuditEntry)
 }
 
 async function audit(actor: string, action: 'grant' | 'revoke', binding: Binding): Promise<void> {
