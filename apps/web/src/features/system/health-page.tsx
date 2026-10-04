@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CircleAlert, CircleCheck, CircleMinus, CircleX, HeartPulse, RefreshCw, type LucideIcon } from 'lucide-react'
 import { EmptyState } from '@/components/empty-state.tsx'
 import { PAGE, PageHeader, Section } from '@/components/page-layout.tsx'
@@ -8,6 +8,7 @@ import { since } from '@/features/requests/status.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
 import { systemApi, type Component, type Group, type Health, type Status } from './api.ts'
+import { useSystemHealth } from './health-context.tsx'
 
 /**
  * Is a status's word, icon and tone — the meaning colours, each with an icon
@@ -40,6 +41,11 @@ export function SystemHealthPage() {
   const [fresh, setFresh] = useState<Health | null>(null)
   // The newer of a fresh check and the polled answer.
   const h = fresh && (!health.data || fresh.checkedAt > health.data.checkedAt) ? fresh : health.data
+  // The sidebar's alert and badge follow what this page shows, not a minute behind it.
+  const { publish } = useSystemHealth()
+  useEffect(() => {
+    if (h) publish(h)
+  }, [h, publish])
   const problems = h?.components.filter((c) => c.status === 'down' || c.status === 'degraded').length ?? 0
   usePageTitle(problems > 0 ? `(${problems}) System health` : 'System health')
 

@@ -639,6 +639,18 @@ restart. Checks run in parallel, each within 8 s, and one answer is shared for
 15 s (`?fresh=1`, Check again, skips it). Names, versions, counts and ages
 only — never a secret. `/health` stays the public liveness probe.
 
+The **sidebar carries it** for whoever may see the page:
+`SystemHealthProvider` (`features/system/health-context.tsx`, mounted in
+`app-sidebar`) asks once a minute — nobody else's browser asks at all — and
+shares the answer. While anything is **down**, `nav-health.tsx` puts a red
+alert at the foot of the rail on every page (one red icon with a tooltip when
+collapsed), linking to the page; System health carries a red count of what is
+down, or an amber dot (`--sidebar-warning`, the amber lifted for the dark
+rail) when something only needs attention — a warning is not an alarm on
+every page. The health page publishes its own answers, Check again included,
+so the sidebar never lags what the page shows. The alert link stays a link;
+a separate `sr-only` `role="alert"` announces it once.
+
 **History is the portal's own copy.** A day or a week of builds, searchable by
 parameter, cannot be swept from Jenkins on every look, so
 `services/jenkins-sync.ts` keeps `jenkins_builds` (with parameters, causes and
