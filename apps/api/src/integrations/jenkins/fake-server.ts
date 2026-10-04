@@ -94,6 +94,33 @@ function history(
   })
 }
 
+const TESTS = ['ScoreCalculatorTest', 'IncomeParserTest', 'RateTableTest', 'LoanApplicationTest', 'ExportJobTest']
+
+/**
+ * A running build's console as it stands `elapsed` ms in: everything up to
+ * its Test stage, then two lines of test output a second — written with
+ * Pipeline's `timestamps {}` prefixes, as many real logs are — and no
+ * "Finished" line, because it has not.
+ */
+function liveLog(build: FakeBuild, elapsed: number): string {
+  const head = build.log.slice(0, build.log.indexOf('[Pipeline] { (Test)'))
+  const at = (ms: number) => `[${new Date(build.timestamp + ms).toISOString()}] `
+  const lines = ['[Pipeline] { (Test)']
+  const count = Math.min(3000, Math.floor(elapsed / 500))
+  for (let n = 0; n < count; n++) {
+    const test = TESTS[n % TESTS.length]!
+    lines.push(
+      at(n * 500) +
+        (n % 25 === 24
+          ? `WARNING: ${test} took longer than 2s`
+          : n % 2 === 0
+            ? `[INFO] Running com.example.loan.${test}`
+            : `[INFO] Tests run: ${4 + (n % 7)}, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.${(n * 37) % 900} s - in com.example.loan.${test}`),
+    )
+  }
+  return `${head}${lines.join('\n')}\n`
+}
+
 /**
  * How the fake authorizes, for My pipelines: no per-team rules, the
  * role-strategy plugin, or matrix grants in folders' and jobs' config.xml.
@@ -175,6 +202,8 @@ function deploys(now: number): FakeBuild[] {
 
 export function createFakeJenkins({ now = Date.now() } = {}) {
   const base = '/jenkins'
+  /** A running build's log grows from here, as a real one does while you watch it. */
+  const started = Date.now()
   let nextQueueId = 500
   let access: FakeAccess = 'none'
   /** config.xml reads, for tests to see what was asked. */
@@ -453,7 +482,7 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
       if (build.building) Object.assign(build, { building: false, result: 'ABORTED' })
       return c.redirect(urlOf(names), 302)
     }
-    if (what === 'consoleText') return c.text(build.log)
+    if (what === 'consoleText') return c.text(build.building ? liveLog(build, Date.now() - started) : build.log)
     if (what === 'api/json') return c.json(buildJson(names, build))
     // Pipeline Graph View, for the payments folder's pipelines only — the
     // rest stand for servers without the plugin, read through Stage View. Its

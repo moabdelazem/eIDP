@@ -44,7 +44,7 @@ export function BuildPage() {
   const [following, setFollowing] = useState(true)
   const run = useResource(() => jenkinsApi.run(job, number), [job, number], {
     // A running build's log grows; follow it until it ends, then stop asking.
-    pollMs: following ? 5_000 : null,
+    pollMs: following ? 3_000 : null,
   })
   const r = run.data
   if (r && r.result !== 'running' && following) setFollowing(false)
@@ -151,7 +151,7 @@ export function BuildPage() {
       >
         <ExplainPanel job={job} number={number} result={r.result} onJump={(line) => setJump({ line, at: Date.now() })} />
         {r.stages.length > 0 && <Stages run={r} onJump={(line) => setJump({ line, at: Date.now() })} />}
-        <LogViewer key={`${job}#${number}`} log={r.log} truncated={r.logTruncated} fullUrl={r.logUrl} jump={jump} />
+        <LogViewer key={`${job}#${number}`} log={r.log} truncated={r.logTruncated} fullUrl={r.logUrl} jump={jump} live={r.result === 'running'} />
       </Split>
 
       <ActionDialog pending={pending} onClose={() => setPending(null)} onDone={run.reload} />

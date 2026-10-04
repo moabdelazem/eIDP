@@ -796,7 +796,18 @@ folder only, so both paths stay tested. Then parameters (each a
 link to every build that had it), commits, agent, and the last 256 KB of the
 log in `log-viewer.tsx` — opened at the first error, with find, error-to-error
 jumps, errors-with-context, hiding `[Pipeline]` steps, and wrap. Find wins over
-those filters, or "3 of 40" steps through lines nobody can see. It scrolls the
+those filters, or "3 of 40" steps through lines nobody can see. Stage headings
+stay pinned at the top of the box while their lines scroll under them (lines
+are siblings of the box's content, never wrapped one by one — sticky sticks
+only within its parent — and headings skip `content-visibility`, which would
+stop drawing them), shell commands (`+ …`) read as `$ …`, and `timestamps {}`
+prefixes become a column of their own. **A running build is a tail**: the page
+asks every 3 s, the log opens at the end and keeps to it — a `ResizeObserver`
+re-pins it, because lines below the fold only take their wrapped height once
+drawn — new lines fade in, and a Live bar says which stage it is in. Scrolling
+up pauses following; *Jump to latest* (with how many lines came since) or
+scrolling back down resumes it. The fake's running build grows its log two
+lines a second from when the fake started. It scrolls the
 log box itself, never `scrollIntoView`, which also scrolled the page and
 shifted the sidebar rail.
 
