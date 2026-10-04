@@ -377,3 +377,18 @@ create table if not exists request_assessments (
   error            text,
   created_at       timestamptz not null default now()
 );
+
+-- Every component's health, sampled every HEALTH_SAMPLE_MINUTES by the API
+-- (services/health.ts): what the uptime bars and past incidents on System
+-- health are made of. A summary, a status and a time — never a secret.
+-- Kept HEALTH_RETENTION_DAYS.
+create table if not exists health_samples (
+  id         bigserial primary key,
+  at         timestamptz not null default now(),
+  component  text not null,
+  status     text not null check (status in ('ok', 'degraded', 'down', 'off')),
+  latency_ms integer,
+  summary    text not null
+);
+
+create index if not exists health_samples_component_at_idx on health_samples (component, at);

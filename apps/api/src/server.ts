@@ -5,6 +5,7 @@ import { ensureSchema } from './lib/db.ts'
 import { syncCatalog } from './services/catalog.ts'
 import { syncJenkins } from './services/jenkins-sync.ts'
 import { syncJenkinsAccess } from './services/jenkins-access.ts'
+import { recordSample } from './services/health.ts'
 import { explainNewFailures } from './services/auto-explain.ts'
 import { recoverInterrupted } from './services/requests.ts'
 
@@ -62,4 +63,14 @@ if (config.JENKINS_URL && config.JENKINS_USER && config.JENKINS_TOKEN && config.
       .catch((err) => console.error('jenkins access read failed:', err instanceof Error ? err.message : err))
   void refreshAccess()
   setInterval(refreshAccess, config.JENKINS_ACCESS_SYNC_MINUTES * 60_000).unref()
+}
+
+/**
+ * Every component's health, sampled for the uptime bars and past incidents on
+ * System health — evenly, whether or not anyone has the page open.
+ */
+if (config.HEALTH_SAMPLE_MINUTES > 0) {
+  const sample = () => recordSample().catch((err) => console.error('health sample failed:', err instanceof Error ? err.message : err))
+  void sample()
+  setInterval(sample, config.HEALTH_SAMPLE_MINUTES * 60_000).unref()
 }

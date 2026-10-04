@@ -46,6 +46,8 @@ const { createApp } = await import('../app.ts')
 const { closeDb, ensureSchema, query } = await import('../lib/db.ts')
 const app = createApp()
 let alice = ''
+/** Health samples before these tests; only rows after it are theirs to delete. */
+let sampleFloor = 0
 
 const forget = () =>
   Promise.all(
@@ -57,6 +59,7 @@ const forget = () =>
 before(async () => {
   await ensureSchema()
   await forget()
+  sampleFloor = Number((await query<{ max: string | null }>('select max(id) from health_samples')).rows[0]?.max ?? 0)
   const res = await app.request('/auth/login', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -67,6 +70,7 @@ before(async () => {
 
 after(async () => {
   await forget()
+  await query('delete from health_samples where id > $1', [sampleFloor])
   await closeDb()
   for (const s of servers) s.close()
 })
@@ -138,4 +142,60 @@ test('answers are shared for a few seconds unless asked fresh', async () => {
   const first = await (await app.request('/system/health', { headers })).json()
   const second = await (await app.request('/system/health', { headers })).json()
   assert.equal(first.checkedAt, second.checkedAt)
+})
+
+test('a sample keeps every component, and history draws days, uptime and incidents from samples', async () => {
+  const { recordSample } = await import('../services/health.ts')
+  const now = await recordSample()
+  const kept = await query<{ n: string }>('select count(*) as n from health_samples where id > $1 and at = $2', [sampleFloor, now.checkedAt])
+  assert.equal(Number(kept.rows[0]!.n), now.components.length)
+
+  // Ollama's own story: down two days ago, then fine; a warning now and still going.
+  const day = 86_400_000
+  const at = (ms: number) => new Date(Date.now() - ms).toISOString()
+  const rows: [string, string, string][] = [
+    [at(2 * day + 30 * 60_000), 'ok', 'fine'],
+    [at(2 * day + 25 * 60_000), 'down', 'test: unreachable at night'],
+    [at(2 * day + 20 * 60_000), 'down', 'test: still unreachable'],
+    [at(2 * day + 15 * 60_000), 'ok', 'fine again'],
+    [at(10 * 60_000), 'degraded', 'test: model missing'],
+    [at(5 * 60_000), 'degraded', 'test: model missing'],
+  ]
+  for (const [when, status, summary] of rows) {
+    await query(`insert into health_samples (at, component, status, latency_ms, summary) values ($1, 'ollama', $2, 12, $3)`, [when, status, summary])
+  }
+
+  const res = await app.request('/system/history?days=7', { headers: { authorization: `Bearer ${alice}` } })
+  assert.equal(res.status, 200)
+  const h = (await res.json()) as any
+  assert.equal(h.days, 7)
+  assert.equal(h.dates.length, 7)
+  const ollama = h.components.ollama
+  assert.equal(ollama.days.length, 7)
+  const twoDaysAgo = rows[1]![0].slice(0, 10)
+  assert.equal(ollama.days.find((d: any) => d.day === twoDaysAgo).worst, 'down')
+  assert.ok(ollama.uptime > 0 && ollama.uptime < 1)
+  assert.ok(ollama.latency.length > 0)
+
+  // Incidents come from the samples; the API's own sampler may be writing
+  // beside these tests, so their rules are checked on rows of their own below.
+  assert.ok(Array.isArray(h.incidents))
+})
+
+test('an incident is a run of checks not ok, closed by the next ok one, open while it lasts', async () => {
+  const { incidentsOf } = await import('../services/health.ts')
+  const t = (min: number) => new Date(Date.UTC(2026, 9, 1, 12, min))
+  const rows = [
+    { component: 'ollama', at: t(0), status: 'ok' as const, summary: 'fine' },
+    { component: 'ollama', at: t(5), status: 'degraded' as const, summary: 'model missing' },
+    { component: 'ollama', at: t(10), status: 'down' as const, summary: 'unreachable' },
+    { component: 'ollama', at: t(15), status: 'ok' as const, summary: 'fine' },
+    { component: 'vault', at: t(0), status: 'off' as const, summary: 'not configured' },
+    { component: 'vault', at: t(20), status: 'degraded' as const, summary: 'sealed' },
+  ]
+  const [vault, ollama, ...rest] = incidentsOf(rows)
+  assert.equal(rest.length, 0, 'off is not an incident')
+  // Newest first; the worst it got; from its first bad check to the next good one.
+  assert.deepEqual(ollama, { component: 'ollama', name: 'Ollama', status: 'down', from: t(5).toISOString(), to: t(15).toISOString(), summary: 'model missing' })
+  assert.deepEqual(vault, { component: 'vault', name: 'Secrets (Vault)', status: 'degraded', from: t(20).toISOString(), to: null, summary: 'sealed' })
 })

@@ -644,6 +644,22 @@ restart. Checks run in parallel, each within 8 s, and one answer is shared for
 15 s (`?fresh=1`, Check again, skips it). Names, versions, counts and ages
 only — never a secret. `/health` stays the public liveness probe.
 
+It is laid out as public availability pages are: one verdict across the top
+("All systems operational", "Partial outage", "Major outage" — red only when
+something is down), then each component with its state now and a **bar per
+day** of the last 90, the worst it was that day, with its uptime — samples not
+down, out of samples where it was configured; degraded counts as up, as
+status pages count it. A row opens (shadcn `Collapsible`) to its facts and a
+24-hour response-time sparkline; a component that is down opens by itself.
+**Past incidents** follow, a day at a time for a week, "No incidents
+reported" said outright. The history is `health_samples`: `recordSample()`
+asks everything every `HEALTH_SAMPLE_MINUTES` (5) from `server.ts`, so it is
+sampled evenly whether or not anyone looks, kept `HEALTH_RETENTION_DAYS` (90);
+`GET /system/history` turns it into days, uptime, latency and incidents — a
+run of samples not ok, closed by the next ok one, open while it lasts. Days
+before sampling began are grey "No data", never an outage. A phone shows the
+last 30 days.
+
 The **sidebar carries it** for whoever may see the page:
 `SystemHealthProvider` (`features/system/health-context.tsx`, mounted in
 `app-sidebar`) asks once a minute — nobody else's browser asks at all — and
