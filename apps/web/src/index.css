@@ -187,6 +187,25 @@
   }
 }
 
+/* A running build's log: a breathing dot beside "Live", and a cursor at the
+   end where the next line will come — both still without motion. */
+.log-cursor {
+  opacity: 0.6;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .log-live-dot {
+    animation: graph-pulse 1.6s ease-in-out infinite;
+  }
+  .log-cursor {
+    animation: log-blink 1.1s steps(1) infinite;
+  }
+}
+@keyframes log-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
 /* The chatbot thinking: three dots that rise in turn — still dots without motion. */
 .chat-dots {
   display: inline-flex;
