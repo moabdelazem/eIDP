@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router'
-import { Copy, ExternalLink, GitCommitHorizontal, List, Workflow } from 'lucide-react'
+import { Copy, ExternalLink, GitCommitHorizontal, List, Maximize2, Workflow } from 'lucide-react'
 import { toast } from 'sonner'
 import { JenkinsIcon } from '@/components/brand-icons.tsx'
 import { EmptyState } from '@/components/empty-state.tsx'
 import { Facts, PAGE, PageHeader, Section, Split } from '@/components/page-layout.tsx'
 import { FactsSkeleton, HeaderSkeleton, Loading, RowsSkeleton } from '@/components/skeletons.tsx'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { since } from '@/features/requests/status.tsx'
@@ -208,18 +209,88 @@ function Stages({ run: r, onJump }: { run: RunDetail; onJump: (line: number) => 
           : 'From Stage View, which does not say what ran in parallel. Pick a stage to read its log.'
       }
       action={
-        <ToggleGroup type="single" variant="outline" size="sm" value={view} onValueChange={choose} aria-label="Show stages as">
-          <ToggleGroupItem value="graph" className="px-2.5" aria-label="Graph">
-            <Workflow /> <span className="hidden sm:inline">Graph</span>
-          </ToggleGroupItem>
-          <ToggleGroupItem value="list" className="px-2.5" aria-label="List">
-            <List /> <span className="hidden sm:inline">List</span>
-          </ToggleGroupItem>
-        </ToggleGroup>
+        <div className="flex shrink-0 items-center gap-2">
+          <ToggleGroup type="single" variant="outline" size="sm" value={view} onValueChange={choose} aria-label="Show stages as">
+            <ToggleGroupItem value="graph" className="px-2.5" aria-label="Graph">
+              <Workflow /> <span className="hidden sm:inline">Graph</span>
+            </ToggleGroupItem>
+            <ToggleGroupItem value="list" className="px-2.5" aria-label="List">
+              <List /> <span className="hidden sm:inline">List</span>
+            </ToggleGroupItem>
+          </ToggleGroup>
+          <StagesDialog run={r} open={open} />
+        </div>
       }
     >
       {view === 'graph' ? <StageGraph stages={r.stages} onOpen={open} /> : <StageList stages={r.stages} open={open} />}
     </Section>
+  )
+}
+
+/**
+ * The graph with room: a dialog nearly the width of the screen, each stage
+ * with its agent and start, and a line saying how the run went. A glance
+ * without leaving the page, so a dialog; picking a stage closes it and opens
+ * the log there, without focus jumping back to the button and scrolling the
+ * page away from the log.
+ */
+function StagesDialog({
+  run: r,
+  open,
+}: {
+  run: RunDetail
+  open: (stage: Stage, parent: Stage | null) => (() => void) | null
+}) {
+  const [shown, setShown] = useState(false)
+  const jumping = useRef(false)
+  const openAndClose = (stage: Stage, parent: Stage | null) => {
+    const go = open(stage, parent)
+    if (!go) return null
+    return () => {
+      jumping.current = true
+      setShown(false)
+      go()
+    }
+  }
+  const all = r.stages.flatMap((s) => (s.branches.length ? s.branches.map((b) => ({ s: b, parent: s })) : [{ s, parent: null as Stage | null }]))
+  const broke = all.find(({ s }) => s.result === 'failure' || s.result === 'unstable')
+  const branches = r.stages.reduce((n, s) => n + s.branches.length, 0)
+  const summary = [
+    `${r.stages.length} ${r.stages.length === 1 ? 'stage' : 'stages'}`,
+    branches > 0 && `${branches} parallel branches`,
+    broke ? `broke in ${broke.parent ? `${broke.parent.name} › ` : ''}${broke.s.name}` : r.result === 'running' ? 'still running' : null,
+    r.result !== 'running' && `took ${duration(r.durationMs)}`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  return (
+    <Dialog open={shown} onOpenChange={setShown}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="px-2.5" aria-label="Open the stages large">
+          <Maximize2 /> <span className="hidden sm:inline">Expand</span>
+        </Button>
+      </DialogTrigger>
+      <DialogContent
+        className="grid max-h-[90vh] grid-rows-[auto_minmax(0,1fr)] sm:max-w-[min(1400px,calc(100vw-4rem))]"
+        onCloseAutoFocus={(event) => {
+          if (jumping.current) {
+            event.preventDefault()
+            jumping.current = false
+          }
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <JobName name={r.job} /> <span className="font-mono text-muted-foreground">#{r.number}</span>
+            <ResultBadge result={r.result} />
+          </DialogTitle>
+          <DialogDescription>{summary}. Pick a stage to read its log.</DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 overflow-auto rounded-lg border bg-muted/30 p-6">
+          <StageGraph stages={r.stages} onOpen={openAndClose} size="large" />
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
