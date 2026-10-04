@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { Boxes, HeartPulse, Inbox, LayoutDashboard, ListChecks, Newspaper, ShieldCheck, Sparkles, Workflow } from 'lucide-react'
+import { Bot, Boxes, HeartPulse, Inbox, LayoutDashboard, ListChecks, Newspaper, ShieldCheck, Workflow } from 'lucide-react'
 import { JenkinsIcon } from '@/components/brand-icons.tsx'
 import type { Permission } from '@/features/auth/profile-context.tsx'
 
@@ -27,7 +27,7 @@ export const browseItems: NavItem[] = [
   { path: '/map', label: 'Projects map', icon: Boxes, owns: (p) => p.startsWith('/projects') },
   { path: '/pipelines', label: 'My pipelines', icon: Workflow, owns: (p) => p.startsWith('/pipelines/'), permission: 'pipelines.view' },
   { path: '/digest', label: 'Weekly digest', icon: Newspaper },
-  { path: '/assistant', label: 'Assistant', icon: Sparkles, owns: (p) => p.startsWith('/assistant/'), permission: 'ai.chat' },
+  { path: '/chatbot', label: 'Chatbot', icon: Bot, owns: (p) => p.startsWith('/chatbot/'), permission: 'ai.chat' },
 ]
 
 /**

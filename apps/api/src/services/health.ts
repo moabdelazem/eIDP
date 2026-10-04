@@ -79,7 +79,7 @@ const CHECKS: Check[] = [
   { id: 'ado', name: 'Azure DevOps', group: 'integration', uses: 'The catalog sync, and repository, project and access requests.', run: checkAdo },
   { id: 'jira', name: 'Jira', group: 'integration', uses: 'Jira project requests.', run: checkJira },
   { id: 'jenkins', name: 'Jenkins', group: 'integration', uses: 'The Jenkins page and My pipelines.', run: checkJenkins },
-  { id: 'ollama', name: 'Ollama', group: 'integration', uses: 'Failure explanations, the assistant and request risk summaries.', run: checkOllama },
+  { id: 'ollama', name: 'Ollama', group: 'integration', uses: 'Failure explanations, the chatbot, request risk summaries and weekly digests.', run: checkOllama },
   { id: 'catalog', name: 'Catalog sync', group: 'background', uses: 'The projects map, ownership, and team-scoped access.', run: checkCatalog },
   { id: 'jenkins-history', name: 'Jenkins history', group: 'background', uses: 'The Jenkins dashboard, build search and My pipelines.', run: checkJenkinsHistory },
   { id: 'jenkins-access', name: 'Jenkins access rules', group: 'background', uses: 'Which teams see which runs on My pipelines.', run: checkJenkinsAccess },

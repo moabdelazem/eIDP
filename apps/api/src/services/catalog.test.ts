@@ -15,8 +15,8 @@ const fixtures = fileURLToPath(
 
 await ensureSchema()
 // The catalog is one set of tables, and this file replaces it wholesale. The
-// assistant's tests read it too, from their own process, so both hold this
-// lock while they use it (routes/assistant.test.ts).
+// chatbot's tests read it too, from their own process, so both hold this
+// lock while they use it (routes/chatbot.test.ts).
 const lock = new pg.Client({ connectionString: config.DATABASE_URL })
 await lock.connect()
 await lock.query('select pg_advisory_lock(4202)')

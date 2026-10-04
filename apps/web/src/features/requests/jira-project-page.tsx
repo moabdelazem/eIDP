@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { DraftedNote } from './drafted-note.tsx'
 import { Check, TriangleAlert } from 'lucide-react'
-import { useNavigate } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { JiraIcon } from '@/components/brand-icons.tsx'
 import { Button } from '@/components/ui/button'
@@ -36,12 +37,14 @@ export function JiraProjectPage() {
   const navigate = useNavigate()
   const server = useResource(() => requestsApi.jira(), [])
 
-  const [name, setName] = useState('')
+  // A link may carry the form filled in — the chatbot's drafts do.
+  const [params] = useSearchParams()
+  const [name, setName] = useState(params.get('name') ?? '')
   // Follows the name until someone types a key of their own.
-  const [typedKey, setTypedKey] = useState<string | null>(null)
+  const [typedKey, setTypedKey] = useState<string | null>(params.get('key'))
   const key = typedKey ?? suggestKey(name)
   const [description, setDescription] = useState('')
-  const [justification, setJustification] = useState('')
+  const [justification, setJustification] = useState(params.get('reason') ?? '')
   const { profile, loaded: profileLoaded } = useProfile()
   const groups = profile?.groups ?? []
   const [chosenTeam, setChosenTeam] = useState('')
@@ -135,6 +138,7 @@ export function JiraProjectPage() {
 
       <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]">
         <form onSubmit={submit} className="space-y-6">
+          <DraftedNote />
           <Field label="Project name" htmlFor="name" hint="What people will see in Jira, like Loan Scoring.">
             <Input
               id="name"

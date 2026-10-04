@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { DraftedNote } from './drafted-note.tsx'
 import { Check, TriangleAlert } from 'lucide-react'
-import { useNavigate } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { AzureDevOpsIcon } from '@/components/brand-icons.tsx'
 import { Button } from '@/components/ui/button'
@@ -46,11 +47,13 @@ export function GrantAccessPage() {
   const { session } = useSession()
   const collections = useResource(() => requestsApi.collections(), [])
 
-  const [collection, setCollection] = useState('')
-  const [project, setProject] = useState('')
+  // A link may carry the form filled in — the chatbot's drafts do.
+  const [params] = useSearchParams()
+  const [collection, setCollection] = useState(params.get('collection') ?? '')
+  const [project, setProject] = useState(params.get('project') ?? '')
   // Most people ask for themselves; start there and let them add others.
-  const [people, setPeople] = useState(session?.uid ?? '')
-  const [justification, setJustification] = useState('')
+  const [people, setPeople] = useState(params.get('people')?.split(',').join('\n') ?? session?.uid ?? '')
+  const [justification, setJustification] = useState(params.get('reason') ?? '')
   const [verdict, setVerdict] = useState<Verdict>({ state: 'idle' })
   const [submitting, setSubmitting] = useState(false)
 
@@ -62,6 +65,13 @@ export function GrantAccessPage() {
     () => (collection ? requestsApi.projects(collection) : Promise.resolve([])),
     [collection],
   )
+
+  // A prefilled project — a link's or the chatbot's — takes the spelling ADO uses.
+  useEffect(() => {
+    const exact = projects.data?.some((p) => p.name === project)
+    const match = projects.data?.find((p) => p.name.toLowerCase() === project.toLowerCase())
+    if (project && !exact && match) setProject(match.name)
+  }, [projects.data, project])
 
   const grantees = useMemo(() => parseNames(people), [people])
   const target: Target | null = useMemo(
@@ -146,6 +156,7 @@ export function GrantAccessPage() {
 
       <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]">
         <form onSubmit={submit} className="space-y-6">
+          <DraftedNote />
           <Field label="Collection" htmlFor="collection">
             {collections.loading ? (
               <Skeleton className="h-9 w-full" />
@@ -157,6 +168,8 @@ export function GrantAccessPage() {
               <Select
                 value={collection}
                 onValueChange={(value) => {
+                  // Radix also calls this while it settles on its first value; only a real change of collection empties the project.
+                  if (!value || value === collection) return
                   setCollection(value)
                   setProject('')
                 }}

@@ -46,8 +46,8 @@ export function crumbsFor(pathname: string, systems: System[] = []): Crumb[] {
   if (segments[0] === 'approvals') return [{ label: 'Approvals' }]
   if (segments[0] === 'me') return [{ label: 'Your profile' }]
   if (segments[0] === 'access') return [{ label: 'Access' }]
-  if (segments[0] === 'assistant') {
-    return segments[1] ? [{ label: 'Assistant', path: '/assistant' }, { label: 'Conversation' }] : [{ label: 'Assistant' }]
+  if (segments[0] === 'chatbot') {
+    return segments[1] ? [{ label: 'Chatbot', path: '/chatbot' }, { label: 'Conversation' }] : [{ label: 'Chatbot' }]
   }
   if (segments[0] === 'system') return [{ label: 'System health' }]
   if (segments[0] === 'digest') return [{ label: 'Weekly digest' }]

@@ -57,7 +57,7 @@ async function describe(res: Response): Promise<[code: string, message: string]>
 }
 
 /**
- * A POST whose answer streams back as server-sent events — the assistant's.
+ * A POST whose answer streams back as server-sent events — the chatbot's.
  * `onEvent` gets each event's data as it arrives. Errors before the stream
  * starts are ApiErrors like any other call's; `signal` stops it.
  *

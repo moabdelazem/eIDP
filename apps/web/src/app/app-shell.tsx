@@ -4,6 +4,7 @@ import { CommandPalette } from '@/components/command-palette.tsx'
 import { PageBreadcrumbs } from '@/components/page-breadcrumbs.tsx'
 import { ProfileProvider } from '@/features/auth/profile-context.tsx'
 import { CatalogProvider } from '@/features/projects/catalog-context.tsx'
+import { ChatbotDock } from '@/features/chatbot/chatbot-dock.tsx'
 import { Separator } from '@/components/ui/separator'
 import { ViewingAsBanner } from './viewing-as-banner.tsx'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
@@ -33,6 +34,7 @@ export function AppShell() {
               <Outlet />
             </div>
           </SidebarInset>
+          <ChatbotDock />
         </CatalogProvider>
       </ProfileProvider>
     </SidebarProvider>
