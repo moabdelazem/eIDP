@@ -19,7 +19,8 @@ pnpm workspace. `apps/*` and `packages/*`.
   | `lib/` | Config, errors, validation | No feature knowledge |
 
   `app.ts` builds the app without listening so tests drive it via
-  `app.request()`; `index.ts` only serves it. Adding an integration means a new
+  `app.request()`; `server.ts` serves it, and `index.ts` loads secrets
+  (Vault, then `.env`) before importing it. Adding an integration means a new
   folder under `integrations/` and a route module — nothing else moves.
 - `apps/web` — Vite + React UI (`@eidp/web`), organized by feature. Dev server
   proxies `/api` to the API on :3000.
@@ -224,6 +225,28 @@ ollama:fake`), and can invent a line number or break its JSON on request. For
 the assistant it streams, and calls the tool a question's words point to —
 only among those offered — or a rogue one when asked to.
 
+`integrations/vault/` — HashiCorp Vault as the source of the API's secrets,
+with `.env` behind it. `src/index.ts`, the entry point, awaits `loadSecrets()` and
+only then *dynamically* imports `server.ts`: a static import would be
+evaluated before the `await` — top-level await does not hold back sibling
+imports — and `lib/config.ts` would parse `.env` alone. Scripts that read
+config run through `with-secrets.ts` for the same reason (`ldap:doctor`,
+`rbac:import`). It writes what it read into `process.env`, so config parses as
+it always has; a key in Vault wins over `.env`. Only names in `CONFIG_KEYS`
+(`lib/config-schema.ts`) are taken — a secret store must not set
+`NODE_OPTIONS` or `PATH` for the API and every git it starts. KV v2 by default
+(`<mount>/data/<path>`), v1 by setting; several paths, the later winning; a
+token, or AppRole whose token is revoked after the read; a namespace header
+when set. **If Vault cannot be read** — unreachable, sealed, a refused login
+or policy, a path that is not there — nothing from it is applied (never half
+the paths) and the API boots on `.env`, the reason in the log;
+`VAULT_REQUIRED=true` refuses to boot instead. `/health` says `secrets: vault |
+env | env-fallback` (`lib/secrets-state.ts`), and a config error after a
+fallback says Vault was not read, or people fix the wrong file. Its own
+`VAULT_*` settings are read from `process.env` directly — they are what config
+waits for. Values are never logged, names only. `fake-server.ts` stands in
+(`pnpm --filter @eidp/api vault:fake`).
+
 `integrations/inventories/` — parses that working copy into the catalog. Its
 rules and the traps they exist for are in `parse.ts`; `__fixtures__/repo` is a
 small tree covering both layout conventions, so the parser is tested without
@@ -287,7 +310,7 @@ until the commit lands. `catalog_sync` is a single row holding the outcome, so
 the UI can tell current from stale from never-built.
 
 The API never blocks boot on a sync and never fails to start because Azure
-DevOps is unreachable: `index.ts` kicks the sync off in the background and the
+DevOps is unreachable: `server.ts` kicks the sync off in the background and the
 state is reported through `/catalog`. Stale data is still served; only an empty
 catalog is an error, and then the message carries the reason the last attempt
 failed.
