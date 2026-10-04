@@ -454,6 +454,19 @@ export async function digest(team: string, week: string, now = new Date()): Prom
 }
 
 /**
+ * A team's week without writing anything: the kept digest when there is one,
+ * else its facts counted now. For the chatbot, which must not start a second
+ * model call in the middle of its own answer.
+ */
+export async function peek(team: string, week: string, now = new Date()): Promise<Omit<Digest, 'createdAt'> & { kept: boolean }> {
+  if (week !== weekOf(startOf(week))) throw new ApiError(400, 'not_a_week', `${week} is not a Monday; weeks start on Monday.`)
+  if (week > weekOf(now)) throw new ApiError(404, 'future_week', 'That week has not started yet.')
+  const kept = week === weekOf(now) ? null : await stored(team, week)
+  if (kept) return { ...kept, kept: true }
+  return { team, week, live: week === weekOf(now), facts: await factsFor(team, week), summary: null, highlights: [], model: null, error: null, kept: false }
+}
+
+/**
  * Last week's digest for every team that has none — the timer's job, after
  * Monday 00:00 UTC. One at a time: every summary is shared GPU time.
  */

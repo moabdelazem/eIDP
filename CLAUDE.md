@@ -150,8 +150,10 @@ icon and a word. Red still means only "act on this".
 **Light and dark.** `next-themes` (already a shadcn dependency, for the
 Toaster) puts `dark` on `<html>` — Light, Dark or Same as the system, from the
 user menu at the foot of the rail, kept per browser in `eidp.theme`, the
-system's by default; its own pre-paint script means a dark page never flashes
-paper. Every colour is a token with a value in both `:root` and `.dark`
+system's by default. A dark page never flashes paper because of a small
+script in `index.html` that sets the class before the first paint —
+next-themes' own script is rendered by React, which never runs scripts it
+renders. Every colour is a token with a value in both `:root` and `.dark`
 (`src/index.css`); the rail is the one exception, identical in both. A new
 colour needs both values, checked in both themes — a hex in a component is
 how a dark page grows a white box. Brand marks take a `dark` shade where their
@@ -233,7 +235,7 @@ cut silently *from the front* — the instructions go, and the answer is about
 what is left. A model nobody pulled is a 404, reported as "ollama pull <model>".
 `fake-server.ts` answers like a model would (`pnpm --filter @eidp/api
 ollama:fake`), and can invent a line number or break its JSON on request. For
-the assistant it streams, and calls the tool a question's words point to —
+the chatbot it streams, and calls the tool a question's words point to —
 only among those offered — or a rogue one when asked to.
 
 `integrations/vault/` — HashiCorp Vault as the source of the API's secrets,
@@ -781,7 +783,7 @@ Ollama itself is down (unreachable, model missing) the run stops without
 counting it against the build, and the next sync tries again. Automatic
 answers are by `e-idp` ("e-IDP, automatically"); the explainer's single
 flight means a click during an automatic run shares its call. The Failing tab
-and the assistant's `jenkins_failing` carry each failure's one-line summary.
+and the chatbot's `jenkins_failing` carry each failure's one-line summary.
 `OLLAMA_AUTO_EXPLAIN=false` turns it off. It needs `ai.use`
 beside `jenkins.view` (`devops-admin` and `build-operator` hold it). The model
 gets the facts (failed stage, parameters, commits, agent) and an *excerpt* of
@@ -804,43 +806,73 @@ and two people asking at once share one call. The panel says the answer is
 generated, by which model, for whom and when, and that it can be wrong; each
 cited line jumps the log viewer to it.
 
-**The assistant** (`/assistant/:conversationId?`, `features/assistant/`,
-`services/assistant.ts`) is a chat with the same model, for everyone:
-`ai.chat` is a `member` permission. General engineering questions it answers
-from what the model knows; questions about *us* — systems, owners,
-configuration, requests, builds — it answers through read-only tools in
-`services/assistant-tools.ts`. Four rules hold it, each tested in
-`routes/assistant.test.ts`:
+**The chatbot** (`/chatbot/:conversationId?`, `features/chatbot/`,
+`services/chatbot.ts`; it was "the assistant", and `/assistant` links redirect)
+is an agent inside the portal with the same model, for everyone: `ai.chat` is a
+`member` permission. General engineering it answers from what the model knows;
+questions about *us* it answers through read-only tools in
+`services/chatbot-tools.ts` — applications, configuration, owners, your
+requests and one request, what waits for your approval, Jenkins failures,
+builds and numbers, your pipelines, one build in detail (stages, the branch
+that broke, the stored explanation, the redacted end of its log), a team's
+week (`peek` — never a second model call mid-answer), the portal's health, and
+`whoami` (your groups, teams and every permission with the group or binding
+behind it). Five rules hold it, each tested in `routes/chatbot.test.ts`:
 
 - **It looks, never acts.** No tool creates, approves, runs or changes
-  anything; the system prompt tells the model to point at the page that does.
+  anything. For a request it **drafts**: `draft_request` returns the form's
+  URL filled in (`?project=…&repository=…&from=chatbot`), the forms read
+  their fields from the query, and `DraftedNote` says the chatbot filled it
+  in — the person checks it and submits it. A prefilled project takes the
+  spelling ADO uses.
 - **Tools are offered per person.** Each tool has an `allowed(access)`; without
-  `jenkins.view`, Jenkins does not exist for the model. A call to a tool not
+  `jenkins.view`, Jenkins does not exist for the model, and a build is read
+  through `demandView`, as the build page reads it. A call to a tool not
   offered — invented, or not this person's — is refused, not run.
 - **Tool results are data, not instructions** (the prompt says so), capped in
   size, and already redacted where they are stored (`[hidden]`).
-- **Conversations are the owner's alone** — anyone else's id is a 404, to read,
-  continue or delete.
+- **Conversations are the owner's alone** — anyone else's id is a 404, to
+  read, continue, rename, delete or give feedback on.
+- **It knows the page it is asked from**: `context` (path and tab title, a
+  portal path only) goes into the system prompt, so "why did this build
+  fail?" on a build page is about that build.
 
 It streams: Ollama's NDJSON (`chatStream`, tool calls arrive whole) becomes
-server-sent events (`conversation`, `step`, `delta`, `reset`, `done`, `error`)
-through `hono/streaming`, read by `apiStream` in `lib/api-client.ts` — not
-`EventSource`, which can neither POST nor send the token. Refusals (busy, not
-yours, not configured) are checked *before* the stream opens, so they are
+server-sent events (`conversation`, `step`, `delta`, `reset`, `done`, `title`,
+`error`) through `hono/streaming`, read by `apiStream` in `lib/api-client.ts` —
+not `EventSource`, which can neither POST nor send the token. Refusals (busy,
+not yours, not configured) are checked *before* the stream opens, so they are
 ordinary JSON errors. A turn that calls tools may have streamed a preamble;
-`reset` drops it. Up to four tool rounds, then the model answers with what it
+`reset` drops it. Up to five tool rounds, then the model answers with what it
 has. One answer at a time per person; closing the page aborts the model call.
 The question is stored at once, the answer only when complete, and tool
 results never — the next turn asks again, which keeps history small and data
-current. History is trimmed from the oldest to fit `num_ctx`.
+current. History is trimmed from the oldest to fit `num_ctx`. A new
+conversation is **named by the model** after its first answer (`title`), never
+over a name the person gave it (`titled`); **regenerate** drops the last answer
+and answers its question again; each answer takes a thumbs up or down
+(`feedback`), kept beside it. The tables keep the assistant's name
+(`assistant_*`): renaming them is a migration for a word.
 
-Answers are markdown, rendered by `markdown.tsx` into React elements — never
-HTML, since a model that read our data wrote it. Portal paths become in-app
-links (the tools hand the model a `link` for everything they return); `_x_` is
-italic only between word boundaries, because names like
-`NBFS_LoanManagementSystem` are not emphasis. It is one route with an optional
-id, so a new chat takes its URL mid-answer without remounting. The catalog
-tests and the assistant tests share `pg_advisory_lock(4202)`: `catalog.test.ts`
+The UI is one `ChatThread` and one `useChat` hook in two places: the full page
+(conversations grouped by when they were used, searchable, renamable) and the
+**dock** (`chatbot-dock.tsx`, mounted in `AppShell`): a launcher in the corner
+of every page but the chatbot's own, or Ctrl/⌘ J, opens the chat in a sheet
+over the page, with questions to start from that fit the page and the
+person's permissions; its conversation carries on from page to page for the
+session (`sessionStorage`), opens in the full page with one click, and a link
+in an answer closes it onto that page. Steps fold into "Looked up N things"
+once the answer is written; the thinking dots move only under `no-preference`.
+
+Answers are markdown, rendered by **react-markdown** with `remark-gfm` into
+React elements — never HTML, since a model that read our data wrote it:
+`skipHtml`, and links only to portal paths (in-app) or http(s) (new tab).
+CommonMark reads `_x_` inside a word as text, so `NBFS_LoanManagementSystem`
+stays a name. Code blocks are highlighted by Shiki in their fence's language,
+each grammar its own chunk loaded the first time it appears
+(`highlightCode` in `lib/highlight.ts`), with copy. `markdown.tsx` is
+lazy-loaded, so the parser is not in the bundle the dock rides on. The catalog
+tests and the chatbot tests share `pg_advisory_lock(4202)`: `catalog.test.ts`
 replaces the catalog wholesale, and they run in parallel processes.
 
 `POST /catalog/sync` needs `catalog.sync`: a sync clones from Azure DevOps with
@@ -865,6 +897,10 @@ can overlap, and two fetches into one checkout fight over git's lock.
   `Payments_Platform` into `Payments_Pl` / `atform`.
 - **"DevOps" in prose.** `DEVOPS` is the AD group name; it appears only where
   the group itself is meant, on the profile and the access-denied page.
+- **A Radix `Select` calls `onValueChange` while it settles on its first
+  value.** A handler that resets other fields (a collection emptying its
+  project) must ignore the value it already has, or it wipes what a link
+  prefilled.
 - **The map's search lives in the URL** (`/map?q=`), so links land on a filtered
   map and back/forward keep it. Phones open the map on the List view — a tree
   needs width a phone does not have.

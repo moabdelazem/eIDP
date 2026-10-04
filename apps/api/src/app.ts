@@ -8,7 +8,7 @@ import { jiraRoutes } from './routes/jira.ts'
 import { jenkinsRoutes } from './routes/jenkins.ts'
 import { systemRoutes } from './routes/system.ts'
 import { pipelineRoutes } from './routes/pipelines.ts'
-import { assistantRoutes } from './routes/assistant.ts'
+import { chatbotRoutes } from './routes/chatbot.ts'
 import { catalogRoutes } from './routes/catalog.ts'
 import { requestRoutes } from './routes/requests.ts'
 import { rbacRoutes } from './routes/rbac.ts'
@@ -34,7 +34,7 @@ export function createApp() {
   app.route('/jenkins', jenkinsRoutes)
   app.route('/system', systemRoutes)
   app.route('/pipelines', pipelineRoutes)
-  app.route('/assistant', assistantRoutes)
+  app.route('/chatbot', chatbotRoutes)
   app.route('/rbac', rbacRoutes)
   app.route('/digests', digestRoutes)
 

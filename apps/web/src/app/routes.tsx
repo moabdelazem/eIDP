@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router'
+import { Navigate, Route, Routes, useParams } from 'react-router'
 import { LoginPage } from '@/features/auth/login-page.tsx'
 import { ProfilePage } from '@/features/auth/profile-page.tsx'
 import { OverviewPage } from '@/features/overview/overview-page.tsx'
@@ -16,7 +16,7 @@ import { NotFoundPage } from './not-found-page.tsx'
 import { RequirePermission } from './require-permission.tsx'
 import { AccessPage } from '@/features/admin/access-page.tsx'
 import { JenkinsPage } from '@/features/jenkins/jenkins-page.tsx'
-import { AssistantPage } from '@/features/assistant/assistant-page.tsx'
+import { ChatbotPage } from '@/features/chatbot/chatbot-page.tsx'
 import { BuildPage } from '@/features/jenkins/build-page.tsx'
 import { PipelinesPage } from '@/features/pipelines/pipelines-page.tsx'
 import { DigestPage } from '@/features/digest/digest-page.tsx'
@@ -63,8 +63,10 @@ export function AppRoutes() {
             <Route path="pipelines/build" element={<BuildPage />} />
           </Route>
           <Route element={<RequirePermission permission="ai.chat" />}>
-            <Route path="assistant/:conversationId?" element={<AssistantPage />} />
+            <Route path="chatbot/:conversationId?" element={<ChatbotPage />} />
           </Route>
+          {/* Where the chatbot lived when it was the assistant. */}
+          <Route path="assistant/:conversationId?" element={<ToChatbot />} />
 
           {/* Every path in `manageItems` belongs here, behind the same permission. */}
           <Route element={<RequirePermission permission="requests.decide_access" scoped />}>
@@ -86,4 +88,9 @@ export function AppRoutes() {
       </Route>
     </Routes>
   )
+}
+
+function ToChatbot() {
+  const { conversationId } = useParams()
+  return <Navigate to={conversationId ? `/chatbot/${conversationId}` : '/chatbot'} replace />
 }

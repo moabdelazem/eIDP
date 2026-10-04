@@ -11,6 +11,15 @@
       rel="stylesheet"
     />
     <title>e-IDP</title>
+    <script>
+      // The theme before the first paint (next-themes' own script never runs in an SPA: React does not execute scripts it renders).
+      try {
+        var theme = localStorage.getItem('eidp.theme') || 'system'
+        var dark = theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
+        if (dark) document.documentElement.classList.add('dark')
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

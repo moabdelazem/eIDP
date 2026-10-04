@@ -31,13 +31,21 @@ type ChatRequest = {
 }
 
 /**
- * The assistant's side: which tool a question calls for, by its words — a
+ * The chatbot's side: which tool a question calls for, by its words — a
  * stand-in for the model's judgement, deterministic so tests can rely on it.
  * Only tools the request offers are ever called, as a real model would.
  */
 function pickTool(question: string, offered: string[]): { name: string; arguments: Record<string, unknown> } | null {
   const q = question.toLowerCase()
   const rules: [RegExp, string, (m: RegExpMatchArray) => Record<string, unknown>][] = [
+    [/who am i|what can i do|my groups|my permissions/, 'whoami', () => ({})],
+    [/my pipelines?|my runs|my builds/, 'my_pipelines', () => ({ window: '7d' })],
+    [/build (\S+) #(\d+)|this build|why did (?:it|this) fail/, 'build_details', (m) => ({ job: m[1] ?? 'payments/loan-scoring-api', number: Number(m[2] ?? 40) })],
+    [/waiting for (?:me|my approval)|pending approvals?/, 'pending_approvals', () => ({})],
+    [/health|is anything down/, 'system_health', () => ({})],
+    [/digest|how did (?:my|our) team do/, 'team_digest', () => ({})],
+    [/request (?:a )?repo(?:sitory)? (\S+) in (\S+)/, 'draft_request', (m) => ({ kind: 'repository', repository: m[1], project: m[2]!.replace(/\?$/, '') })],
+    [/request (\S+) (?:on|for) (\S+)/, 'draft_request', (m) => ({ kind: 'access', people: [m[1]], project: m[2]!.replace(/\?$/, '') })],
     [/failing|broken/, 'jenkins_failing', () => ({})],
     [/builds? (?:of|for|with) (\S+)/, 'jenkins_builds', (m) => ({ query: m[1], window: '7d' })],
     [/my requests?/, 'my_requests', () => ({})],
@@ -69,6 +77,14 @@ export function createFakeOllama({ models = ['qwen2.5:latest'] }: { models?: str
     if (mode === 'no-model' || !known) return c.json({ error: `model '${body.model}' not found` }, 404)
     if (mode === 'slow') await new Promise((resolve) => setTimeout(resolve, 3000))
     if (body.stream) return assistantTurn(c, body)
+    // A chatbot conversation's name: its schema asks for a title.
+    if (JSON.stringify(body.format ?? {}).includes('"title"')) {
+      const user = body.messages.find((m) => m.role === 'user')?.content ?? ''
+      const question = /^Question: (.*)$/m.exec(user)?.[1] ?? ''
+      const words = question.replace(/[?.!]/g, '').split(/\s+/).filter((w) => w.length > 2).slice(0, 4)
+      const title = words.length ? words.map((w, i) => (i === 0 ? w[0]!.toUpperCase() + w.slice(1) : w)).join(' ') : 'A conversation'
+      return c.json({ model: body.model, message: { role: 'assistant', content: JSON.stringify({ title }) }, done: true, total_duration: 300_000_000, prompt_eval_count: 120 })
+    }
     // A request's risk summary: its schema asks for reasonConcerns.
     if (JSON.stringify(body.format ?? {}).includes('reasonConcerns')) {
       const user = body.messages.find((m) => m.role === 'user')?.content ?? ''

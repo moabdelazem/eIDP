@@ -347,6 +347,12 @@ create table if not exists assistant_messages (
 
 create index if not exists assistant_messages_conversation_idx on assistant_messages (conversation_id, id);
 
+-- The chatbot (the tables keep the assistant's name): a name the person gave
+-- a conversation is never overwritten by the model's, and each answer can be
+-- marked useful or not.
+alter table assistant_conversations add column if not exists titled boolean not null default false;
+alter table assistant_messages add column if not exists feedback text check (feedback in ('up', 'down'));
+
 -- Automatic explanations that did not work: how often, and why. A build the
 -- model cannot explain is tried twice, fifteen minutes apart, then left for
 -- someone to ask by hand — never retried on every sync.
