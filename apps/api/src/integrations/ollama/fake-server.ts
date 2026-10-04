@@ -81,6 +81,16 @@ export function createFakeOllama({ models = ['qwen2.5:latest'] }: { models?: str
       return c.json({ model: body.model, message: { role: 'assistant', content: JSON.stringify(answer) }, done: true, total_duration: 900_000_000, prompt_eval_count: 400 })
     }
 
+    // A team's weekly digest: its schema asks for highlights.
+    if (JSON.stringify(body.format ?? {}).includes('highlights')) {
+      const user = body.messages.find((m) => m.role === 'user')?.content ?? ''
+      const team = /^Team: (.+?)\./m.exec(user)?.[1] ?? 'The team'
+      const rate = /^Success rate: (\S+)/m.exec(user)?.[1] ?? 'unknown'
+      const broken = [...user.matchAll(/^- Pipeline (\S+).*still broken/gm)].map((m) => `${m[1]} is still broken — worth a look.`)
+      const answer = { summary: `${team} passed ${rate} of its builds this week.`, highlights: broken.slice(0, 3) }
+      return c.json({ model: body.model, message: { role: 'assistant', content: JSON.stringify(answer) }, done: true, total_duration: 900_000_000, prompt_eval_count: 400 })
+    }
+
     const user = body.messages.find((m) => m.role === 'user')?.content ?? ''
     // Lines of the excerpt are "<n>: <text>"; cite those that read like errors.
     const errors = [...user.matchAll(/^(\d+): (.*(?:ERROR|Failures: [1-9]|FAILURE).*)$/gm)].map((m) => ({ n: Number(m[1]), text: m[2]! }))

@@ -392,3 +392,18 @@ create table if not exists health_samples (
 );
 
 create index if not exists health_samples_component_at_idx on health_samples (component, at);
+
+-- A team's finished week (services/digest.ts): the facts counted in code, and
+-- the model's words on top, kept so it reads the same after its builds age out.
+create table if not exists weekly_digests (
+  team           text not null,
+  week_start     date not null,
+  facts          jsonb not null,
+  summary        text,
+  highlights     jsonb not null default '[]'::jsonb,
+  model          text,
+  prompt_version integer not null,
+  error          text,
+  created_at     timestamptz not null default now(),
+  primary key (team, week_start)
+);
