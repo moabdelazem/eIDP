@@ -269,6 +269,13 @@ test('a build shows its stages, commits, agent, parameters and the end of its lo
     run.stages.map((s: any) => `${s.name}:${s.result}`),
     ['Checkout:success', 'Build:success', 'Test:failure', 'Deploy:not_built'],
   )
+  // The server has Pipeline Graph View, which says what ran in parallel and which branch broke.
+  assert.equal(run.stagesFrom, 'graph')
+  const test = run.stages.find((s: any) => s.name === 'Test')
+  assert.deepEqual(
+    test.branches.map((b: any) => `${b.name}:${b.result}`),
+    ['Unit tests:failure', 'Integration tests:success'],
+  )
   assert.deepEqual(run.changes, [{ commit: 'c0ffee40', message: 'Fix scoring for build 40', author: 'alice' }])
   assert.match(run.log, /ERROR: script returned exit code 1/)
   assert.equal(run.logUrl, `${run.url}consoleText`)
@@ -278,12 +285,16 @@ test('a build shows its stages, commits, agent, parameters and the end of its lo
 test('a freestyle build has no stages, and one with a password cannot be run again', async () => {
   const run = await json(await call('alice', 'GET', `/jenkins/run?job=${encodeURIComponent('payments/deploy-prod')}&number=5`))
   assert.deepEqual(run.stages, [])
+  assert.equal(run.stagesFrom, null)
   assert.match(run.notReplayable, /password parameter \(DB_PASSWORD\)/)
 })
 
 test('a multibranch branch with an encoded slash is found', async () => {
   const run = await json(await call('alice', 'GET', `/jenkins/run?job=${encodeURIComponent('agriland-api/feature%2Fscoring')}&number=3`))
   assert.equal(run.result, 'success')
+  // No Pipeline Graph View here: Stage View's flat list, no branches.
+  assert.equal(run.stagesFrom, 'stage-view')
+  assert.ok(run.stages.length > 0 && run.stages.every((s: any) => s.branches.length === 0))
 })
 
 test('a build that does not exist is a 404, not a 500', async () => {

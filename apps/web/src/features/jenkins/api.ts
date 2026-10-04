@@ -139,11 +139,14 @@ export type Stats = {
 
 export type ParameterFacet = { name: string; builds: number; values: { value: string; builds: number }[] }
 
-export type Stage = { name: string; result: Result; startedAt: string | null; durationMs: number }
+/** A pipeline stage; `branches` are what it ran in parallel (Pipeline Graph View only). */
+export type Stage = { name: string; result: Result; startedAt: string | null; durationMs: number; agent: string | null; branches: Stage[] }
 
 export type RunDetail = Run & {
   changes: { commit: string | null; message: string; author: string | null }[]
   stages: Stage[]
+  /** Pipeline Graph View (with parallel branches), Stage View (flat), or none. */
+  stagesFrom: 'graph' | 'stage-view' | null
   notReplayable: string | null
   log: string
   logTruncated: boolean

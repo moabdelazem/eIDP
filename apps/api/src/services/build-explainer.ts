@@ -215,13 +215,17 @@ const Answer = z.object({
 
 /** What the model is told about the build, besides the log. */
 export function facts(build: BuildDetail): string {
-  const failed = build.stages.find((s) => s.result === 'failure' || s.result === 'unstable')
+  const broke = (s: { result: string }) => s.result === 'failure' || s.result === 'unstable'
+  const failed = build.stages.find(broke)
+  // Of a stage's parallel branches, the ones that broke it.
+  const branches = failed?.branches.filter(broke).map((b) => b.name) ?? []
   const lines = [
     `Job: ${build.job}`,
     `Build: #${build.number}`,
     `Result: ${build.result}`,
     ...(build.stages.length ? [`Stages: ${build.stages.map((s) => `${s.name} (${s.result})`).join(', ')}`] : []),
     ...(failed ? [`Failed stage: ${failed.name}`] : []),
+    ...(branches.length ? [`Failed in parallel branch: ${branches.join(', ')}`] : []),
     ...(build.causes.length ? [`Started by: ${build.causes.join('; ')}`] : []),
     ...(build.parameters.length ? [`Parameters: ${build.parameters.map((p) => `${p.name}=${p.value ?? ''}`).join(', ')}`] : []),
     ...(build.changes.length ? [`Commits in this build: ${build.changes.map((c) => redact(c.message).slice(0, 200)).join(' | ')}`] : ['Commits in this build: none']),

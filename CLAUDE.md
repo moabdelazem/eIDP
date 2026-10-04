@@ -147,9 +147,15 @@ status gets its colour — badges, the stat tiles' dots and the timeline's last
 step all read it. They never carry meaning alone: every one comes with an
 icon and a word. Red still means only "act on this".
 
-Light is the only theme in use — `<html>` carries no `dark` class. The `.dark`
-token block in `src/index.css` is kept and works, but nothing switches to it
-yet. Design and check against light.
+**Light and dark.** `next-themes` (already a shadcn dependency, for the
+Toaster) puts `dark` on `<html>` — Light, Dark or Same as the system, from the
+user menu at the foot of the rail, kept per browser in `eidp.theme`, the
+system's by default; its own pre-paint script means a dark page never flashes
+paper. Every colour is a token with a value in both `:root` and `.dark`
+(`src/index.css`); the rail is the one exception, identical in both. A new
+colour needs both values, checked in both themes — a hex in a component is
+how a dark page grows a white box. Brand marks take a `dark` shade where their
+blue would sink into a dark card (Jira's #0052CC was 2.6:1).
 
 Azure DevOps and Jira appear by their own marks (`components/brand-icons.tsx`,
 paths from Simple Icons, CC0 — Lucide has no brand icons, and a package for
@@ -730,8 +736,18 @@ because a failed deploy re-run with defaults deploys something else. A build
 with a password parameter or a file one is refused rather than re-run blank.
 
 A build has its own page (`/jenkins/build?job=a/b&number=12` — the job carries
-folders, so it rides in the query): stages from the Stage View plugin's
-`wfapi` (none on a freestyle job or a server without it), parameters (each a
+folders, so it rides in the query): its stages — from the **Pipeline Graph
+View** plugin's `pipeline-graph/tree` when the server has it, the only source
+that says what ran in parallel (`Stage.branches`), else Stage View's flat
+`wfapi` (`stagesFrom` says which; none on a freestyle job) — drawn as a graph
+(`stage-graph.tsx`: stages left to right, a parallel stage's branches stacked
+in its column, SVG lines under HTML nodes so each node is a real button) or
+as a list, the plain path to the same stages; phones open on the list, and the
+choice is kept per browser. A stage opens the log at its
+`[Pipeline] { (name)` heading (a branch's `Branch: name`, else its stage's).
+The sync's agent lookup still reads `wfapi` only — the tree is one more call
+per build it does not need. The fake serves the tree for the `payments`
+folder only, so both paths stay tested. Then parameters (each a
 link to every build that had it), commits, agent, and the last 256 KB of the
 log in `log-viewer.tsx` — opened at the first error, with find, error-to-error
 jumps, errors-with-context, hiding `[Pipeline]` steps, and wrap. Find wins over
