@@ -90,6 +90,30 @@ export const jenkinsRoutes = new Hono<AppEnv>()
     return c.json(state)
   })
 
+  // Setting a failure aside changes what everyone sees as broken: global operators only.
+  .post(
+    '/ignore',
+    requirePermission('jenkins.operate'),
+    validate(
+      'json',
+      z.object({
+        job: z.string().min(1).max(1024),
+        until: z.enum(Object.keys(jenkins.IGNORE_FOR) as [jenkins.IgnoreFor, ...jenkins.IgnoreFor[]]),
+        reason: z.string().trim().min(3, 'Say why it is being ignored, so the next person knows.').max(500),
+      }),
+    ),
+    async (c) => {
+      const { job, until, reason } = c.req.valid('json')
+      await jenkins.ignore(job, until, reason, actor(c))
+      return c.json({ ok: true })
+    },
+  )
+
+  .post('/unignore', requirePermission('jenkins.operate'), validate('json', z.object({ job: z.string().min(1).max(1024) })), async (c) => {
+    await jenkins.unignore(c.req.valid('json').job, actor(c))
+    return c.json({ ok: true })
+  })
+
   // Acting needs `jenkins.operate` somewhere to get past the guard; the
   // service then checks it covers this pipeline's team or project.
   .post('/rebuild', requirePermission('jenkins.operate', { scoped: true }), validate('json', BuildRef), async (c) => {

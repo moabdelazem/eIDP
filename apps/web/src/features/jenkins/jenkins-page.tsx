@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { CircleCheck, ExternalLink, RefreshCw, Server, Sparkles, X } from 'lucide-react'
+import { CircleCheck, ExternalLink, EyeOff, RefreshCw, Server, Sparkles, X } from 'lucide-react'
 import { JenkinsIcon } from '@/components/brand-icons.tsx'
 import { EmptyState } from '@/components/empty-state.tsx'
 import { PAGE, PageHeader } from '@/components/page-layout.tsx'
@@ -19,6 +19,7 @@ import { toast } from 'sonner'
 import { ActionDialog, type Pending } from './actions.tsx'
 import { buildPath, jenkinsApi, WINDOW_LABEL, type AuditEntry, type Failure, type Overview, type Result, type Window } from './api.ts'
 import { Dashboard } from './dashboard.tsx'
+import { IgnoreDialog, IgnoredList } from './ignore.tsx'
 import { JobName, RESULT, ResultBadge } from './result.tsx'
 import { ParameterChips, RunAction, Runs } from './runs.tsx'
 
@@ -73,6 +74,7 @@ export function JenkinsPage() {
   )
 
   const [pending, setPending] = useState<Pending | null>(null)
+  const [ignoring, setIgnoring] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
   const failing = overview.data?.counts.failing ?? 0
@@ -183,7 +185,15 @@ export function JenkinsPage() {
           <Dashboard window={window} version={version} onJob={(job) => setView({ tab: 'runs', q: job, result: 'all' })} />
         </TabsContent>
         <TabsContent value="failures" className="mt-4">
-          <FailuresTable failures={o.failures} canOperate={canOperate} onAct={setPending} onPick={(term) => setView({ tab: 'runs', q: term })} />
+          <FailuresTable
+            failures={o.failures}
+            ignored={o.counts.ignored}
+            canOperate={canOperate}
+            onAct={setPending}
+            onIgnore={setIgnoring}
+            onPick={(term) => setView({ tab: 'runs', q: term })}
+          />
+          <IgnoredList failures={o.ignored} canOperate={canOperate} onDone={() => setVersion((v) => v + 1)} />
         </TabsContent>
         <TabsContent value="runs" className="mt-4">
           <Runs window={window} version={version} q={q} result={result} onChange={setView} canOperate={canOperate} onAct={setPending} />
@@ -208,6 +218,7 @@ export function JenkinsPage() {
       </Tabs>
 
       <ActionDialog pending={pending} onClose={() => setPending(null)} onDone={() => setVersion((v) => v + 1)} />
+      <IgnoreDialog job={ignoring} onClose={() => setIgnoring(null)} onDone={() => setVersion((v) => v + 1)} />
     </div>
   )
 }
@@ -268,19 +279,24 @@ function Tiles({ overview: o, active, onPick }: { overview: Overview; active: Ta
 
 function FailuresTable({
   failures,
+  ignored,
   canOperate,
   onAct,
+  onIgnore,
   onPick,
 }: {
   failures: Failure[]
+  ignored: number
   canOperate: boolean
   onAct: (pending: Pending) => void
+  onIgnore: (job: string) => void
   onPick: (term: string) => void
 }) {
   if (failures.length === 0) {
     return (
       <div className="flex items-center gap-2 rounded-xl border border-dashed px-4 py-8 text-sm text-muted-foreground">
-        <CircleCheck className="size-4 text-success" /> Every job’s latest build passed.
+        <CircleCheck className="size-4 text-success" />
+        {ignored > 0 ? `Nothing else is failing — ${ignored} ignored below.` : 'Every job’s latest build passed.'}
       </div>
     )
   }
@@ -336,7 +352,16 @@ function FailuresTable({
               <TableCell className="hidden text-muted-foreground lg:table-cell">
                 {f.lastSuccess ? since(f.lastSuccess) : 'Not in the history kept'}
               </TableCell>
-              <TableCell className="text-right">{canOperate && <RunAction run={f.last} onAct={onAct} />}</TableCell>
+              <TableCell className="text-right">
+                {canOperate && (
+                  <div className="flex items-center justify-end gap-1.5">
+                    <RunAction run={f.last} onAct={onAct} />
+                    <Button size="sm" variant="ghost" onClick={() => onIgnore(f.job)} aria-label={`Ignore ${f.job}`} title="Take it off the failing list, with a reason">
+                      <EyeOff /> <span className="hidden sm:inline">Ignore</span>
+                    </Button>
+                  </div>
+                )}
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -430,7 +455,13 @@ function AgentsTable({ overview: o }: { overview: Overview }) {
   )
 }
 
-const ACTION_LABEL: Record<AuditEntry['action'], string> = { rebuild: 'Ran again', stop: 'Stopped', cancel: 'Removed from queue' }
+const ACTION_LABEL: Record<AuditEntry['action'], string> = {
+  rebuild: 'Ran again',
+  stop: 'Stopped',
+  cancel: 'Removed from queue',
+  ignore: 'Ignored the failure',
+  unignore: 'Stopped ignoring',
+}
 
 /** Who asked the portal to act in Jenkins — Jenkins itself only sees the service account. */
 function ActivityTable({ entries }: { entries: AuditEntry[] }) {
@@ -457,6 +488,7 @@ function ActivityTable({ entries }: { entries: AuditEntry[] }) {
               <TableCell>{e.actorName}</TableCell>
               <TableCell>
                 {ACTION_LABEL[e.action]}
+                {e.note && <p className="max-w-80 text-xs whitespace-normal text-muted-foreground">{e.note}</p>}
                 {!e.ok && <p className="max-w-80 text-xs whitespace-normal text-destructive">Refused: {e.error}</p>}
               </TableCell>
               <TableCell className="max-w-80">

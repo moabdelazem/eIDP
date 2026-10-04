@@ -1,5 +1,5 @@
 import { ApiError } from '../../lib/errors.ts'
-import { fullNameFromUrl, jenkinsConfig, jenkinsGet, jenkinsPost, jenkinsTail, jobPath } from './client.ts'
+import { fullNameFromUrl, jenkinsConfig, jenkinsGet, jenkinsHead, jenkinsPost, jenkinsTail, jobPath } from './client.ts'
 
 export { jenkinsConfig } from './client.ts'
 export { EVERYONE_SID, readAccess, parseMatrix, type AccessRules, type JobGrant, type SidType } from './access.ts'
@@ -61,7 +61,7 @@ export type HistoryBuild = Build & {
 export type Change = { commit: string | null; message: string; author: string | null }
 
 /** A pipeline stage, from the Pipeline Stage View plugin when the server has it. */
-export type Stage = { name: string; result: Result; startedAt: string | null; durationMs: number }
+export type Stage = { name: string; result: Result; startedAt: string | null; durationMs: number; agent: string | null }
 
 export type BuildDetail = HistoryBuild & {
   changes: Change[]
@@ -147,7 +147,9 @@ function toHistory(job: string, raw: RawBuild): HistoryBuild {
   const actions = (raw.actions ?? []).filter((a) => a !== null)
   return {
     ...toBuild(job, raw),
-    builtOn: raw.builtOn || null,
+    // Only freestyle builds report builtOn, and "" there means the built-in
+    // node. A Pipeline run never has it: see `pipelineAgents`.
+    builtOn: raw.builtOn === '' ? BUILT_IN : raw.builtOn || null,
     causes: actions.flatMap((a) => (a.causes ?? []).map((c) => c.shortDescription ?? '')).filter(Boolean),
     parameters: actions.flatMap((a) => a.parameters ?? []).map(maskParameter),
     authors: authorsOf(raw),
@@ -235,8 +237,11 @@ export async function listAgents(): Promise<Agent[]> {
 export async function buildDetail(job: string, number: number): Promise<BuildDetail> {
   const [raw, stages] = await Promise.all([jenkinsGet<RawBuild>(`${jobPath(job)}/${number}/api/json`, { tree: BUILD }), buildStages(job, number)])
   const rawParameters = (raw.actions ?? []).flatMap((a) => a?.parameters ?? [])
+  const history = toHistory(job, raw)
+  const agents = [...new Set(stages.flatMap((stage) => (stage.agent ? [stage.agent] : [])))]
   return {
-    ...toHistory(job, raw),
+    ...history,
+    builtOn: history.builtOn ?? (agents.length ? agents.join(', ') : null),
     changes: changeItems(raw).map((item) => ({ commit: item.commitId ?? null, message: (item.msg ?? '').trim(), author: item.author?.fullName ?? null })),
     stages,
     notReplayable: notReplayable(rawParameters),
@@ -248,7 +253,7 @@ export async function buildDetail(job: string, number: number): Promise<BuildDet
  * has it, and a freestyle job has no stages: either way, none.
  */
 async function buildStages(job: string, number: number): Promise<Stage[]> {
-  type Raw = { stages?: { name: string; status: string; startTimeMillis?: number; durationMillis?: number }[] }
+  type Raw = { stages?: { name: string; status: string; startTimeMillis?: number; durationMillis?: number; execNode?: string }[] }
   let described: Raw
   try {
     described = await jenkinsGet<Raw>(`${jobPath(job)}/${number}/wfapi/describe`)
@@ -261,7 +266,40 @@ async function buildStages(job: string, number: number): Promise<Stage[]> {
     result: stageResult(stage.status),
     startedAt: stage.startTimeMillis ? new Date(stage.startTimeMillis).toISOString() : null,
     durationMs: stage.durationMillis ?? 0,
+    // Stage View names the agent a stage ran on; "" is the built-in node, or
+    // a stage that never reached one.
+    agent: stage.execNode || null,
   }))
+}
+
+/** How the portal names Jenkins' own node, wherever Jenkins leaves it blank. */
+export const BUILT_IN = 'built-in'
+/** Enough of a log's start to hold its "Running on" lines. */
+const LOG_HEAD_BYTES = 64 * 1024
+
+/**
+ * The agents a Pipeline run ran on. Jenkins reports `builtOn` only for
+ * freestyle builds, so for a Pipeline it comes from the stages' `execNode`
+ * (Stage View), else from the log's "Running on <agent> in <workspace>" lines
+ * — read from its start only. Empty when neither says.
+ */
+export async function pipelineAgents(job: string, number: number): Promise<string[]> {
+  const fromStages = (await buildStages(job, number)).flatMap((s) => (s.agent ? [s.agent] : []))
+  if (fromStages.length > 0) return [...new Set(fromStages)]
+  let head: string
+  try {
+    head = await jenkinsHead(`${jobPath(job)}/${number}/consoleText`, LOG_HEAD_BYTES)
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'jenkins_not_found') return []
+    throw err
+  }
+  return agentsInLog(head)
+}
+
+/** "Running on linux-02 in /var/…" → linux-02; Jenkins' own node reads "Running on Jenkins". */
+export function agentsInLog(log: string): string[] {
+  const names = [...log.matchAll(/^Running on (.+?) in \S/gm)].map((m) => (m[1] === 'Jenkins' ? BUILT_IN : m[1]!.trim()))
+  return [...new Set(names)]
 }
 
 function stageResult(status: string): Result {

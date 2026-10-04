@@ -30,6 +30,20 @@ export type Failure = {
   inQueue: boolean
   /** The model's one line on the latest failure, for people who may read explanations. */
   explanation: { summary: string; category: Category } | null
+  /** Set aside on purpose: who, why, until when. */
+  ignored: Ignore | null
+}
+
+export type Ignore = { reason: string; by: string; byName: string; at: string; untilPass: boolean; expiresAt: string | null }
+
+/** How long an ignore holds. */
+export type IgnoreFor = 'pass' | '1d' | '7d' | '30d' | 'always'
+export const IGNORE_FOR_LABEL: Record<IgnoreFor, string> = {
+  pass: 'Until it passes again',
+  '1d': 'For a day',
+  '7d': 'For a week',
+  '30d': 'For 30 days',
+  always: 'Until someone stops ignoring it',
 }
 
 export type QueueItem = {
@@ -67,8 +81,11 @@ export type SyncState = {
 export type Overview = {
   url: string
   sync: SyncState
-  counts: { jobs: number; failing: number; running: number; queued: number; agentsOffline: number }
+  counts: { jobs: number; failing: number; ignored: number; running: number; queued: number; agentsOffline: number }
+  /** Failing and not ignored. */
   failures: Failure[]
+  /** Failing, but set aside on purpose. */
+  ignored: Failure[]
   queue: QueueItem[]
   agents: Agent[]
 }
@@ -88,7 +105,20 @@ export type Totals = {
   jobs: number
 }
 
-export type Bucket = { at: string; success: number; failure: number; unstable: number; aborted: number; successRate: number | null }
+export type Bucket = {
+  at: string
+  success: number
+  failure: number
+  unstable: number
+  aborted: number
+  successRate: number | null
+  /** Typical and slow-tail time of the builds that finished in the bucket. */
+  p50Ms: number | null
+  p95Ms: number | null
+}
+
+/** From a job breaking to its next pass. */
+export type Recovery = { fixes: number; medianMs: number | null; longestMs: number | null }
 
 export type Stats = {
   window: Window
@@ -98,8 +128,13 @@ export type Stats = {
   previous: Totals
   running: number
   timeline: Bucket[]
-  topFailing: { job: string; builds: number; broken: number; rate: number; lastBroken: string }[]
+  topFailing: { job: string; builds: number; broken: number; rate: number; lastBroken: string; ignored: boolean }[]
   slowest: { job: string; builds: number; p50Ms: number; p95Ms: number }[]
+  recovery: { current: Recovery; previous: Recovery }
+  agents: { agent: string; builds: number; broken: number; busyMs: number }[]
+  triggers: { trigger: string; builds: number }[]
+  /** The model's categories for failed builds — its reading, not a fact. */
+  categories: { category: Category; builds: number }[]
 }
 
 export type ParameterFacet = { name: string; builds: number; values: { value: string; builds: number }[] }
@@ -118,6 +153,19 @@ export type RunDetail = Run & {
 }
 
 export type Category = 'test_failure' | 'compilation' | 'dependency' | 'infrastructure' | 'configuration' | 'permission' | 'timeout' | 'flaky' | 'unknown'
+
+/** How a failure category reads. */
+export const CATEGORY: Record<Category, string> = {
+  test_failure: 'Test failure',
+  compilation: 'Compilation',
+  dependency: 'Dependency',
+  infrastructure: 'Infrastructure',
+  configuration: 'Configuration',
+  permission: 'Permission',
+  timeout: 'Timeout',
+  flaky: 'Looks flaky',
+  unknown: 'Unclear',
+}
 
 /** A model's explanation of a failed build, from services/build-explainer.ts. */
 export type Explanation = {
@@ -141,7 +189,9 @@ export type AuditEntry = {
   at: string
   actor: string
   actorName: string
-  action: 'rebuild' | 'stop' | 'cancel'
+  action: 'rebuild' | 'stop' | 'cancel' | 'ignore' | 'unignore'
+  /** The reason given, for an ignore. */
+  note: string | null
   job: string
   build: number | null
   queueId: number | null
@@ -180,6 +230,8 @@ export const jenkinsApi = {
   rebuild: (job: string, number: number) => post('/jenkins/rebuild', { job, number }),
   stop: (job: string, number: number) => post('/jenkins/stop', { job, number }),
   cancel: (id: number) => post(`/jenkins/queue/${id}/cancel`),
+  ignore: (job: string, until: IgnoreFor, reason: string) => post('/jenkins/ignore', { job, until, reason }),
+  unignore: (job: string) => post('/jenkins/unignore', { job }),
 }
 
 /**

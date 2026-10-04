@@ -4,6 +4,7 @@ import { config } from '../lib/config.ts'
 import { query } from '../lib/db.ts'
 import { ApiError } from '../lib/errors.ts'
 import { explain, PROMPT_VERSION } from './build-explainer.ts'
+import { IGNORE_HOLDS } from './jenkins.ts'
 import type { Actor } from './requests.ts'
 
 /**
@@ -92,6 +93,8 @@ async function candidates(limit: number, only?: { job: string; number: number })
       where l.result in ('failure', 'unstable')
         and l.started_at >= now() - make_interval(hours => $2)
         and ($6::text is null or (l.job = $6 and l.number = $7))
+        -- Set aside on purpose: no GPU time for it.
+        and not exists (select 1 from jenkins_ignored i where i.server = $1 and i.job = l.job and ${IGNORE_HOLDS})
         and not exists (
           select 1 from build_explanations e
            where e.server = $1 and e.job = l.job and e.number = l.number and e.prompt_version = $3 and e.model = $4)

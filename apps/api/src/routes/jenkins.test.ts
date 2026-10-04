@@ -28,7 +28,7 @@ let auditFloor = 0
 // History is keyed by server, and this fake's URL carries a fresh port, so
 // these rows are only ever the tests' own.
 const forget = () =>
-  Promise.all(['jenkins_builds', 'jenkins_jobs', 'jenkins_sync'].map((table) => query(`delete from ${table} where server = $1`, [url])))
+  Promise.all(['jenkins_builds', 'jenkins_jobs', 'jenkins_sync', 'jenkins_ignored'].map((table) => query(`delete from ${table} where server = $1`, [url])))
 
 before(async () => {
   await ensureSchema()
@@ -109,6 +109,20 @@ test('later syncs read only jobs that built since, or had a build still running'
   assert.equal((await search('TICKET=PAY-4242')).total, 1)
 })
 
+test('a Pipeline run says which agent it ran on, though Jenkins does not report builtOn for one', async () => {
+  // Every stored build has its agent, found from its stages (Stage View) by the sync.
+  const { rows } = await query<{ job: string; number: number; built_on: string | null }>('select job, number, built_on from jenkins_builds where server = $1', [url])
+  const agentOf = new Map(fake.jobs().flatMap(({ fullName, job }) => job.builds.map((b) => [`${fullName}#${b.number}`, b.builtOn])))
+  assert.ok(rows.length > 0)
+  for (const row of rows) assert.equal(row.built_on, agentOf.get(`${row.job}#${row.number}`), `${row.job} #${row.number}`)
+  assert.ok((await search('linux-03')).runs.some((r) => r.builtOn === 'linux-03'))
+
+  // The build page says so too.
+  const run = await json(await call('alice', 'GET', '/jenkins/run?job=payments/loan-scoring-api&number=40'))
+  assert.equal(run.builtOn, agentOf.get('payments/loan-scoring-api#40'))
+  assert.ok(run.stages.every((s: any) => s.agent === null || s.agent === run.builtOn))
+})
+
 test('the overview says what is broken now, and for how long', async () => {
   const overview = await json(await call('alice', 'GET', '/jenkins'))
   assert.equal(overview.sync.ok, true)
@@ -154,6 +168,44 @@ test('the week before is its own window, for the deltas', async () => {
   const stats = await json(await call('alice', 'GET', '/jenkins/stats?window=7d'))
   const before = new Date(Date.parse(stats.from) - 7 * 86_400_000).toISOString()
   assert.equal(stats.previous.builds, finishedBetween(before, stats.from).length)
+})
+
+test('the dashboard says where builds ran, what started them, and how long fixing took', async () => {
+  const stats = await json(await call('alice', 'GET', '/jenkins/stats?window=7d'))
+  const from = Date.parse(stats.from)
+  const to = Date.parse(stats.to)
+  const all = fake.jobs().flatMap(({ fullName, job }) => job.builds.map((build) => ({ job: fullName, build })))
+  const inWindow = all.filter(({ build }) => build.timestamp >= from && build.timestamp < to)
+
+  // Agents: every build in the window ran on one, and the counts add up.
+  const byAgent = new Map<string, number>()
+  for (const { build } of inWindow) byAgent.set(build.builtOn, (byAgent.get(build.builtOn) ?? 0) + 1)
+  assert.deepEqual(Object.fromEntries(stats.agents.map((a: any) => [a.agent, a.builds])), Object.fromEntries(byAgent))
+
+  // Triggers: maika's pushes are named, as are the people and SCM changes.
+  const triggers = Object.fromEntries(stats.triggers.map((t: any) => [t.trigger, t.builds]))
+  assert.equal(triggers.maika, inWindow.filter(({ build }) => build.cause === 'Started by user maika').length)
+  assert.equal(triggers['SCM change'], inWindow.filter(({ build }) => /SCM change/.test(build.cause)).length)
+  assert.equal(stats.triggers.reduce((n: number, t: any) => n + t.builds, 0), inWindow.length)
+
+  // Time to fix, worked out here from the fake's own history.
+  const took: number[] = []
+  for (const { job } of fake.jobs()) {
+    let brokeAt: number | null = null
+    for (const build of [...job.builds].reverse()) {
+      if (build.result === 'FAILURE' || build.result === 'UNSTABLE') brokeAt ??= build.timestamp
+      else if (build.result === 'SUCCESS') {
+        if (brokeAt !== null && build.timestamp >= from && build.timestamp < to) took.push(build.timestamp - brokeAt)
+        brokeAt = null
+      }
+    }
+  }
+  assert.equal(stats.recovery.current.fixes, took.length)
+  if (took.length) assert.equal(stats.recovery.current.longestMs, Math.max(...took))
+
+  // Each bucket carries the time of the builds that finished in it.
+  assert.ok(stats.timeline.some((b: any) => b.p50Ms !== null && b.p95Ms >= b.p50Ms))
+  assert.ok(stats.topFailing.every((f: any) => typeof f.ignored === 'boolean'))
 })
 
 test('builds are found by a parameter, by name and value', async () => {
@@ -285,4 +337,49 @@ test('a queued build can be taken out of the queue, once', async () => {
 
 test('the actions are refused without the permission too', async () => {
   assert.equal((await call('bob', 'POST', '/jenkins/rebuild', { job: 'payments/loan-scoring-api', number: 40 })).status, 403)
+})
+
+test('a failing job can be ignored until it passes: off the failing list, back when it breaks again', async () => {
+  const job = 'payments/loan-scoring-api'
+  const before = await json(await call('alice', 'GET', '/jenkins'))
+  assert.ok(before.failures.some((f: any) => f.job === job))
+
+  assert.equal((await call('bob', 'POST', '/jenkins/ignore', { job, until: 'pass', reason: 'Known flaky test' })).status, 403)
+  const short = await call('alice', 'POST', '/jenkins/ignore', { job, until: 'pass', reason: 'x' })
+  assert.equal(short.status, 400)
+  assert.match((await short.json()).error.message, /Say why/)
+
+  await json(await call('alice', 'POST', '/jenkins/ignore', { job, until: 'pass', reason: 'Known flaky test, PAY-77' }))
+  const ignored = await json(await call('alice', 'GET', '/jenkins'))
+  assert.ok(!ignored.failures.some((f: any) => f.job === job))
+  assert.equal(ignored.counts.failing, before.counts.failing - 1)
+  const row = ignored.ignored.find((f: any) => f.job === job)
+  assert.deepEqual({ reason: row.ignored.reason, by: row.ignored.by, untilPass: row.ignored.untilPass }, { reason: 'Known flaky test, PAY-77', by: 'alice', untilPass: true })
+  const audit = await json<any[]>(await call('alice', 'GET', '/jenkins/audit'))
+  assert.deepEqual({ action: audit[0].action, job: audit[0].job, note: audit[0].note }, { action: 'ignore', job, note: 'Known flaky test, PAY-77 (until it passes)' })
+
+  // It passes: no longer failing at all. It breaks again: back on the list, the ignore spent.
+  fake.addBuild(job, { result: 'SUCCESS' })
+  await sync()
+  const passed = await json(await call('alice', 'GET', '/jenkins'))
+  assert.ok(!passed.failures.some((f: any) => f.job === job) && !passed.ignored.some((f: any) => f.job === job))
+  fake.addBuild(job, { result: 'FAILURE' })
+  await sync()
+  assert.ok((await json(await call('alice', 'GET', '/jenkins'))).failures.some((f: any) => f.job === job))
+})
+
+test('an ignore for a time holds through new failures, and can be stopped', async () => {
+  const job = 'payments/deploy-prod'
+  await json(await call('alice', 'POST', '/jenkins/ignore', { job, until: '7d', reason: 'Prod freeze until Monday' }))
+  fake.addBuild(job, { result: 'FAILURE' })
+  await sync()
+  const o = await json(await call('alice', 'GET', '/jenkins'))
+  const row = o.ignored.find((f: any) => f.job === job)
+  assert.equal(row.ignored.untilPass, false)
+  assert.ok(Date.parse(row.ignored.expiresAt) > Date.now() + 6 * 86_400_000)
+
+  await json(await call('alice', 'POST', '/jenkins/unignore', { job }))
+  assert.ok((await json(await call('alice', 'GET', '/jenkins'))).failures.some((f: any) => f.job === job))
+  assert.equal((await call('alice', 'POST', '/jenkins/unignore', { job })).status, 404)
+  assert.equal((await call('alice', 'POST', '/jenkins/ignore', { job: 'no/such-job', until: 'pass', reason: 'Gone for good' })).status, 404)
 })

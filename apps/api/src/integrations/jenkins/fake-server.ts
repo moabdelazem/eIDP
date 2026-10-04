@@ -318,14 +318,16 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
   }
 
   function buildJson(names: string[], b: FakeBuild) {
+    const node = find(names)
+    const pipeline = node?.kind === 'job' && node.pipeline
     return {
-      _class: 'org.jenkinsci.plugins.workflow.job.WorkflowRun',
+      // Like Jenkins: a Pipeline run has no builtOn; only a freestyle build does.
+      ...(pipeline ? { _class: 'org.jenkinsci.plugins.workflow.job.WorkflowRun' } : { _class: 'hudson.model.FreeStyleBuild', builtOn: b.builtOn }),
       number: b.number,
       result: b.result,
       timestamp: b.timestamp,
       duration: b.duration,
       building: b.building,
-      builtOn: b.builtOn,
       url: `${urlOf(names)}${b.number}/`,
       actions: [
         { _class: 'hudson.model.CauseAction', causes: [{ shortDescription: b.cause }] },
@@ -460,7 +462,14 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
         stages: ['Checkout', 'Build', 'Test', 'Deploy'].map((name, n) => {
           const status = !reached ? 'NOT_EXECUTED' : name === failedAt ? 'FAILED' : build.building && n === 2 ? 'IN_PROGRESS' : 'SUCCESS'
           if (status !== 'SUCCESS') reached = false
-          return { name, status, startTimeMillis: build.timestamp + n * 15_000, durationMillis: status === 'NOT_EXECUTED' ? 0 : 15_000 }
+          return {
+            name,
+            status,
+            startTimeMillis: build.timestamp + n * 15_000,
+            durationMillis: status === 'NOT_EXECUTED' ? 0 : 15_000,
+            // The agent each stage ran on; "" for one that never started.
+            execNode: status === 'NOT_EXECUTED' ? '' : build.builtOn,
+          }
         }),
       })
     }

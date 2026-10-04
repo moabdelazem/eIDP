@@ -1,23 +1,27 @@
 import { lazy, Suspense } from 'react'
-import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, EyeOff, Minus, Sparkles } from 'lucide-react'
 import { Section } from '@/components/page-layout.tsx'
 import { BarsSkeleton, Loading } from '@/components/skeletons.tsx'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { since } from '@/features/requests/status.tsx'
 import { useResource } from '@/lib/use-resource.ts'
-import { duration, jenkinsApi, percent, WINDOW_LABEL, type Stats, type Totals, type Window } from './api.ts'
+import { CATEGORY, duration, jenkinsApi, percent, WINDOW_LABEL, type Stats, type Totals, type Window } from './api.ts'
 import { JobName } from './result.tsx'
 
 // The charts pull in recharts; only this tab needs them. Import nothing else
 // from charts.tsx statically, or it rejoins the main bundle.
 const ResultsChart = lazy(() => import('./charts.tsx').then((m) => ({ default: m.ResultsChart })))
 const SuccessRateChart = lazy(() => import('./charts.tsx').then((m) => ({ default: m.SuccessRateChart })))
+const DurationChart = lazy(() => import('./charts.tsx').then((m) => ({ default: m.DurationChart })))
+const RankedBars = lazy(() => import('./charts.tsx').then((m) => ({ default: m.RankedBars })))
 
 /**
  * How the last day or week went: the headline numbers against the window
- * before, builds over time by result, the success rate, and the jobs that
- * failed most and ran longest. The window is the page's one filter, above
- * everything it scopes.
+ * before (time to fix among them), builds over time by result, the success
+ * rate, build time, what starts builds, where they run, why they failed, and
+ * the jobs that failed most and ran longest. The window is the page's one
+ * filter, above everything it scopes. Every chart is one question, one series
+ * in one hue unless the series is the point (results), never two y-axes.
  */
 export function Dashboard({ window, version, onJob }: { window: Window; version: number; onJob: (job: string) => void }) {
   const stats = useResource(() => jenkinsApi.stats(window), [window, version], { pollMs: 60_000 })
@@ -51,6 +55,59 @@ export function Dashboard({ window, version, onJob }: { window: Window; version:
         </Section>
       </div>
 
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <Section title="Build time" description="How long finished builds took: the typical one, and the slowest 5%.">
+          <Suspense fallback={<BarsSkeleton />}>
+            <DurationChart buckets={s.timeline} window={s.window} />
+          </Suspense>
+        </Section>
+        <Section title="What starts builds" description="Who or what started each build — people, service accounts like maika, SCM changes, timers.">
+          {s.triggers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No builds in this window.</p>
+          ) : (
+            <Suspense fallback={<BarsSkeleton bars={4} />}>
+              <RankedBars rows={s.triggers.map((t) => ({ label: t.trigger, value: t.builds }))} caption="What started builds" unit="builds" />
+            </Suspense>
+          )}
+        </Section>
+      </div>
+
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-2">
+        <Section title="Builds per agent" description="Where builds ran. A run that moved between agents counts for each.">
+          {s.agents.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No agent is known for the builds in this window yet.</p>
+          ) : (
+            <Suspense fallback={<BarsSkeleton bars={4} />}>
+              <RankedBars
+                rows={s.agents.map((a) => ({
+                  label: a.agent,
+                  value: a.builds,
+                  detail: `${a.broken} failed or unstable (${percent(a.builds ? a.broken / a.builds : null)}) · busy ${duration(a.busyMs)}`,
+                }))}
+                caption="Builds per agent"
+                unit="builds"
+              />
+            </Suspense>
+          )}
+        </Section>
+        <Section
+          title={
+            <span className="flex items-center gap-2">
+              <Sparkles className="size-4 text-[var(--chart-1)]" aria-hidden /> Why builds failed
+            </span>
+          }
+          description="The model’s reading of each explained failure — a lead, not a fact."
+        >
+          {s.categories.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No failure in this window has been explained yet.</p>
+          ) : (
+            <Suspense fallback={<BarsSkeleton bars={4} />}>
+              <RankedBars rows={s.categories.map((c) => ({ label: CATEGORY[c.category] ?? c.category, value: c.builds }))} caption="Why builds failed, by the model's category" unit="failures" />
+            </Suspense>
+          )}
+        </Section>
+      </div>
+
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-2">
         <Section title="Failed most" description="Jobs with the most failed or unstable builds in the window." flush>
           <TopFailing rows={s.topFailing} onJob={onJob} />
@@ -67,7 +124,7 @@ function Kpis({ stats: s }: { stats: Stats }) {
   const broken = (t: Totals) => t.failure + t.unstable
   const prior = s.previous.builds > 0
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
       <Kpi
         label="Builds"
         value={s.current.builds.toLocaleString()}
@@ -103,6 +160,24 @@ function Kpis({ stats: s }: { stats: Stats }) {
             ? {
                 change: s.current.p50Ms - s.previous.p50Ms,
                 text: `${s.current.p50Ms >= s.previous.p50Ms ? '+' : '−'}${duration(Math.abs(s.current.p50Ms - s.previous.p50Ms))}`,
+                good: 'down',
+              }
+            : null
+        }
+      />
+      <Kpi
+        label="Time to fix"
+        value={s.recovery.current.medianMs === null ? '—' : duration(s.recovery.current.medianMs)}
+        detail={
+          s.recovery.current.fixes === 0
+            ? 'Nothing broken was fixed'
+            : `${s.recovery.current.fixes} ${s.recovery.current.fixes === 1 ? 'fix' : 'fixes'} · longest ${duration(s.recovery.current.longestMs ?? 0)}`
+        }
+        delta={
+          s.recovery.current.medianMs !== null && s.recovery.previous.medianMs !== null
+            ? {
+                change: s.recovery.current.medianMs - s.recovery.previous.medianMs,
+                text: `${s.recovery.current.medianMs >= s.recovery.previous.medianMs ? '+' : '−'}${duration(Math.abs(s.recovery.current.medianMs - s.recovery.previous.medianMs))}`,
                 good: 'down',
               }
             : null
@@ -185,6 +260,11 @@ function TopFailing({ rows, onJob }: { rows: Stats['topFailing']; onJob: (job: s
               <button type="button" className="text-left hover:underline" onClick={() => onJob(row.job)} title="Show its builds">
                 <JobName name={row.job} className="text-sm" />
               </button>
+              {row.ignored && (
+                <span className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                  <EyeOff className="size-3" aria-hidden /> Ignored
+                </span>
+              )}
             </TableCell>
             <TableCell>
               <span className="text-sm tabular-nums">

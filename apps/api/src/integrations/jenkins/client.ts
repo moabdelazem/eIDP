@@ -82,6 +82,28 @@ export async function jenkinsGet<T>(path: string, query?: Record<string, string 
   return (await res.json()) as T
 }
 
+/**
+ * The first `maxBytes` of a text resource, then the connection is dropped —
+ * where a build log says which agent it started on, without reading the rest.
+ */
+export async function jenkinsHead(path: string, maxBytes: number): Promise<string> {
+  const res = await send('GET', path)
+  const reader = (res.body as ReadableStream<Uint8Array>).getReader()
+  const chunks: Buffer[] = []
+  let read = 0
+  try {
+    while (read < maxBytes) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(Buffer.from(value))
+      read += value.length
+    }
+  } finally {
+    await reader.cancel().catch(() => {})
+  }
+  return Buffer.concat(chunks).subarray(0, maxBytes).toString('utf8')
+}
+
 /** A text resource whole — an item's `config.xml`. */
 export async function jenkinsText(path: string): Promise<string> {
   return (await send('GET', path)).text()
