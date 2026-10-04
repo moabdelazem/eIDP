@@ -3,6 +3,7 @@ import * as ollama from '../integrations/ollama/index.ts'
 import type { Message } from '../integrations/ollama/index.ts'
 import { query } from '../lib/db.ts'
 import { ApiError } from '../lib/errors.ts'
+import * as activity from './activity.ts'
 import { runTool, toolsFor } from './chatbot-tools.ts'
 import type { Me } from './pipelines.ts'
 import type { Access } from './rbac.ts'
@@ -171,7 +172,11 @@ export async function ask(
       fresh = true
     }
     await emit({ type: 'conversation', conversation })
-    if (!regenerate) await query(`insert into assistant_messages (conversation_id, role, content) values ($1, 'user', $2)`, [conversation.id, question])
+    if (!regenerate) {
+      await query(`insert into assistant_messages (conversation_id, role, content) values ($1, 'user', $2)`, [conversation.id, question])
+      // For Platform activity: that a question was asked, and from which page — never its words.
+      void activity.record({ uid: me.uid, name: me.name, kind: 'chat', path: context?.path ?? '/chatbot' })
+    }
 
     const history = await historyFor(conversation.id, budgetFor(ai.numCtx))
     const where = context?.path ? `\nThe person is on the page ${context.path}${context.title ? ` (“${context.title}”)` : ''}.` : ''

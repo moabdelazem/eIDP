@@ -419,3 +419,24 @@ create table if not exists weekly_digests (
   created_at     timestamptz not null default now(),
   primary key (team, week_start)
 );
+
+-- What people do on the portal that no other table records (services/activity.ts):
+-- signing in, a sign-in refused (with the name typed and why — never the
+-- password), a page opened (the path only, never its query, which can carry
+-- searches), and a question asked of the chatbot (that one was asked, never
+-- its words; conversations can be deleted, this count is not). Everything
+-- else on Platform activity is read from the tables that already record it.
+-- Kept ACTIVITY_RETENTION_DAYS.
+create table if not exists activity_events (
+  id      bigserial primary key,
+  at      timestamptz not null default now(),
+  uid     text not null,
+  name    text not null,
+  kind    text not null check (kind in ('sign_in', 'sign_in_failed', 'visit', 'chat')),
+  path    text,
+  section text,
+  reason  text
+);
+
+create index if not exists activity_events_at_idx on activity_events (at);
+create index if not exists activity_events_uid_at_idx on activity_events (lower(uid), at);

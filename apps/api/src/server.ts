@@ -5,6 +5,7 @@ import { ensureSchema } from './lib/db.ts'
 import { syncCatalog } from './services/catalog.ts'
 import { syncJenkins } from './services/jenkins-sync.ts'
 import { syncJenkinsAccess } from './services/jenkins-access.ts'
+import { prune as pruneActivity } from './services/activity.ts'
 import { recordSample } from './services/health.ts'
 import { generateDue } from './services/digest.ts'
 import { explainNewFailures } from './services/auto-explain.ts'
@@ -74,6 +75,13 @@ if (config.HEALTH_SAMPLE_MINUTES > 0) {
   const sample = () => recordSample().catch((err) => console.error('health sample failed:', err instanceof Error ? err.message : err))
   void sample()
   setInterval(sample, config.HEALTH_SAMPLE_MINUTES * 60_000).unref()
+}
+
+/** Platform activity older than ACTIVITY_RETENTION_DAYS goes, once an hour. */
+{
+  const prune = () => pruneActivity().catch((err) => console.error('activity prune failed:', err instanceof Error ? err.message : err))
+  void prune()
+  setInterval(prune, 3_600_000).unref()
 }
 
 /**

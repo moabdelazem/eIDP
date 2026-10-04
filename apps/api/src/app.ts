@@ -3,6 +3,7 @@ import { logger } from 'hono/logger'
 import { onError } from './lib/errors.ts'
 import type { AppEnv } from './middleware/auth.ts'
 import { authRoutes } from './routes/auth.ts'
+import { activityRoutes } from './routes/activity.ts'
 import { adoRoutes } from './routes/ado.ts'
 import { jiraRoutes } from './routes/jira.ts'
 import { jenkinsRoutes } from './routes/jenkins.ts'
@@ -37,6 +38,7 @@ export function createApp() {
   app.route('/chatbot', chatbotRoutes)
   app.route('/rbac', rbacRoutes)
   app.route('/digests', digestRoutes)
+  app.route('/activity', activityRoutes)
 
   return app
 }

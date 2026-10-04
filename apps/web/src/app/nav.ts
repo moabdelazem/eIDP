@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { Bot, Boxes, HeartPulse, Inbox, LayoutDashboard, ListChecks, Newspaper, ShieldCheck, Workflow } from 'lucide-react'
+import { Activity, Bot, Boxes, HeartPulse, Inbox, LayoutDashboard, ListChecks, Newspaper, ShieldCheck, Workflow } from 'lucide-react'
 import { JenkinsIcon } from '@/components/brand-icons.tsx'
 import type { Permission } from '@/features/auth/profile-context.tsx'
 
@@ -51,4 +51,5 @@ export const manageItems: (NavItem & { permission: Permission; scoped?: boolean 
   { path: '/jenkins', label: 'Jenkins', icon: JenkinsIcon, permission: 'jenkins.view', owns: (p) => p.startsWith('/jenkins/') },
   { path: '/access', label: 'Access', icon: ShieldCheck, permission: 'rbac.manage' },
   { path: '/system', label: 'System health', icon: HeartPulse, permission: 'system.health' },
+  { path: '/activity', label: 'Platform activity', icon: Activity, permission: 'activity.view' },
 ]

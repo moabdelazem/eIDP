@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes, useParams } from 'react-router'
+import { ActivityPage } from '@/features/activity/activity-page.tsx'
 import { LoginPage } from '@/features/auth/login-page.tsx'
 import { ProfilePage } from '@/features/auth/profile-page.tsx'
 import { OverviewPage } from '@/features/overview/overview-page.tsx'
@@ -81,6 +82,9 @@ export function AppRoutes() {
           </Route>
           <Route element={<RequirePermission permission="rbac.manage" />}>
             <Route path="access" element={<AccessPage />} />
+          </Route>
+          <Route element={<RequirePermission permission="activity.view" />}>
+            <Route path="activity" element={<ActivityPage />} />
           </Route>
 
           <Route path="*" element={<NotFoundPage />} />
