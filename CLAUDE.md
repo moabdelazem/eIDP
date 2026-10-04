@@ -743,7 +743,17 @@ that says what ran in parallel (`Stage.branches`), else Stage View's flat
 (`stage-graph.tsx`: stages left to right, a parallel stage's branches stacked
 in its column, SVG lines under HTML nodes so each node is a real button) or
 as a list, the plain path to the same stages; phones open on the list, and the
-choice is kept per browser. A stage opens the log at its
+choice is kept per browser. **Expand** opens the graph in a dialog nearly the
+screen's width — larger nodes with each stage's agent and start, and a line
+saying how the run went — and where the stages will not sit side by side (a
+phone) it runs top to bottom, parallel branches side by side, rather than
+scrolling sideways. Picking a stage there closes the dialog without focus
+returning to the button, which would scroll the page away from the log. Its
+motion (`graph-*` in `index.css`, all under `no-preference`) follows the run:
+stages arrive column by column, `--i` times `--step`, the lines draw in
+behind them (`pathLength=1`, so every curve draws over the same dash), a line
+into a running stage marches and the running stage pulses; a stage that never
+ran is reached by a dashed line. A stage opens the log at its
 `[Pipeline] { (name)` heading (a branch's `Branch: name`, else its stage's).
 The sync's agent lookup still reads `wfapi` only — the tree is one more call
 per build it does not need. The fake serves the tree for the `payments`
