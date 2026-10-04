@@ -60,12 +60,20 @@ export type HistoryBuild = Build & {
 
 export type Change = { commit: string | null; message: string; author: string | null }
 
-/** A pipeline stage, from the Pipeline Stage View plugin when the server has it. */
-export type Stage = { name: string; result: Result; startedAt: string | null; durationMs: number; agent: string | null }
+/**
+ * A pipeline stage. `branches` are the parallel branches it ran, each a
+ * stage of its own (and may have its own) — only the Pipeline Graph View
+ * plugin says; Stage View lists stages flat, so there they are always empty.
+ */
+export type Stage = { name: string; result: Result; startedAt: string | null; durationMs: number; agent: string | null; branches: Stage[] }
+
+/** Where a build's stages came from: Pipeline Graph View (with parallel branches), Stage View (flat), or nowhere. */
+export type StagesSource = 'graph' | 'stage-view' | null
 
 export type BuildDetail = HistoryBuild & {
   changes: Change[]
   stages: Stage[]
+  stagesFrom: StagesSource
   /** Why re-running it here is not possible, or null when it is. */
   notReplayable: string | null
 }
@@ -235,16 +243,91 @@ export async function listAgents(): Promise<Agent[]> {
  * commits it built, its pipeline stages, and whether it can be run again.
  */
 export async function buildDetail(job: string, number: number): Promise<BuildDetail> {
-  const [raw, stages] = await Promise.all([jenkinsGet<RawBuild>(`${jobPath(job)}/${number}/api/json`, { tree: BUILD }), buildStages(job, number)])
+  const [raw, { stages, from }] = await Promise.all([jenkinsGet<RawBuild>(`${jobPath(job)}/${number}/api/json`, { tree: BUILD }), pipelineStages(job, number)])
   const rawParameters = (raw.actions ?? []).flatMap((a) => a?.parameters ?? [])
   const history = toHistory(job, raw)
-  const agents = [...new Set(stages.flatMap((stage) => (stage.agent ? [stage.agent] : [])))]
+  const agents = [...new Set(everyStage(stages).flatMap((stage) => (stage.agent ? [stage.agent] : [])))]
   return {
     ...history,
     builtOn: history.builtOn ?? (agents.length ? agents.join(', ') : null),
     changes: changeItems(raw).map((item) => ({ commit: item.commitId ?? null, message: (item.msg ?? '').trim(), author: item.author?.fullName ?? null })),
     stages,
+    stagesFrom: from,
     notReplayable: notReplayable(rawParameters),
+  }
+}
+
+/** Every stage and branch, depth first. */
+export function everyStage(stages: Stage[]): Stage[] {
+  return stages.flatMap((stage) => [stage, ...everyStage(stage.branches)])
+}
+
+/**
+ * A pipeline's stages, from the Pipeline Graph View plugin when the server
+ * has it — the only one that says which stages ran in parallel — else from
+ * Stage View's flat list. A freestyle job has neither: no stages.
+ */
+async function pipelineStages(job: string, number: number): Promise<{ stages: Stage[]; from: StagesSource }> {
+  const graph = await graphStages(job, number)
+  if (graph) return { stages: graph, from: 'graph' }
+  const flat = await buildStages(job, number)
+  return { stages: flat, from: flat.length ? 'stage-view' : null }
+}
+
+type RawGraphStage = {
+  name?: string
+  title?: string
+  state?: string
+  type?: string
+  startTimeMillis?: number | string
+  totalDurationMillis?: number | string
+  agent?: string | null
+  synthetic?: boolean
+  children?: RawGraphStage[]
+}
+
+/** The Pipeline Graph View plugin's tree (`pipeline-graph/tree`), or null when the server has no such plugin. */
+async function graphStages(job: string, number: number): Promise<Stage[] | null> {
+  let tree: { data?: { stages?: RawGraphStage[] }; stages?: RawGraphStage[] }
+  try {
+    tree = await jenkinsGet(`${jobPath(job)}/${number}/pipeline-graph/tree`)
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'jenkins_not_found') return null
+    throw err
+  }
+  const stages = tree.data?.stages ?? tree.stages
+  if (!Array.isArray(stages)) return null
+  const toStage = (raw: RawGraphStage): Stage => {
+    const started = Number(raw.startTimeMillis)
+    return {
+      name: raw.name ?? raw.title ?? 'Unnamed',
+      result: graphResult(raw.state ?? ''),
+      startedAt: started > 0 ? new Date(started).toISOString() : null,
+      durationMs: Number(raw.totalDurationMillis) || 0,
+      agent: raw.agent || null,
+      // Synthetic stages are the plugin's own wrappers ("Declarative: Post Actions" stays; its "Parallel" block does not).
+      branches: (raw.children ?? []).filter((child) => !child.synthetic).map(toStage),
+    }
+  }
+  return stages.filter((raw) => !raw.synthetic).map(toStage)
+}
+
+function graphResult(state: string): Result {
+  switch (state.toLowerCase()) {
+    case 'success':
+      return 'success'
+    case 'failure':
+      return 'failure'
+    case 'unstable':
+      return 'unstable'
+    case 'aborted':
+      return 'aborted'
+    case 'running':
+    case 'paused':
+    case 'queued':
+      return 'running'
+    default:
+      return 'not_built'
   }
 }
 
@@ -269,6 +352,7 @@ async function buildStages(job: string, number: number): Promise<Stage[]> {
     // Stage View names the agent a stage ran on; "" is the built-in node, or
     // a stage that never reached one.
     agent: stage.execNode || null,
+    branches: [],
   }))
 }
 

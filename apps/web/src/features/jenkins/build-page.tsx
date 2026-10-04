@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router'
-import { Copy, ExternalLink, GitCommitHorizontal } from 'lucide-react'
+import { Copy, ExternalLink, GitCommitHorizontal, List, Workflow } from 'lucide-react'
 import { toast } from 'sonner'
 import { JenkinsIcon } from '@/components/brand-icons.tsx'
 import { EmptyState } from '@/components/empty-state.tsx'
 import { Facts, PAGE, PageHeader, Section, Split } from '@/components/page-layout.tsx'
 import { FactsSkeleton, HeaderSkeleton, Loading, RowsSkeleton } from '@/components/skeletons.tsx'
 import { Button } from '@/components/ui/button'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { since } from '@/features/requests/status.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
@@ -17,6 +18,7 @@ import { ExplainPanel } from './explain-panel.tsx'
 import { LogViewer } from './log-viewer.tsx'
 import { JobName, RESULT, ResultBadge } from './result.tsx'
 import { RunAction } from './runs.tsx'
+import { StageGraph } from './stage-graph.tsx'
 
 /**
  * One build, for working out what happened: the facts and what started it,
@@ -147,7 +149,7 @@ export function BuildPage() {
         }
       >
         <ExplainPanel job={job} number={number} result={r.result} onJump={(line) => setJump({ line, at: Date.now() })} />
-        {r.stages.length > 0 && <Stages stages={r.stages} />}
+        {r.stages.length > 0 && <Stages run={r} onJump={(line) => setJump({ line, at: Date.now() })} />}
         <LogViewer key={`${job}#${number}`} log={r.log} truncated={r.logTruncated} fullUrl={r.logUrl} jump={jump} />
       </Split>
 
@@ -156,45 +158,124 @@ export function BuildPage() {
   )
 }
 
+/** The line (as the log viewer numbers it) where a stage's heading is — a branch's own, else its parallel stage's. */
+function headingLine(log: string, stage: Stage, parent: Stage | null): number | null {
+  const lines = log.split('\n')
+  for (const name of parent ? [`Branch: ${stage.name}`, parent.name] : [stage.name]) {
+    const i = lines.indexOf(`[Pipeline] { (${name})`)
+    if (i >= 0) return i + 1
+  }
+  return null
+}
+
 /**
- * The pipeline as a row of stages, each with its result and time — so "it
- * broke in Test, after Build passed" is one look, not a scroll through the log.
+ * The pipeline: as a graph — stages left to right, parallel branches stacked,
+ * the way Jenkins' Pipeline Graph View draws it — or as a list, the plain and
+ * screen-reader-friendly path to the same stages. A stage opens the log at
+ * its heading. The choice is kept per browser.
  */
-function Stages({ stages }: { stages: Stage[] }) {
-  const total = stages.reduce((n, s) => n + s.durationMs, 0) || 1
+function Stages({ run: r, onJump }: { run: RunDetail; onJump: (line: number) => void }) {
+  const [view, setView] = useState<'graph' | 'list'>(() => {
+    // Phones open on the list, as the map does: a graph needs width a phone does not have.
+    const fallback = window.matchMedia('(max-width: 639px)').matches ? 'list' : 'graph'
+    try {
+      const kept = localStorage.getItem('eidp.stages-view')
+      return kept === 'list' || kept === 'graph' ? kept : fallback
+    } catch {
+      return fallback
+    }
+  })
+  const choose = (next: string) => {
+    if (next !== 'graph' && next !== 'list') return
+    setView(next)
+    try {
+      localStorage.setItem('eidp.stages-view', next)
+    } catch {
+      // Private window: the choice lasts this page.
+    }
+  }
+  const open = (stage: Stage, parent: Stage | null) => {
+    const line = headingLine(r.log, stage, parent)
+    return line === null ? null : () => onJump(line)
+  }
+  const parallel = r.stages.some((s) => s.branches.length > 0)
   return (
-    <Section title="Stages" description="In order, each as wide as the time it took.">
-      <ol className="flex gap-0.5 overflow-hidden rounded-md" aria-label="Pipeline stages">
+    <Section
+      title="Stages"
+      description={
+        r.stagesFrom === 'graph'
+          ? `From Pipeline Graph View${parallel ? ', parallel branches stacked' : ''}. Pick a stage to read its log.`
+          : 'From Stage View, which does not say what ran in parallel. Pick a stage to read its log.'
+      }
+      action={
+        <ToggleGroup type="single" variant="outline" size="sm" value={view} onValueChange={choose} aria-label="Show stages as">
+          <ToggleGroupItem value="graph" className="px-2.5" aria-label="Graph">
+            <Workflow /> <span className="hidden sm:inline">Graph</span>
+          </ToggleGroupItem>
+          <ToggleGroupItem value="list" className="px-2.5" aria-label="List">
+            <List /> <span className="hidden sm:inline">List</span>
+          </ToggleGroupItem>
+        </ToggleGroup>
+      }
+    >
+      {view === 'graph' ? <StageGraph stages={r.stages} onOpen={open} /> : <StageList stages={r.stages} open={open} />}
+    </Section>
+  )
+}
+
+/** Each stage with its result and time, a parallel stage's branches beneath it. */
+function StageList({ stages, open }: { stages: Stage[]; open: (stage: Stage, parent: Stage | null) => (() => void) | null }) {
+  const total = stages.reduce((n, s) => n + s.durationMs, 0) || 1
+  const item = (stage: Stage, parent: Stage | null) => {
+    const { icon: Icon, label } = RESULT[stage.result]
+    const go = open(stage, parent)
+    const text = (
+      <>
+        <Icon
+          className={`mt-0.5 size-4 shrink-0 ${stage.result === 'failure' ? 'text-destructive' : stage.result === 'success' ? 'text-success' : stage.result === 'unstable' ? 'text-warning' : stage.result === 'running' ? 'animate-spin text-info motion-reduce:animate-none' : 'text-muted-foreground'}`}
+          aria-hidden
+        />
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-medium">{stage.name}</span>
+          <span className="block text-xs text-muted-foreground">
+            {stage.result === 'not_built' ? 'Did not run' : `${label}${stage.durationMs ? ` · ${duration(stage.durationMs)}` : ''}`}
+            {stage.branches.length > 0 && ` · ${stage.branches.length} in parallel`}
+          </span>
+        </span>
+      </>
+    )
+    return go ? (
+      <button type="button" onClick={go} className="flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left transition-colors hover:bg-secondary">
+        {text}
+      </button>
+    ) : (
+      <div className="flex items-start gap-2 rounded-lg border px-3 py-2">{text}</div>
+    )
+  }
+  return (
+    <>
+      <ol className="flex gap-0.5 overflow-hidden rounded-md" aria-hidden>
         {stages.map((stage) => (
-          <li
-            key={stage.name}
-            className="h-2 min-w-2"
-            style={{ flexGrow: Math.max(stage.durationMs / total, 0.04) }}
-          >
+          <li key={stage.name} className="h-2 min-w-2" style={{ flexGrow: Math.max(stage.durationMs / total, 0.04) }}>
             <span className={`block h-full ${RESULT[stage.result].dot} ${stage.result === 'not_built' ? 'opacity-40' : ''}`} />
           </li>
         ))}
       </ol>
-      <ol className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        {stages.map((stage) => {
-          const { icon: Icon, label } = RESULT[stage.result]
-          return (
-            <li key={stage.name} className="flex items-start gap-2 rounded-lg border px-3 py-2">
-              <Icon
-                className={`mt-0.5 size-4 shrink-0 ${stage.result === 'failure' ? 'text-destructive' : stage.result === 'success' ? 'text-success' : stage.result === 'unstable' ? 'text-warning' : stage.result === 'running' ? 'animate-spin text-info motion-reduce:animate-none' : 'text-muted-foreground'}`}
-                aria-hidden
-              />
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{stage.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {stage.result === 'not_built' ? 'Did not run' : `${label}${stage.durationMs ? ` · ${duration(stage.durationMs)}` : ''}`}
-                </p>
-              </div>
-            </li>
-          )
-        })}
+      <ol className="mt-4 space-y-2" aria-label="Pipeline stages">
+        {stages.map((stage) => (
+          <li key={stage.name}>
+            {item(stage, null)}
+            {stage.branches.length > 0 && (
+              <ol className="mt-2 ml-4 space-y-2 border-l pl-3" aria-label={`${stage.name}, in parallel`}>
+                {stage.branches.map((branch) => (
+                  <li key={branch.name}>{item(branch, stage)}</li>
+                ))}
+              </ol>
+            )}
+          </li>
+        ))}
       </ol>
-    </Section>
+    </>
   )
 }
 

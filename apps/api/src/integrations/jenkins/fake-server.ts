@@ -455,6 +455,27 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
     }
     if (what === 'consoleText') return c.text(build.log)
     if (what === 'api/json') return c.json(buildJson(names, build))
+    // Pipeline Graph View, for the payments folder's pipelines only — the
+    // rest stand for servers without the plugin, read through Stage View. Its
+    // Test stage runs two branches in parallel, the unit tests the ones that fail.
+    if (what === 'pipeline-graph/tree' && job.pipeline && fullName.startsWith('payments/')) {
+      const failed = build.result === 'FAILURE'
+      const at = (n: number) => build.timestamp + n * 15_000
+      const state = (n: number, broke = false) =>
+        build.building ? (n < 2 ? 'success' : n === 2 ? 'running' : 'not_built') : failed ? (n < 2 ? 'success' : n === 2 ? (broke ? 'failure' : 'success') : 'not_built') : 'success'
+      const node = (id: number, name: string, n: number, extra: object = {}) => ({
+        id: String(id), name, title: name, type: 'STAGE', state: state(n), startTimeMillis: at(n),
+        totalDurationMillis: state(n) === 'not_built' ? 0 : 15_000, agent: build.builtOn, synthetic: false, children: [], ...extra,
+      })
+      const test = node(10, 'Test', 2, {
+        state: failed ? 'failure' : state(2),
+        children: [
+          { ...node(11, 'Unit tests', 2), type: 'PARALLEL', state: state(2, true) },
+          { ...node(12, 'Integration tests', 2), type: 'PARALLEL', totalDurationMillis: 25_000 },
+        ],
+      })
+      return c.json({ status: 'ok', data: { complete: !build.building, stages: [node(3, 'Checkout', 0), node(6, 'Build', 1), test, node(20, 'Deploy', 3)] } })
+    }
     // Stage View, for pipelines only — a freestyle job has none, and a server
     // without the plugin 404s the same way.
     if (what === 'wfapi/describe' && job.pipeline) {
