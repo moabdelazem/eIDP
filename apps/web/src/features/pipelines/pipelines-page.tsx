@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { ExternalLink, GitCommitHorizontal, KeyRound, Play, RefreshCw, Search, ShieldCheck, UserRound, Users, Workflow, X } from 'lucide-react'
+import { ExternalLink, GitCommitHorizontal, KeyRound, Play, RefreshCw, Search, ShieldCheck, Sparkles, UserRound, Users, Workflow, X } from 'lucide-react'
 import { JenkinsIcon } from '@/components/brand-icons.tsx'
 import { EmptyState } from '@/components/empty-state.tsx'
 import { PAGE, PageHeader, Section, Split } from '@/components/page-layout.tsx'
@@ -27,6 +27,7 @@ import {
   type Reason,
   type RunWindow,
 } from './api.ts'
+import { failingOf, FailingNow } from './failing-now.tsx'
 
 type Show = 'all' | 'failed' | 'running' | 'operable'
 type View = 'runs' | 'pipelines'
@@ -48,6 +49,10 @@ const TILES: { show: Show; label: string; dot?: string; count: (r: MyRun) => boo
  * shared job — summed over the runs you may see. What you may do is decided
  * per run by the API and only shown here. Window, view, whose, filter and
  * search all live in the URL.
+ *
+ * Above them, what is failing now and why (`FailingNow`): the AI's reading of
+ * each broken pipeline's latest failure, what to try, and a way into the
+ * build page or the chatbot.
  */
 export function PipelinesPage() {
   usePageTitle('My pipelines')
@@ -217,6 +222,27 @@ export function PipelinesPage() {
         })}
       </div>
 
+      {data.ai?.configured && (
+        <div className="mt-6">
+          <FailingNow
+            failing={failingOf(data.pipelines.filter(inGroup), data.runs)}
+            model={data.ai.model ?? 'The model'}
+            onShowAll={() =>
+              setParams(
+                (prev) => {
+                  // One update: two `set`s in a row would each start from the same params.
+                  const next = new URLSearchParams(prev)
+                  next.set('show', 'failed')
+                  next.delete('view')
+                  return next
+                },
+                { replace: true },
+              )
+            }
+          />
+        </div>
+      )}
+
       <Split aside={<Aside data={data} onAct={setPending} />} className="mt-6">
         <Section
           flush
@@ -329,6 +355,12 @@ function RunRow({ run: r, onAct }: { run: MyRun; onAct: (pending: Pending) => vo
                   {p.name}=<span className="text-foreground">{p.value}</span>
                 </span>
               ))}
+            </p>
+          )}
+          {r.explanation && (
+            <p className="flex items-start gap-1.5 text-sm" title="The AI’s reading of the log — open the run for the lines it rests on">
+              <Sparkles className="mt-0.5 size-3.5 shrink-0 text-[var(--chart-1)]" aria-label="AI" />
+              {r.explanation.summary}
             </p>
           )}
           <Reasons reasons={r.reasons} />

@@ -1,5 +1,5 @@
 import { api } from '@/lib/api-client.ts'
-import type { QueueItem, Result, Run, SyncState } from '@/features/jenkins/api.ts'
+import type { Explanation, QueueItem, Result, Run, SyncState } from '@/features/jenkins/api.ts'
 
 /** Mirrors the API's services/pipelines.ts. */
 
@@ -23,7 +23,12 @@ export type MyRun = Run & {
   reasons: Reason[]
   personal: boolean
   canOperate: boolean
+  /** For a failed or unstable run, the AI's kept answer on why, when one was made. */
+  explanation: Brief | null
 }
+
+/** What the list carries of an explanation; the build page has the rest. */
+export type Brief = Pick<Explanation, 'summary' | 'category' | 'confidence' | 'nextSteps' | 'createdAt' | 'automatic'>
 
 export type MyPipeline = {
   key: string
@@ -63,6 +68,8 @@ export type MyRuns = {
   pipelines: MyPipeline[]
   queue: MyQueueItem[]
   queueError: string | null
+  /** Whether you can ask the AI why a run failed: null when you may not, else whether it is set up. */
+  ai: { configured: boolean; model: string | null } | null
 }
 
 export const pipelinesApi = {

@@ -312,7 +312,7 @@ const TOOLS = [
       // A build that is not theirs reads as not found, exactly as on the build page.
       await pipelines.demandView(access, me, job, number)
       const run = await jenkins.run(job, number)
-      const explained = can(access, 'ai.use') ? await explainer.cached(job, number).catch(() => null) : null
+      const explained = await explainer.cached(job, number).catch(() => null)
       const broke = run.stages.find((st) => st.result === 'failure' || st.result === 'unstable')
       return {
         job,
