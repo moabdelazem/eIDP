@@ -735,6 +735,35 @@ against a whole one is not a change. Tests: `routes/digests.test.ts`, under
 lock 4202, writing their own builds, requests and samples. `Kpi`
 (`components/kpi.tsx`) is shared with the Jenkins dashboard.
 
+**Platform activity** (`/activity`, `features/activity/`, `services/activity.ts`)
+is a Manage page behind `activity.view` (`devops-admin`): who uses the portal
+and what they do in it. Most of it is read from where it is already recorded —
+requests filed and decided (`requests`), access granted, changed, removed and
+viewed-as (`rbac_audit`), Jenkins actions including refused ones
+(`jenkins_audit`), failures someone asked the AI about (`build_explanations`,
+not `e-idp`'s) — as one `union all` (`EVERYTHING`). What nothing recorded
+lives in `activity_events`: sign-ins and refused sign-ins (the name typed and
+the error code, never the password — `routes/auth.ts`), pages opened, and
+chatbot questions (that one was asked and from which page, never its words;
+a deleted conversation does not uncount it). Pages are reported by the shell
+(`app/page-visits.tsx`, on each pathname change) as the **path only** — the
+query can carry searches — once per person and path per 30 s, and grouped
+into the sidebar's sections in the API (`sectionOf`). Never while viewing as
+someone: the shell skips it and the API refuses the POST anyway, so an
+admin's look around is never put down to the person they viewed as. Kept
+`ACTIVITY_RETENTION_DAYS` (90), pruned hourly from `server.ts`.
+
+The page: six headline counts against the window before (24h/7d/30d), and an
+amber callout when one name is refused five or more times — a lockout in the
+making, or someone guessing. Tabs, all in the URL with their filters
+(`?tab=feed&who=bob&group=jenkins&q=…`): **Overview** (people active per hour
+or UTC day, pages by section top eight plus "Other", most active — visits not
+counted), **Feed** (sentences a day at a time, narrowed by person, kind and
+words, `Show older` paging on the `next` cursor; the same thing repeated in a
+row is one line with ×N) and **People** (each person's window). Visits count
+but are never feed lines — one per click would bury everything. Tests:
+`routes/activity.test.ts`, deleting only rows past the ids it started at.
+
 **History is the portal's own copy.** A day or a week of builds, searchable by
 parameter, cannot be swept from Jenkins on every look, so
 `services/jenkins-sync.ts` keeps `jenkins_builds` (with parameters, causes and

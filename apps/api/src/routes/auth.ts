@@ -4,6 +4,7 @@ import { authenticate, profileOf } from '../integrations/ldap/index.ts'
 import { ApiError } from '../lib/errors.ts'
 import { validate } from '../lib/validate.ts'
 import { requireAuth, requirePermission, type AppEnv } from '../middleware/auth.ts'
+import * as activity from '../services/activity.ts'
 import { issueAssumedSession, issueSession } from '../services/session.ts'
 import { accessOf, auditAssume, can, ROLES, type Role } from '../services/rbac.ts'
 
@@ -18,12 +19,23 @@ export const authRoutes = new Hono<AppEnv>()
   .post('/login', validate('json', LoginBody), async (c) => {
     const { username, password } = c.req.valid('json')
 
-    const user = await authenticate(username, password)
+    // Every attempt is kept for Platform activity: who signed in, and who was
+    // refused and why — the name typed, never the password.
+    const refused = (reason: string) => activity.record({ uid: username.trim(), name: username.trim(), kind: 'sign_in_failed', reason })
+    let user
+    try {
+      user = await authenticate(username, password)
+    } catch (err) {
+      await refused(err instanceof ApiError ? err.code : 'error')
+      throw err
+    }
     if (!user) {
+      await refused('invalid_credentials')
       throw new ApiError(401, 'invalid_credentials', "That username and password don't match.")
     }
 
     const { token, expiresAt } = await issueSession(user)
+    await activity.record({ uid: user.uid, name: user.name, kind: 'sign_in' })
     return c.json({ token, expiresAt })
   })
   .get('/me', requireAuth, (c) => c.json(c.get('jwtPayload')))

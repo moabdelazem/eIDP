@@ -92,6 +92,9 @@ export const schema = z.object({
   /** How long health samples are kept — the uptime bars show this many days. */
   HEALTH_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
 
+  /** How long Platform activity keeps sign-ins, page visits and chatbot questions. */
+  ACTIVITY_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+
   // Ollama, for the portal's AI features. Optional: without it they hide
   // themselves. Runs on our own machines, so what it reads stays inside.
   OLLAMA_URL: z.string().url().optional(),

@@ -39,6 +39,7 @@ export type Permission =
   | 'system.health'
   | 'ai.use'
   | 'ai.chat'
+  | 'activity.view'
   | 'digests.all'
 export type ScopeType = 'global' | 'team' | 'project'
 

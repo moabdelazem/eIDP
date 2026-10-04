@@ -32,6 +32,7 @@ export const PERMISSIONS = {
   'ai.use': 'Ask the portal’s AI (Ollama, on our own machines) to explain what it shows',
   'digests.all': 'Read every team’s weekly digest, not only your own teams’, and write one again',
   'ai.chat': 'Chat with the portal’s chatbot, which looks up only what you may already see',
+  'activity.view': 'See who uses the portal and what they do in it — sign-ins, pages, requests, actions and AI use',
 } as const
 
 export type Permission = keyof typeof PERMISSIONS

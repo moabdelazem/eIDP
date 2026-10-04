@@ -8,6 +8,7 @@ import { ChatbotDock } from '@/features/chatbot/chatbot-dock.tsx'
 import { Separator } from '@/components/ui/separator'
 import { ViewingAsBanner } from './viewing-as-banner.tsx'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import { PageVisits } from './page-visits.tsx'
 
 export function AppShell() {
   const { pathname } = useLocation()
@@ -35,6 +36,7 @@ export function AppShell() {
             </div>
           </SidebarInset>
           <ChatbotDock />
+          <PageVisits />
         </CatalogProvider>
       </ProfileProvider>
     </SidebarProvider>
