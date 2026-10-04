@@ -28,6 +28,7 @@ export const PERMISSIONS = {
   'jenkins.view': 'See Jenkins jobs, recent runs, failures, the queue and agents',
   'jenkins.operate': 'Re-run and stop Jenkins builds, and take them out of the queue — scoped, only the pipelines its team or project owns',
   'pipelines.view': 'See the Jenkins pipelines your teams own and the builds you started',
+  'system.health': 'See the health of the portal and of everything it depends on',
   'ai.use': 'Ask the portal’s AI (Ollama, on our own machines) to explain what it shows',
   'ai.chat': 'Chat with the portal’s assistant, which looks up only what you may already see',
 } as const

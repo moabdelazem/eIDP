@@ -109,6 +109,13 @@ export async function jenkinsText(path: string): Promise<string> {
   return (await send('GET', path)).text()
 }
 
+/** The server's version, from the header Jenkins sends on every answer — the cheapest call there is. */
+export async function jenkinsVersion(): Promise<string | null> {
+  const res = await send('GET', 'api/json', { tree: 'mode' })
+  await res.body?.cancel().catch(() => {})
+  return res.headers.get('x-jenkins')
+}
+
 /** A POST that acts. Returns the response for the headers some actions answer with. */
 export function jenkinsPost(path: string, form?: URLSearchParams, query?: Record<string, string | number>): Promise<Response> {
   return send('POST', path, query, form)

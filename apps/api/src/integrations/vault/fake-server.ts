@@ -41,12 +41,17 @@ export function createFakeVault({
 
   app.use('/v1/*', async (c, next) => {
     requests.push({ method: c.req.method, path: c.req.path, token: c.req.header('x-vault-token') ?? null, namespace: c.req.header('x-vault-namespace') ?? null })
-    if (sealed) return c.json({ errors: ['Vault is sealed'] }, 503)
+    if (sealed && c.req.path !== '/v1/sys/health') return c.json({ errors: ['Vault is sealed'] }, 503)
     await next()
   })
 
   const authorised = (t: string | undefined) => t === token || (t !== undefined && issued.has(t))
   const inNamespace = (ns: string | undefined) => !namespace || ns === namespace
+
+  // Answers sealed with 503 by itself, like Vault — before the sealed middleware would.
+  app.get('/v1/sys/health', (c) =>
+    c.json({ initialized: true, sealed, standby: false, version: '1.17.2', cluster_name: 'vault-fake' }, sealed ? 503 : 200),
+  )
 
   app.post('/v1/auth/approle/login', async (c) => {
     const body = await c.req.json<{ role_id?: string; secret_id?: string }>()
