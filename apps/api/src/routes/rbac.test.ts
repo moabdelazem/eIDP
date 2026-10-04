@@ -47,6 +47,7 @@ const DEVOPS_ONLY: [method: string, path: string][] = [
   ['POST', '/jenkins/unignore'],
   ['GET', '/system/health'],
   ['GET', '/system/history'],
+  ['POST', '/digests/Payments/regenerate'],
 ]
 
 async function login(username: string): Promise<string> {

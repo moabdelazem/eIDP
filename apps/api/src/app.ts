@@ -12,6 +12,7 @@ import { assistantRoutes } from './routes/assistant.ts'
 import { catalogRoutes } from './routes/catalog.ts'
 import { requestRoutes } from './routes/requests.ts'
 import { rbacRoutes } from './routes/rbac.ts'
+import { digestRoutes } from './routes/digests.ts'
 import { healthRoutes } from './routes/health.ts'
 
 /**
@@ -35,6 +36,7 @@ export function createApp() {
   app.route('/pipelines', pipelineRoutes)
   app.route('/assistant', assistantRoutes)
   app.route('/rbac', rbacRoutes)
+  app.route('/digests', digestRoutes)
 
   return app
 }

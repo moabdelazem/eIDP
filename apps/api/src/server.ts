@@ -6,6 +6,7 @@ import { syncCatalog } from './services/catalog.ts'
 import { syncJenkins } from './services/jenkins-sync.ts'
 import { syncJenkinsAccess } from './services/jenkins-access.ts'
 import { recordSample } from './services/health.ts'
+import { generateDue } from './services/digest.ts'
 import { explainNewFailures } from './services/auto-explain.ts'
 import { recoverInterrupted } from './services/requests.ts'
 
@@ -73,4 +74,17 @@ if (config.HEALTH_SAMPLE_MINUTES > 0) {
   const sample = () => recordSample().catch((err) => console.error('health sample failed:', err instanceof Error ? err.message : err))
   void sample()
   setInterval(sample, config.HEALTH_SAMPLE_MINUTES * 60_000).unref()
+}
+
+/**
+ * Last week's digest for every team, once the week is over. Looks every
+ * DIGEST_CHECK_MINUTES, so a restart over the weekend still writes Monday's.
+ */
+if (config.DIGEST_CHECK_MINUTES > 0) {
+  const write = () =>
+    generateDue()
+      .then(({ made, failed }) => made + failed > 0 && console.log(`weekly digests: ${made} written, ${failed} could not be`))
+      .catch((err) => console.error('weekly digests failed:', err instanceof Error ? err.message : err))
+  void write()
+  setInterval(write, config.DIGEST_CHECK_MINUTES * 60_000).unref()
 }

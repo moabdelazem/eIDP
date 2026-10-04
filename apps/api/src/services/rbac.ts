@@ -30,6 +30,7 @@ export const PERMISSIONS = {
   'pipelines.view': 'See the Jenkins pipelines your teams own and the builds you started',
   'system.health': 'See the health of the portal and of everything it depends on',
   'ai.use': 'Ask the portal’s AI (Ollama, on our own machines) to explain what it shows',
+  'digests.all': 'Read every team’s weekly digest, not only your own teams’, and write one again',
   'ai.chat': 'Chat with the portal’s assistant, which looks up only what you may already see',
 } as const
 

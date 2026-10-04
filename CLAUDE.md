@@ -672,6 +672,28 @@ every page. The health page publishes its own answers, Check again included,
 so the sidebar never lags what the page shows. The alert link stays a link;
 a separate `sr-only` `role="alert"` announces it once.
 
+**Weekly digest** (`/digest`, `features/digest/`, `services/digest.ts`) is a
+team's week — its builds, the requests for its projects, the portal's
+incidents — for the people in it, a browse item for everyone. Built as the
+risk summary is: the **facts** are counted in code, the **model** adds only a
+two-or-three-sentence summary and at most three highlights, labelled as its
+reading; without Ollama the facts stand and the page says why. A team is a
+`team.yml` value in the catalog; you read the digests of the teams your
+directory groups are, and `digests.all` (`devops-admin`) reads every team's
+and may *Write again* a finished week. A team's runs are `teamRuns` in
+`services/pipelines.ts` — judged as My pipelines judges a team's run
+(parameters, else the job's name; Jenkins' rules when read), so the two pages
+never disagree. Its requests are those whose `team_group` is the team or whose
+project the team owns. Weeks are ISO weeks in UTC. A finished week is written
+once and kept (`weekly_digests`) by a timer every `DIGEST_CHECK_MINUTES` (60)
+after Monday — one team at a time, shared GPU — or on the first look; it reads
+the same after its builds age out. Only the last `WEEKS_BACK` (4) weeks can be
+counted, because builds are kept 30 days. The week in progress is counted
+live and never summarised, and its count deltas are hidden: half a week
+against a whole one is not a change. Tests: `routes/digests.test.ts`, under
+lock 4202, writing their own builds, requests and samples. `Kpi`
+(`components/kpi.tsx`) is shared with the Jenkins dashboard.
+
 **History is the portal's own copy.** A day or a week of builds, searchable by
 parameter, cannot be swept from Jenkins on every look, so
 `services/jenkins-sync.ts` keeps `jenkins_builds` (with parameters, causes and

@@ -113,6 +113,9 @@ export const schema = z.object({
   /** How far back automatic explaining looks. Older failures are explained on request. */
   OLLAMA_AUTO_EXPLAIN_HOURS: z.coerce.number().positive().default(24),
 
+  /** How often to look for last week's missing team digests (0 turns it off). */
+  DIGEST_CHECK_MINUTES: z.coerce.number().min(0).default(60),
+
   /** Where the inventories repo lives inside that collection. */
   INVENTORIES_PROJECT: z.string().min(1).optional(),
   INVENTORIES_REPO: z.string().min(1).default('inventories'),

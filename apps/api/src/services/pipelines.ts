@@ -418,3 +418,47 @@ export function cancel(access: Access, me: Me, id: number, actor: Actor) {
     }
   })
 }
+
+// ---- a team's runs, for its weekly digest ----------------------------------------------
+
+export type TeamRun = jenkins.Run & { applications: string[]; projects: string[]; endedAt: string }
+
+/**
+ * Every run in [from, to) that is for a project `team` owns — judged as My
+ * pipelines judges a team's run: what its parameters name, else its job's
+ * name; and, once Jenkins' rules are read, only on jobs Jenkins lets the team
+ * (or everyone) read. Oldest first.
+ */
+export async function teamRuns(team: string, from: Date, to: Date): Promise<TeamRun[]> {
+  const url = jenkinsConfig().url
+  const [byName, rules] = await Promise.all([applications(), whoDecides()])
+  const owned = (ref: AppRef) => ref.teams.some((t) => t.toLowerCase() === team.toLowerCase())
+  const names = [...byName.entries()].filter(([, refs]) => refs.some(owned)).map(([name]) => name)
+  if (names.length === 0) return []
+  const { rows } = await query<jenkins.RunRow>(
+    `select * from jenkins_builds
+      where server = $1 and started_at >= $2 and started_at < $3
+        and (string_to_array(lower(job), '/') && $4::text[]
+          or exists (select 1 from jsonb_array_elements(parameters) p
+                      where not (p->>'hidden')::boolean
+                        and (lower(p->>'value') = any($4)
+                          or lower(regexp_replace(regexp_replace(p->>'value', '(\\.git)?/*$', ''), '^.*[/:]', '')) = any($4))))
+      order by started_at, job, number`,
+    [url, from, to, names],
+  )
+  const readable = rules.decides === 'jenkins' ? new Set((await grantsReaching('', [team])).map((r) => r.job)) : null
+  const runs: TeamRun[] = []
+  for (const row of rows) {
+    if (readable && !readable.has(row.job)) continue
+    const run = jenkins.toRun(row)
+    const refs = resolve(byName, run.job, run.parameters).refs.filter(owned)
+    if (refs.length === 0) continue
+    runs.push({
+      ...run,
+      applications: [...new Set(refs.map((r) => r.application))],
+      projects: [...new Set(refs.map((r) => r.project))],
+      endedAt: new Date(row.started_at.getTime() + Number(row.duration_ms)).toISOString(),
+    })
+  }
+  return runs
+}

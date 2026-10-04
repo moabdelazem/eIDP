@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
-import { ArrowDownRight, ArrowUpRight, EyeOff, Minus, Sparkles } from 'lucide-react'
+import { EyeOff, Sparkles } from 'lucide-react'
+import { Kpi, signed } from '@/components/kpi.tsx'
 import { Section } from '@/components/page-layout.tsx'
 import { BarsSkeleton, Loading } from '@/components/skeletons.tsx'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -183,52 +184,6 @@ function Kpis({ stats: s }: { stats: Stats }) {
             : null
         }
       />
-    </div>
-  )
-}
-
-function signed(n: number): string {
-  return n > 0 ? `+${n.toLocaleString()}` : n < 0 ? `−${Math.abs(n).toLocaleString()}` : '0'
-}
-
-/**
- * A headline number with how it moved against the window before. The arrow
- * and sign say the direction; the colour says whether that is good — green,
- * or red when it wants a look. A neutral measure (how many builds) stays grey.
- */
-function Kpi({
-  label,
-  value,
-  detail,
-  delta,
-  alarm = false,
-}: {
-  label: string
-  value: string
-  detail: string
-  delta: { change: number; text: string; good: 'up' | 'down' | null } | null
-  alarm?: boolean
-}) {
-  let tone = 'text-muted-foreground'
-  if (delta && delta.change !== 0 && delta.good) {
-    const better = delta.good === 'up' ? delta.change > 0 : delta.change < 0
-    tone = better ? 'text-success' : 'text-destructive'
-  }
-  const Icon = !delta || delta.change === 0 ? Minus : delta.change > 0 ? ArrowUpRight : ArrowDownRight
-  return (
-    <div className="rounded-xl border bg-card px-4 py-3 shadow-sm">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold ${alarm ? 'text-primary' : ''}`}>{value}</p>
-      <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-        {delta && (
-          <span className={`inline-flex items-center gap-0.5 font-medium ${tone}`}>
-            <Icon className="size-3.5" aria-hidden />
-            {delta.text}
-            <span className="sr-only"> against the window before</span>
-          </span>
-        )}
-        <span>{detail}</span>
-      </p>
     </div>
   )
 }
