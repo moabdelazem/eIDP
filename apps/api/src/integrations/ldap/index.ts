@@ -3,6 +3,7 @@ import { config } from '../../lib/config.ts'
 import { ApiError } from '../../lib/errors.ts'
 import { bindAsService, first, userFilter, withClient } from './client.ts'
 import { readBindFailure } from './ad-errors.ts'
+import { identifyServer } from './identify.ts'
 
 export { dnOf, groupFilter, groupsOf, isApproverGroup } from './groups.ts'
 export { profileOf, type Profile } from './profile.ts'
@@ -117,6 +118,26 @@ export async function authenticate(uid: string, password: string): Promise<Direc
       // displayName is the one AD actually shows; cn is the fallback elsewhere.
       name: first(entry.displayName) || first(entry.cn) || uid,
       mail: first(entry.mail) || first(entry.userPrincipalName),
+    }
+  })
+}
+
+/**
+ * Whether the directory answers and takes the service account's bind, and
+ * what it is — for the health page. Throws what the bind throws, so the
+ * caller can tell a refused service account from an unreachable server.
+ */
+export async function probe(): Promise<{ url: string; vendor: string; baseDn: string; servesBaseDn: boolean }> {
+  return withClient(async (client) => {
+    await bindAsService(client)
+    const identity = await identifyServer(client)
+    const base = config.LDAP_BASE_DN.toLowerCase()
+    return {
+      url: config.LDAP_URL,
+      vendor: identity?.vendor ?? 'Unknown',
+      baseDn: config.LDAP_BASE_DN,
+      // A rootDSE that would not say counts as serving it: no evidence either way.
+      servesBaseDn: !identity || identity.namingContexts.length === 0 || identity.namingContexts.some((nc) => base.endsWith(nc.toLowerCase())),
     }
   })
 }

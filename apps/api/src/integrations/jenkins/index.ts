@@ -1,7 +1,7 @@
 import { ApiError } from '../../lib/errors.ts'
 import { fullNameFromUrl, jenkinsConfig, jenkinsGet, jenkinsHead, jenkinsPost, jenkinsTail, jobPath } from './client.ts'
 
-export { jenkinsConfig } from './client.ts'
+export { jenkinsConfig, jenkinsVersion } from './client.ts'
 export { EVERYONE_SID, readAccess, parseMatrix, type AccessRules, type JobGrant, type SidType } from './access.ts'
 
 /** A build's outcome, with a build still going as `running` rather than Jenkins' null. */

@@ -624,6 +624,21 @@ a job's first failure to its next pass, against the window before. Ranked
 charts are top eight plus "Other", from the API. `RankedBars` and
 `DurationChart` live in the lazy `charts.tsx` with the rest.
 
+**System health** (`/system`, `features/system/`, `services/health.ts`) is a
+Manage page behind `system.health` (`devops-admin`): every dependency asked
+now — Postgres, the directory (service bind, and whether it serves
+`LDAP_BASE_DN`), Vault (`sys/health`, and whether the secret paths still read,
+values dropped), Azure DevOps, Jira, Jenkins (version header), Ollama (model
+pulled?), and the background jobs judged against their interval (late after
+three missed runs). Each is ok, degraded, down or off (not configured is off,
+never down), says what to do, and what in the portal depends on it. Only
+Postgres or the directory down makes the portal *down*; Vault going away
+after boot is a warning — the running API keeps its settings, the next
+restart would fall back to `.env`, and a boot that already fell back says to
+restart. Checks run in parallel, each within 8 s, and one answer is shared for
+15 s (`?fresh=1`, Check again, skips it). Names, versions, counts and ages
+only — never a secret. `/health` stays the public liveness probe.
+
 **History is the portal's own copy.** A day or a week of builds, searchable by
 parameter, cannot be swept from Jenkins on every look, so
 `services/jenkins-sync.ts` keeps `jenkins_builds` (with parameters, causes and

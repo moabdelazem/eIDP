@@ -351,6 +351,8 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
   const app = new Hono().basePath(base)
 
   app.use('*', async (c, next) => {
+    // Jenkins names its version on every answer.
+    c.header('X-Jenkins', '2.462.3')
     if (!c.req.header('authorization')?.startsWith('Basic ')) {
       c.header('X-You-Are-Authenticated-As', 'anonymous')
       return c.html('<html>Authentication required</html>', 403)
