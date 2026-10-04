@@ -1,26 +1,19 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { DraftedNote } from './drafted-note.tsx'
-import { Check, TriangleAlert } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
-import { AzureDevOpsIcon } from '@/components/brand-icons.tsx'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Spinner } from '@/components/ui/spinner'
-import { Textarea } from '@/components/ui/textarea'
 import { useSession } from '@/features/auth/session-context.tsx'
 import { ApiError } from '@/lib/api-client.ts'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
-import { requestsApi, type Check as CheckResult, type Target } from './api.ts'
+import { requestsApi, type Target } from './api.ts'
+import { checkState, CheckMessage, Field, FormActions, FormSection, ReasonField, RequestFormPage, ReviewPanel, SummaryItem, Unreachable, type Readiness, type Verdict } from './form-layout.tsx'
 import { REQUEST_TYPES } from './kinds.ts'
-import { Field } from './new-request-page.tsx'
 import { ProjectPicker } from './project-picker.tsx'
 import { TargetPath } from './status.tsx'
 
-type Verdict = { state: 'idle' } | { state: 'checking' } | { state: 'done'; result: CheckResult }
 
 /** Fixed, not chosen: what an access request always grants. */
 const GRANTS =
@@ -126,127 +119,45 @@ export function GrantAccessPage() {
     }
   }
 
+  const type = REQUEST_TYPES.find((t) => t.kind === 'grant_access')!
+  const lead = 'Contribute access to a project that already exists, granted once someone in DevOps approves it.'
   if (collections.error) {
     return (
-      <div className="max-w-prose">
-        <h1 className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
-          <AzureDevOpsIcon className="size-5" />
-          {title}
-        </h1>
-        <p className="mt-2 text-muted-foreground">
-          Azure DevOps can’t be reached right now, so there is nothing to choose from.
-        </p>
-        <p className="mt-2 text-sm text-muted-foreground">{collections.error}</p>
-        <Button variant="outline" className="mt-5" onClick={collections.reload}>
-          Try again
-        </Button>
-      </div>
+      <Unreachable
+        type={type}
+        lead={lead}
+        message="Azure DevOps can’t be reached right now, so there is nothing to choose from."
+        error={collections.error}
+        onRetry={collections.reload}
+      />
     )
   }
 
+  const ready: Readiness = [
+    { label: 'Project chosen', done: Boolean(collection && project), missing: 'Choose the project.' },
+    {
+      label: 'People found',
+      done: grantees.length > 0 && verdict.state === 'done' && verdict.result.ok,
+      missing: grantees.length === 0 ? 'Name who should get access.' : verdict.state === 'done' ? 'Fix the names the directory doesn’t know.' : 'Checking the names in the directory…',
+    },
+    { label: 'Reason given', done: justification.trim() !== '', missing: 'Say what the access is for.' },
+  ]
+
   return (
-    <div>
-      <h1 className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
-          <AzureDevOpsIcon className="size-5" />
-          {title}
-        </h1>
-      <p className="mt-1 text-muted-foreground">
-        Contribute access to a project that already exists, granted once someone in DevOps approves it.
-      </p>
-
-      <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]">
-        <form onSubmit={submit} className="space-y-6">
-          <DraftedNote />
-          <Field label="Collection" htmlFor="collection">
-            {collections.loading ? (
-              <Skeleton className="h-9 w-full" />
-            ) : collections.data!.collections.length === 1 ? (
-              <p id="collection" className="flex h-9 items-center font-mono text-sm">
-                {collection}
-              </p>
-            ) : (
-              <Select
-                value={collection}
-                onValueChange={(value) => {
-                  // Radix also calls this while it settles on its first value; only a real change of collection empties the project.
-                  if (!value || value === collection) return
-                  setCollection(value)
-                  setProject('')
-                }}
-              >
-                <SelectTrigger id="collection" className="w-full">
-                  <SelectValue placeholder="Choose a collection" />
-                </SelectTrigger>
-                <SelectContent>
-                  {collections.data!.collections.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </Field>
-
-          <Field label="Project" htmlFor="project" hint={GRANTS}>
-            <ProjectPicker
-              id="project"
-              projects={projects.data ?? []}
-              value={project}
-              onChange={setProject}
-              loading={!collection || projects.loading}
-            />
-          </Field>
-
-          <Field
-            label="People"
-            htmlFor="people"
-            hint="Login names, separated by commas or spaces. For a whole team, ask for their group instead."
-          >
-            <Input
-              id="people"
-              value={people}
-              onChange={(event) => setPeople(event.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              className="font-mono"
-              aria-describedby="grant-check"
-              aria-invalid={verdict.state === 'done' && !verdict.result.ok}
-            />
-            <GrantCheck id="grant-check" verdict={verdict} count={grantees.length} />
-          </Field>
-
-          <Field
-            label="Why do you need it?"
-            htmlFor="justification"
-            hint="DevOps decides from this, so say what the access is for."
-          >
-            <Textarea
-              id="justification"
-              value={justification}
-              onChange={(event) => setJustification(event.target.value)}
-              placeholder="e.g. Joining the loan scoring team; I’ll be working on the API."
-              rows={3}
-              required
-            />
-          </Field>
-
-          <Button type="submit" disabled={!canSubmit}>
-            {submitting && <Spinner />}
-            Send for approval
-          </Button>
-        </form>
-
-        <aside className="lg:sticky lg:top-8 lg:self-start">
-          <div className="rounded-lg border bg-card p-5">
-            <p className="text-sm text-muted-foreground">You’re asking for</p>
-            <p className="mt-1 text-[15px] font-medium">Contribute access to</p>
-            <TargetPath parts={[collection || '…', project || '…']} className="mt-1 block text-[15px]" />
-            <p className="mt-5 text-sm text-muted-foreground">For</p>
+    <RequestFormPage
+      type={type}
+      lead={lead}
+      onSubmit={submit}
+      aside={
+        <ReviewPanel ready={ready} steps={['Someone in DevOps reviews it.', 'Access is granted in Azure DevOps.', 'Your request shows it is done.']}>
+          <SummaryItem label="Contribute access to">
+            <TargetPath parts={[collection || '…', project || '…']} className="block text-[15px]" />
+          </SummaryItem>
+          <SummaryItem label={grantees.length > 1 ? `For ${grantees.length} people` : 'For'}>
             {grantees.length === 0 ? (
-              <p className="mt-1 text-sm text-muted-foreground">Nobody yet</p>
+              <span className="text-muted-foreground">Nobody yet</span>
             ) : (
-              <ul className="mt-1 flex flex-wrap gap-1.5">
+              <ul className="flex flex-wrap gap-1.5">
                 {grantees.map((name) => (
                   <li key={name} className="rounded-md border bg-muted/40 px-2 py-0.5 font-mono text-xs">
                     {name}
@@ -254,42 +165,76 @@ export function GrantAccessPage() {
                 ))}
               </ul>
             )}
-            <p className="mt-5 text-sm text-muted-foreground">Then</p>
-            <ol className="mt-2 space-y-2 text-sm">
-              {['Someone in DevOps reviews it.', 'Access is granted in Azure DevOps.', 'Your request shows it is done.'].map(
-                (step, index) => (
-                  <li key={step} className="flex gap-3">
-                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                      {index + 1}
-                    </span>
-                    {step}
-                  </li>
-                ),
-              )}
-            </ol>
-          </div>
-        </aside>
-      </div>
-    </div>
-  )
-}
+          </SummaryItem>
+        </ReviewPanel>
+      }
+    >
+      <FormSection step={1} title="Project" description="The project to work in. Access is always the whole project.">
+        <Field label="Collection" htmlFor="collection">
+          {collections.loading ? (
+            <Skeleton className="h-9 w-full" />
+          ) : collections.data!.collections.length === 1 ? (
+            <p id="collection" className="flex h-9 items-center rounded-md border bg-muted/40 px-3 font-mono text-sm">
+              {collection}
+            </p>
+          ) : (
+            <Select
+              value={collection}
+              onValueChange={(value) => {
+                // Radix also calls this while it settles on its first value; only a real change of collection empties the project.
+                if (!value || value === collection) return
+                setCollection(value)
+                setProject('')
+              }}
+            >
+              <SelectTrigger id="collection" className="w-full">
+                <SelectValue placeholder="Choose a collection" />
+              </SelectTrigger>
+              <SelectContent>
+                {collections.data!.collections.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </Field>
 
-function GrantCheck({ id, verdict, count }: { id: string; verdict: Verdict; count: number }) {
-  if (verdict.state === 'idle') return <p id={id} className="sr-only" />
-  if (verdict.state === 'checking') {
-    return (
-      <p id={id} className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Spinner className="size-3.5" /> Checking the directory and Azure DevOps…
-      </p>
-    )
-  }
-  return verdict.result.ok ? (
-    <p id={id} className="flex items-center gap-1.5 text-sm" aria-live="polite">
-      <Check className="size-3.5" /> {count === 1 ? 'Found in the directory.' : `All ${count} found in the directory.`}
-    </p>
-  ) : (
-    <p id={id} className="flex items-start gap-1.5 text-sm text-destructive" role="alert">
-      <TriangleAlert className="mt-0.5 size-3.5 shrink-0" /> {verdict.result.reason}
-    </p>
+        <Field label="Project" htmlFor="project" hint={GRANTS}>
+          <ProjectPicker id="project" projects={projects.data ?? []} value={project} onChange={setProject} loading={!collection || projects.loading} />
+        </Field>
+      </FormSection>
+
+      <FormSection step={2} title="People" description="Who gets access — you, others, or both. Each name is checked against the directory.">
+        <Field label="Login names" htmlFor="people" hint="Separated by commas or spaces, up to 20. For a whole team, ask for their group instead.">
+          <Input
+            id="people"
+            value={people}
+            onChange={(event) => setPeople(event.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+            className="font-mono"
+            aria-describedby="grant-check"
+            aria-invalid={verdict.state === 'done' && !verdict.result.ok}
+          />
+          <CheckMessage
+            id="grant-check"
+            check={checkState(verdict, 'Checking the directory and Azure DevOps…', grantees.length === 1 ? 'Found in the directory.' : `All ${grantees.length} found in the directory.`)}
+          />
+        </Field>
+      </FormSection>
+
+      <FormSection step={3} title="Justification" description="What DevOps reads before approving.">
+        <ReasonField
+          value={justification}
+          onChange={setJustification}
+          placeholder="e.g. Joining the loan scoring team; I’ll be working on the API."
+          hint="Say what the access is for."
+        />
+      </FormSection>
+
+      <FormActions ready={ready} submitting={submitting} />
+    </RequestFormPage>
   )
 }

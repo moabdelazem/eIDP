@@ -438,6 +438,20 @@ no summary. One row per request (`request_assessments`), replaced on Assess
 again; the risk tests live in `requests.test.ts`, because that file deletes
 every request, and take the catalog lock (4202) around their own system.
 
+**Every request form has one shape** (`features/requests/form-layout.tsx`):
+a header naming the kind and provider, the form as a card of numbered
+sections (where, what, who, why), labels above and persistent help below,
+`(optional)` on the optional fields rather than marks on required ones, each
+live check answered under its own field (`CheckMessage`), a reason that warns
+before it reads as thin (`ReasonField`, the same six words `request-risk.ts`
+flags), and an action bar — Cancel then the primary, last — that names the
+first thing still missing instead of a silently disabled button. Beside it a
+sticky `ReviewPanel`: what is asked for, a readiness checklist with progress,
+what happens next. A new form composes these; it does not lay itself out. The
+request page leads with the kind and provider, the name large, and a
+four-stage tracker (`stagesOf`); deciders get a decision card at the top, and
+Withdraw sits in the header.
+
 `check()` is what the form calls as someone types and what `submit()` runs, so
 the two can never disagree. Name rules are in `request-rules.ts`, from the ADO
 Server naming restrictions.

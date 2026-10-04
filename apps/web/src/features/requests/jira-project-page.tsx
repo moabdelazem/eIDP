@@ -1,24 +1,16 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { DraftedNote } from './drafted-note.tsx'
-import { Check, TriangleAlert } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
-import { JiraIcon } from '@/components/brand-icons.tsx'
-import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { ApiError } from '@/lib/api-client.ts'
 import { useResource } from '@/lib/use-resource.ts'
 import { usePageTitle } from '@/lib/use-page-title.ts'
-import { useProfile } from '@/features/auth/profile-context.tsx'
-import { requestsApi, type Check as CheckResult, type Target } from './api.ts'
+import { requestsApi, type Target } from './api.ts'
+import { checkState, CheckMessage, Field, FormActions, FormSection, ReasonField, RequestFormPage, ReviewPanel, SummaryItem, TeamField, Unreachable, useTeam, type Readiness, type Verdict } from './form-layout.tsx'
 import { REQUEST_TYPES } from './kinds.ts'
-import { Field } from './new-request-page.tsx'
-import { ProjectPicker } from './project-picker.tsx'
 import { TargetPath, WrappingUrl } from './status.tsx'
 
-type Verdict = { state: 'idle' } | { state: 'checking' } | { state: 'done'; result: CheckResult }
 
 /**
  * A key the way Jira itself suggests one: the initials of a name of several
@@ -45,11 +37,8 @@ export function JiraProjectPage() {
   const key = typedKey ?? suggestKey(name)
   const [description, setDescription] = useState('')
   const [justification, setJustification] = useState(params.get('reason') ?? '')
-  const { profile, loaded: profileLoaded } = useProfile()
-  const groups = profile?.groups ?? []
   const [chosenTeam, setChosenTeam] = useState('')
-  // One group is not a choice.
-  const team = chosenTeam || (groups.length === 1 ? groups[0]! : '')
+  const team = useTeam(chosenTeam)
   const [verdict, setVerdict] = useState<Verdict>({ state: 'idle' })
   const [submitting, setSubmitting] = useState(false)
 
@@ -107,178 +96,106 @@ export function JiraProjectPage() {
     }
   }
 
-  const heading = (
-    <h1 className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
-      <JiraIcon className="size-5" />
-      {title}
-    </h1>
-  )
-
+  const type = REQUEST_TYPES.find((t) => t.kind === 'create_jira_project')!
+  const lead = 'A Jira software project for your team, created once someone in DevOps approves it.'
   if (server.error) {
-    return (
-      <div className="max-w-prose">
-        {heading}
-        <p className="mt-2 text-muted-foreground">Jira can’t be reached right now, so nothing can be checked.</p>
-        <p className="mt-2 text-sm text-muted-foreground">{server.error}</p>
-        <Button variant="outline" className="mt-5" onClick={server.reload}>
-          Try again
-        </Button>
-      </div>
-    )
+    return <Unreachable type={type} lead={lead} message="Jira can’t be reached right now, so nothing can be checked." error={server.error} onRetry={server.reload} />
   }
 
   const browseUrl = server.data && key ? `${server.data.baseUrl}/browse/${encodeURIComponent(key)}` : null
+  const ready: Readiness = [
+    { label: 'Name given', done: name.trim() !== '', missing: 'Name the project.' },
+    {
+      label: 'Name and key available',
+      done: verdict.state === 'done' && verdict.result.ok,
+      missing: !key ? 'Give the project a key.' : verdict.state === 'done' ? 'Choose another name or key — that one can’t be used.' : 'Checking the name and key in Jira…',
+    },
+    { label: 'Team chosen', done: team !== '', missing: 'Choose the team that joins the project with you.' },
+    { label: 'Reason given', done: justification.trim() !== '', missing: 'Say why you need it.' },
+  ]
 
   return (
-    <div>
-      {heading}
-      <p className="mt-1 text-muted-foreground">
-        A Jira software project for your team, created once someone in DevOps approves it.
-      </p>
+    <RequestFormPage
+      type={type}
+      lead={lead}
+      onSubmit={submit}
+      aside={
+        <ReviewPanel
+          ready={ready}
+          steps={[
+            'Someone in DevOps reviews it.',
+            'The project is created in Jira, with you as its lead.',
+            `You and ${team || 'your team'} join it as members.`,
+            'The link appears on your request.',
+          ]}
+        >
+          <SummaryItem label="You’re asking for">
+            <TargetPath parts={[key || '…', name || '…']} className="block text-[15px]" />
+          </SummaryItem>
+          {key && (
+            <SummaryItem label="Issues will be numbered">
+              <code className="text-sm">
+                {key}-1, {key}-2, …
+              </code>
+            </SummaryItem>
+          )}
+          {browseUrl && (
+            <SummaryItem label="Where it will be">
+              <code className="block text-xs">
+                <WrappingUrl url={browseUrl} />
+              </code>
+            </SummaryItem>
+          )}
+        </ReviewPanel>
+      }
+    >
+      <FormSection step={1} title="Project" description="Its name and key, checked against Jira as you type, and what it is for.">
+        <Field label="Project name" htmlFor="name" hint="What people will see in Jira, like Loan Scoring.">
+          <Input
+            id="name"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            autoComplete="off"
+            aria-describedby="name-check"
+            aria-invalid={verdict.state === 'done' && !verdict.result.ok}
+          />
+        </Field>
 
-      <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]">
-        <form onSubmit={submit} className="space-y-6">
-          <DraftedNote />
-          <Field label="Project name" htmlFor="name" hint="What people will see in Jira, like Loan Scoring.">
-            <Input
-              id="name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              autoComplete="off"
-              aria-describedby="name-check"
-              aria-invalid={verdict.state === 'done' && !verdict.result.ok}
-            />
-          </Field>
+        <Field label="Key" htmlFor="key" hint="Every issue is numbered with it, like LOAN-42. Suggested from the name; change it if you like.">
+          <Input
+            id="key"
+            value={key}
+            // Keys are uppercase; typing lowercase is not a mistake worth an error.
+            onChange={(event) => setTypedKey(event.target.value.toUpperCase().replace(/\s/g, ''))}
+            autoComplete="off"
+            spellCheck={false}
+            maxLength={20}
+            className="w-40 font-mono"
+            aria-describedby="name-check"
+            aria-invalid={verdict.state === 'done' && !verdict.result.ok}
+          />
+          <CheckMessage id="name-check" check={checkState(verdict, 'Checking Jira…', 'Available — no project has that name or key yet.')} />
+        </Field>
 
-          <Field
-            label="Key"
-            htmlFor="key"
-            hint="Every issue is numbered with it, like LOAN-42. Suggested from the name; change it if you like."
-          >
-            <Input
-              id="key"
-              value={key}
-              // Keys are uppercase; typing lowercase is not a mistake worth an error.
-              onChange={(event) => setTypedKey(event.target.value.toUpperCase().replace(/\s/g, ''))}
-              autoComplete="off"
-              spellCheck={false}
-              maxLength={20}
-              className="w-40 font-mono"
-              aria-describedby="name-check"
-              aria-invalid={verdict.state === 'done' && !verdict.result.ok}
-            />
-            <NameCheck id="name-check" verdict={verdict} />
-          </Field>
+        <Field label="Description" htmlFor="description" hint="Shown on the project in Jira." optional>
+          <Textarea id="description" value={description} onChange={(event) => setDescription(event.target.value)} rows={2} />
+        </Field>
+      </FormSection>
 
-          <Field label="Description" htmlFor="description" hint="Shown on the project in Jira. Optional.">
-            <Textarea id="description" value={description} onChange={(event) => setDescription(event.target.value)} rows={2} />
-          </Field>
+      <FormSection step={2} title="Access" description="Who joins the project with you.">
+        <TeamField value={team} onChange={setChosenTeam} hint="Joins the project with you. One of your groups in the directory." />
+      </FormSection>
 
-          <Field label="Your team" htmlFor="team" hint="Joins the project with you. One of your groups in the directory.">
-            {profileLoaded && groups.length === 0 ? (
-              <p id="team" className="text-sm text-destructive">
-                The directory has you in no groups, so there is no team to add. Ask for your account to be added to
-                your team’s group, then come back.
-              </p>
-            ) : groups.length === 1 ? (
-              <p id="team" className="flex h-9 items-center font-mono text-sm">
-                {team}
-              </p>
-            ) : (
-              <ProjectPicker
-                id="team"
-                noun="team"
-                projects={groups.map((group) => ({ name: group, description: null }))}
-                value={team}
-                onChange={setChosenTeam}
-                loading={!profileLoaded}
-              />
-            )}
-          </Field>
+      <FormSection step={3} title="Justification" description="What DevOps reads before approving.">
+        <ReasonField
+          value={justification}
+          onChange={setJustification}
+          placeholder="e.g. Backlog for the loan scoring work, run by the Payments team."
+          hint="Say who it is for and what work it will track."
+        />
+      </FormSection>
 
-          <Field
-            label="Why do you need it?"
-            htmlFor="justification"
-            hint="DevOps decides from this, so say who it is for and what work it will track."
-          >
-            <Textarea
-              id="justification"
-              value={justification}
-              onChange={(event) => setJustification(event.target.value)}
-              placeholder="e.g. Backlog for the loan scoring work, run by the Payments team."
-              rows={3}
-              required
-            />
-          </Field>
-
-          <Button type="submit" disabled={!canSubmit}>
-            {submitting && <Spinner />}
-            Send for approval
-          </Button>
-        </form>
-
-        <aside className="lg:sticky lg:top-8 lg:self-start">
-          <div className="rounded-lg border bg-card p-5">
-            <p className="text-sm text-muted-foreground">You’re asking for</p>
-            <TargetPath parts={[key || '…', name || '…']} className="mt-1 block text-[15px]" />
-
-            {key && (
-              <>
-                <p className="mt-5 text-sm text-muted-foreground">Issues will be numbered</p>
-                <code className="mt-1 block text-sm">
-                  {key}-1, {key}-2, …
-                </code>
-              </>
-            )}
-
-            {browseUrl && (
-              <>
-                <p className="mt-5 text-sm text-muted-foreground">Where it will be</p>
-                <code className="mt-1 block text-xs">
-                  <WrappingUrl url={browseUrl} />
-                </code>
-              </>
-            )}
-
-            <p className="mt-5 text-sm text-muted-foreground">Then</p>
-            <ol className="mt-2 space-y-2 text-sm">
-              {[
-                'Someone in DevOps reviews it.',
-                'The project is created in Jira, with you as its lead.',
-                `You and ${team || 'your team'} join it as members.`,
-                'The link appears on your request.',
-              ].map((step, index) => (
-                <li key={step} className="flex gap-3">
-                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                    {index + 1}
-                  </span>
-                  {step}
-                </li>
-              ))}
-            </ol>
-          </div>
-        </aside>
-      </div>
-    </div>
-  )
-}
-
-function NameCheck({ id, verdict }: { id: string; verdict: Verdict }) {
-  if (verdict.state === 'idle') return <p id={id} className="sr-only" />
-  if (verdict.state === 'checking') {
-    return (
-      <p id={id} className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Spinner className="size-3.5" /> Checking Jira…
-      </p>
-    )
-  }
-  return verdict.result.ok ? (
-    <p id={id} className="flex items-center gap-1.5 text-sm" aria-live="polite">
-      <Check className="size-3.5" /> Available — no project has that name or key yet.
-    </p>
-  ) : (
-    <p id={id} className="flex items-start gap-1.5 text-sm text-destructive" role="alert">
-      <TriangleAlert className="mt-0.5 size-3.5 shrink-0" /> {verdict.result.reason}
-    </p>
+      <FormActions ready={ready} submitting={submitting} />
+    </RequestFormPage>
   )
 }
