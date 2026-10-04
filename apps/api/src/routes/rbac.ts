@@ -33,6 +33,16 @@ export const rbacRoutes = new Hono<AppEnv>()
     c.json(await rbac.addBinding(c.req.valid('json'), c.get('jwtPayload').sub), 201),
   )
 
+  /** A binding's reason and expiry; the rest of it is what was granted, and stays. */
+  .patch(
+    '/bindings/:id',
+    validate('json', z.object({ reason: z.string().max(2000).nullish(), expiresAt: z.string().max(64).nullish() })),
+    async (c) => c.json(await rbac.updateBinding(c.req.param('id'), c.req.valid('json'), c.get('jwtPayload').sub)),
+  )
+
+  /** Teams, projects and groups the grant form can offer as someone types. */
+  .get('/suggestions', async (c) => c.json(await rbac.suggestions()))
+
   .delete('/bindings/:id', async (c) => {
     await rbac.removeBinding(c.req.param('id'), c.get('jwtPayload').sub)
     return c.body(null, 204)

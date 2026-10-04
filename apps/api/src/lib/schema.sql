@@ -155,6 +155,12 @@ alter table rbac_audit alter column binding drop not null;
 alter table rbac_audit drop constraint if exists rbac_audit_action_check;
 alter table rbac_audit add constraint rbac_audit_action_check check (action in ('grant', 'revoke', 'assume'));
 
+-- A binding's reason or expiry changed after it was granted: the row holds it
+-- as it became, and `previous` as it was.
+alter table rbac_audit add column if not exists previous jsonb;
+alter table rbac_audit drop constraint if exists rbac_audit_action_check;
+alter table rbac_audit add constraint rbac_audit_action_check check (action in ('grant', 'revoke', 'assume', 'update'));
+
 -- Jira projects. Jira has no collections, so those rows carry none, and the
 -- project key — what every issue is numbered with, PAY-123 — beside the name.
 alter table requests add column if not exists project_key text;

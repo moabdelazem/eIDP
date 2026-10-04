@@ -522,6 +522,31 @@ out, and switching either way reloads from `/`, because every cached resource
 belonged to the other identity. `ViewingAsBanner` stays across the top in red
 the whole time.
 
+**The Access page** (`features/admin/`) is a working tool, its tab and
+filters in the URL (`?tab=check&uid=bob`, `?status=expiring`). Across the
+top: bindings to groups and to people, what expires within `EXPIRING_DAYS`
+(14), and what needs cleaning up — an expired binding grants nothing but stays
+listed, and one whose role left the code is "Role gone" — with a callout that
+filters to them. **Bindings** is a table to work in: search, group/person,
+role and status filters, sortable columns, select several to remove at once,
+and a row menu — check the person, edit the reason and expiry (`PATCH
+/rbac/bindings/:id`, audited as `update` with the binding as it was in
+`previous`; who, role and scope never change, that is a new binding), grant
+the same to someone else, remove. A role's name opens a hover card of what it
+allows. **Granting** is a side sheet: group or person (a person checked
+against the directory as typed), the role as cards with their permissions,
+where (typeahead from `GET /rbac/suggestions`: the catalog's teams and
+projects, and groups already bound), why, and an expiry from presets or a
+day; a sentence at the foot says what will be granted. **Check someone**,
+**Roles** (one grid, roles against permissions, each column opening its
+bindings) and the **Audit log** (by day, filtered by action and searched)
+are tabs. shadcn's registry is blocked by the environment's network policy,
+so `checkbox.tsx` and `hover-card.tsx` were written from shadcn's source, as
+`collapsible.tsx` was. Inside a dialog, anything that opens on focus (a hover
+card) must not be the first focusable thing, or it opens over the dialog. The
+tab contents are a `minmax(0,1fr)` grid, so a wide table scrolls in its box
+instead of widening the page.
+
 Three layers enforce it, and only the last one is security:
 
 1. **Sidebar** — `components/sidebar/nav-manage.tsx` lists each `manageItems`
