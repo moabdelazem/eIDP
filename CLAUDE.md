@@ -158,7 +158,12 @@ one place colour comes from outside the palette, because that is how people
 recognise them; pass `tone="current"` where colour would be noise. Each
 provider in `kinds.ts` carries its mark, so a new provider brings its own.
 Jenkins is the exception: its brand colour is red, and red here means "act",
-so `JenkinsIcon` defaults to the text colour.
+so `JenkinsIcon` defaults to the text colour. `PostgresIcon` draws in its blue; `VaultIcon` defaults
+to the text colour too (its yellow vanishes on paper), and `OllamaIcon` is
+black anyway. System health shows every component by its mark
+(`features/system/icons.tsx`, Lucide where there is none — the directory,
+the portal's own jobs); the sidebar's health alert shows the down tools'
+marks in the rail's ink (`tone="current"`), never their colours.
 
 The Jenkins **pipeline** request is listed as Soon (`kind: null`) — what it
 does is still to be specified, so it has no form, route or API kind yet.
@@ -638,6 +643,18 @@ restart would fall back to `.env`, and a boot that already fell back says to
 restart. Checks run in parallel, each within 8 s, and one answer is shared for
 15 s (`?fresh=1`, Check again, skips it). Names, versions, counts and ages
 only — never a secret. `/health` stays the public liveness probe.
+
+The **sidebar carries it** for whoever may see the page:
+`SystemHealthProvider` (`features/system/health-context.tsx`, mounted in
+`app-sidebar`) asks once a minute — nobody else's browser asks at all — and
+shares the answer. While anything is **down**, `nav-health.tsx` puts a red
+alert at the foot of the rail on every page (one red icon with a tooltip when
+collapsed), linking to the page; System health carries a red count of what is
+down, or an amber dot (`--sidebar-warning`, the amber lifted for the dark
+rail) when something only needs attention — a warning is not an alarm on
+every page. The health page publishes its own answers, Check again included,
+so the sidebar never lags what the page shows. The alert link stays a link;
+a separate `sr-only` `role="alert"` announces it once.
 
 **History is the portal's own copy.** A day or a week of builds, searchable by
 parameter, cannot be swept from Jenkins on every look, so
