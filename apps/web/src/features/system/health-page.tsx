@@ -9,6 +9,7 @@ import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
 import { systemApi, type Component, type Group, type Health, type Status } from './api.ts'
 import { useSystemHealth } from './health-context.tsx'
+import { ComponentIcon } from './icons.tsx'
 
 /**
  * Is a status's word, icon and tone — the meaning colours, each with an icon
@@ -155,7 +156,12 @@ function ComponentCard({ component: c }: { component: Component }) {
   const { icon: Icon, label, badge } = STATUS[c.status]
   return (
     <Section
-      title={c.name}
+      title={
+        <span className="flex items-center gap-2">
+          <ComponentIcon id={c.id} className="size-4 text-muted-foreground" />
+          {c.name}
+        </span>
+      }
       action={
         <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${badge}`}>
           <Icon className="size-3.5" aria-hidden /> {label}

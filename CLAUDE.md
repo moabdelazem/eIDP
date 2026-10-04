@@ -158,7 +158,12 @@ one place colour comes from outside the palette, because that is how people
 recognise them; pass `tone="current"` where colour would be noise. Each
 provider in `kinds.ts` carries its mark, so a new provider brings its own.
 Jenkins is the exception: its brand colour is red, and red here means "act",
-so `JenkinsIcon` defaults to the text colour.
+so `JenkinsIcon` defaults to the text colour. `PostgresIcon` draws in its blue; `VaultIcon` defaults
+to the text colour too (its yellow vanishes on paper), and `OllamaIcon` is
+black anyway. System health shows every component by its mark
+(`features/system/icons.tsx`, Lucide where there is none — the directory,
+the portal's own jobs); the sidebar's health alert shows the down tools'
+marks in the rail's ink (`tone="current"`), never their colours.
 
 The Jenkins **pipeline** request is listed as Soon (`kind: null`) — what it
 does is still to be specified, so it has no form, route or API kind yet.

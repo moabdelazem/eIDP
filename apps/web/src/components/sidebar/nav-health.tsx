@@ -2,6 +2,7 @@ import { CircleX } from 'lucide-react'
 import { NavLink } from 'react-router'
 import { SidebarGroup, SidebarGroupContent, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar'
 import { useSystemHealth } from '@/features/system/health-context.tsx'
+import { ComponentIcon } from '@/features/system/icons.tsx'
 
 /**
  * An alert at the foot of the sidebar while something the portal depends on
@@ -35,7 +36,13 @@ export function NavHealth() {
               <NavLink to="/system" aria-label={`${said}. Open System health.`}>
                 <CircleX className="text-sidebar-primary" aria-hidden />
                 <span className="grid min-w-0 leading-tight whitespace-normal! group-data-[collapsible=icon]:hidden">
-                  <span className="font-medium">{title}</span>
+                  <span className="flex items-center gap-1.5 font-medium">
+                    {title}
+                    {/* Which tools, by their marks — in the rail's own ink, never their colours. */}
+                    {down.slice(0, 4).map((c) => (
+                      <ComponentIcon key={c.id} id={c.id} tone="current" className="size-3.5 text-rail-muted" />
+                    ))}
+                  </span>
                   <span className="line-clamp-2 text-xs text-rail-muted">{detail}</span>
                 </span>
               </NavLink>
