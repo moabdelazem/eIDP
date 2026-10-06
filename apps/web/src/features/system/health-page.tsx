@@ -1,38 +1,24 @@
 import { useEffect, useState } from 'react'
-import { ChevronRight, CircleAlert, CircleCheck, CircleMinus, CircleX, HeartPulse, RefreshCw, type LucideIcon } from 'lucide-react'
+import { ChevronRight, HeartPulse, RefreshCw } from 'lucide-react'
 import { EmptyState } from '@/components/empty-state.tsx'
 import { PAGE, PageHeader } from '@/components/page-layout.tsx'
 import { HeaderSkeleton, Loading, RowsSkeleton } from '@/components/skeletons.tsx'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { since } from '@/features/requests/status.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
-import { systemApi, type Component, type Day, type Group, type Health, type History, type Incident, type Status } from './api.ts'
+import { systemApi, type Component, type Group, type Health, type History, type Incident, type Status } from './api.ts'
 import { useSystemHealth } from './health-context.tsx'
 import { ComponentIcon } from './icons.tsx'
-
-/**
- * A status's word, icon and tone — the meaning colours, each with an icon and
- * a word so colour never carries it alone. Red only for down: that is the one
- * that wants someone now.
- */
-const STATUS: Record<Status, { label: string; icon: LucideIcon; text: string; bar: string }> = {
-  ok: { label: 'Operational', icon: CircleCheck, text: 'text-success', bar: 'bg-success' },
-  degraded: { label: 'Degraded', icon: CircleAlert, text: 'text-warning', bar: 'bg-warning' },
-  down: { label: 'Down', icon: CircleX, text: 'text-destructive', bar: 'bg-destructive' },
-  off: { label: 'Not configured', icon: CircleMinus, text: 'text-muted-foreground', bar: 'bg-muted-foreground/25' },
-}
+import { AlertsSection, MachinesSection } from './machines.tsx'
+import { formatDay, STATUS, UptimeBar } from './parts.tsx'
 
 const GROUPS: { group: Group; title: string }[] = [
   { group: 'core', title: 'Core' },
   { group: 'integration', title: 'Integrations' },
   { group: 'background', title: 'Background jobs' },
 ]
-
-/** Days drawn on a phone: the most recent; the rest need the width. */
-const PHONE_DAYS = 30
 
 /**
  * The portal's status page, laid out the way public availability pages are:
@@ -42,10 +28,18 @@ const PHONE_DAYS = 30
  * A row opens to say what it checked, what depends on it, and how fast it has
  * answered today. Looks again every 30 seconds; Check again asks everything
  * now and tells the sidebar.
+ *
+ * "Now" is the portal's own check; the bars, incidents, machines and alerts
+ * are the health service's (apps/health), which samples on its own — when it
+ * is not there, the page still answers "now" and says what is missing.
  */
 export function SystemHealthPage() {
   const health = useResource(() => systemApi.health(), [], { pollMs: 30_000 })
   const history = useResource(() => systemApi.history(90), [], { pollMs: 5 * 60_000 })
+  // History, machines and alerts are the health service's; the page says so when it is not there.
+  const machines = useResource(() => systemApi.machines(), [], { pollMs: 60_000 })
+  const alerts = useResource(() => systemApi.alerts(), [], { pollMs: 60_000 })
+  const serviceError = history.error ?? machines.error
   const [checking, setChecking] = useState(false)
   const [fresh, setFresh] = useState<Health | null>(null)
   // The newer of a fresh check and the polled answer.
@@ -92,9 +86,15 @@ export function SystemHealthPage() {
 
   return (
     <div className={PAGE}>
-      <PageHeader title="System health" description="Everything the portal depends on — how it is now, and how it has been." />
+      <PageHeader title="System health" description="Everything the portal depends on and the machines we run — how they are now, and how they have been." />
 
       <Verdict health={h} checking={checking} onCheck={() => void checkAgain()} />
+
+      {serviceError && !history.data && (
+        <p className="mt-6 rounded-xl border border-warning/30 bg-warning-soft px-5 py-3 text-sm text-warning" role="status">
+          History, machines and alerts come from the health service. {serviceError}
+        </p>
+      )}
 
       <div className="mt-8 flex flex-wrap items-end justify-between gap-3">
         <p className="text-sm text-muted-foreground">
@@ -120,6 +120,19 @@ export function SystemHealthPage() {
           </section>
         ))}
       </div>
+
+      <MachinesSection
+        machines={machines.data}
+        history={history.data}
+        error={machines.error}
+        onChanged={() => {
+          machines.reload()
+          history.reload()
+          alerts.reload()
+        }}
+      />
+
+      <AlertsSection data={alerts.data} error={alerts.error} />
 
       <Incidents history={history.data} />
     </div>
@@ -205,67 +218,6 @@ function ComponentRow({ component: c, history }: { component: Component; history
       </Collapsible>
     </li>
   )
-}
-
-/**
- * A bar per day, oldest on the left, each the worst the component was that
- * day — the way availability pages draw it. A 2px gap between bars, and a
- * tooltip on each with what the samples said. A phone shows the last 30 days.
- */
-function UptimeBar({ days, uptime, off }: { days: Day[]; uptime: number | null; off: boolean }) {
-  return (
-    <div>
-      <ol className="flex h-8 items-stretch gap-[2px]" aria-label={`Daily status, the last ${days.length} days, oldest first`}>
-        {days.map((d, i) => {
-          const tone = d.worst === 'none' ? 'bg-muted' : STATUS[d.worst].bar
-          const hideOnPhone = i < days.length - PHONE_DAYS ? 'hidden sm:block' : ''
-          return (
-            <li key={d.day} className={`min-w-0 flex-1 ${hideOnPhone}`}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className={`block h-full rounded-[2px] transition-opacity hover:opacity-75 ${tone}`}>
-                    <span className="sr-only">
-                      {formatDay(d.day)}: {dayText(d)}
-                    </span>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  <p className="font-medium">{formatDay(d.day)}</p>
-                  <p>{dayText(d)}</p>
-                </TooltipContent>
-              </Tooltip>
-            </li>
-          )
-        })}
-      </ol>
-      <div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">
-        <span className="hidden sm:inline">{days.length} days ago</span>
-        <span className="sm:hidden">{Math.min(days.length, PHONE_DAYS)} days ago</span>
-        <span aria-hidden className="h-px flex-1 bg-border" />
-        <span className="font-medium text-foreground tabular-nums">
-          {off ? 'Not configured' : uptime === null ? 'No data yet' : `${formatUptime(uptime)} uptime`}
-        </span>
-        <span aria-hidden className="h-px flex-1 bg-border" />
-        <span>Today</span>
-      </div>
-    </div>
-  )
-}
-
-function dayText(d: Day): string {
-  if (d.worst === 'none') return 'No data recorded'
-  if (d.worst === 'off') return 'Not configured'
-  if (d.worst === 'ok') return `Operational — ${d.samples} checks`
-  const parts = [d.down ? `${d.down} down` : '', d.degraded ? `${d.degraded} degraded` : ''].filter(Boolean)
-  return `${parts.join(', ')} of ${d.samples} checks`
-}
-
-const formatDay = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
-
-/** 99.95%, not 99.94736%: availability is read to two places, and 100 only when it was. */
-function formatUptime(u: number): string {
-  if (u >= 1) return '100%'
-  return `${(Math.floor(u * 10_000) / 100).toFixed(2)}%`
 }
 
 function Details({ component: c, latency }: { component: Component; latency: { at: string; ms: number }[] }) {

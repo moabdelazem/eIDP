@@ -6,6 +6,7 @@ import { authRoutes } from './routes/auth.ts'
 import { activityRoutes } from './routes/activity.ts'
 import { adoRoutes } from './routes/ado.ts'
 import { jiraRoutes } from './routes/jira.ts'
+import { internalRoutes } from './routes/internal.ts'
 import { jenkinsRoutes } from './routes/jenkins.ts'
 import { systemRoutes } from './routes/system.ts'
 import { pipelineRoutes } from './routes/pipelines.ts'
@@ -39,6 +40,7 @@ export function createApp() {
   app.route('/rbac', rbacRoutes)
   app.route('/digests', digestRoutes)
   app.route('/activity', activityRoutes)
+  app.route('/internal', internalRoutes)
 
   return app
 }

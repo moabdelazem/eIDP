@@ -29,6 +29,7 @@ export const PERMISSIONS = {
   'jenkins.operate': 'Re-run and stop Jenkins builds, and take them out of the queue — scoped, only the pipelines its team or project owns',
   'pipelines.view': 'See the Jenkins pipelines your teams own and the builds you started',
   'system.health': 'See the health of the portal and of everything it depends on',
+  'machines.manage': 'Add, change and remove the machines the health service watches',
   'ai.use': 'Ask the portal’s AI (Ollama, on our own machines) to explain what it shows',
   'digests.all': 'Read every team’s weekly digest, not only your own teams’, and write one again',
   'ai.chat': 'Chat with the portal’s chatbot, which looks up only what you may already see',

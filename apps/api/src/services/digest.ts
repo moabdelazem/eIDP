@@ -286,8 +286,10 @@ async function requestFacts(team: string, projects: string[], from: Date, to: Da
 
 /** The portal's incidents that began in the week — they touched every team. */
 async function incidentsIn(from: Date, to: Date): Promise<Incident[]> {
-  const { rows } = await query<{ component: string; at: Date; status: Status; summary: string }>(
-    `select component, at, status, summary from health_samples where at >= $1 and at < $2 order by component, at`,
+  // The portal's components, not our machines: a machine's outage is not every team's week.
+  const { rows } = await query<{ component: string; name: string | null; at: Date; status: Status; summary: string }>(
+    `select component, name, at, status, summary from health_samples
+      where at >= $1 and at < $2 and component not like 'machine:%' order by component, at`,
     [from, to],
   )
   return incidentsOf(rows).slice(0, 10)

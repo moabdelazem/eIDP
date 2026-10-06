@@ -39,6 +39,26 @@ process.env.OLLAMA_URL = await start(ollama.app)
 process.env.OLLAMA_MODEL = 'qwen2.5'
 delete process.env.INVENTORIES_PROJECT
 
+// The health service, as the portal sees it: what it was asked, by whom, with which token.
+const HEALTH_TOKEN = 'portal-test-health-token-0123'
+const asked: { method: string; path: string; auth: string | null; actor: string | null; body: unknown }[] = []
+const { Hono: HonoApp } = await import('hono')
+const fakeHealth = new HonoApp()
+  .get('/health', (c) => c.json({ ok: true, lastRound: { at: new Date().toISOString(), ok: true }, sampleMinutes: 5 }))
+  .all('/v1/*', async (c) => {
+    const body = c.req.method === 'GET' || c.req.method === 'DELETE' ? undefined : await c.req.json()
+    asked.push({ method: c.req.method, path: c.req.path + (new URL(c.req.url).search || ''), auth: c.req.header('authorization') ?? null, actor: c.req.header('x-eidp-actor') ?? null, body })
+    if (c.req.path === '/v1/machines' && c.req.method === 'POST' && (body as { name?: string }).name === 'taken') {
+      return c.json({ error: { code: 'machine_exists', message: 'A machine by that name already exists.' } }, 409)
+    }
+    if (c.req.path === '/v1/history') return c.json({ days: 7, dates: [], components: {}, incidents: [], since: null, sampleMinutes: 5 })
+    if (c.req.method === 'POST') return c.json({ id: '00000000-0000-4000-8000-000000000001', ...(body as object) }, 201)
+    return c.json([])
+  })
+const healthUrl = await start(fakeHealth as unknown as Hono)
+process.env.HEALTH_SERVICE_URL = healthUrl
+process.env.HEALTH_TOKEN = HEALTH_TOKEN
+
 // As src/index.ts does: secrets first, then everything that reads config.
 const { loadSecrets } = await import('../integrations/vault/index.ts')
 assert.equal((await loadSecrets()).source, 'vault')
@@ -46,8 +66,6 @@ const { createApp } = await import('../app.ts')
 const { closeDb, ensureSchema, query } = await import('../lib/db.ts')
 const app = createApp()
 let alice = ''
-/** Health samples before these tests; only rows after it are theirs to delete. */
-let sampleFloor = 0
 
 const forget = () =>
   Promise.all(
@@ -59,7 +77,6 @@ const forget = () =>
 before(async () => {
   await ensureSchema()
   await forget()
-  sampleFloor = Number((await query<{ max: string | null }>('select max(id) from health_samples')).rows[0]?.max ?? 0)
   const res = await app.request('/auth/login', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -70,7 +87,6 @@ before(async () => {
 
 after(async () => {
   await forget()
-  await query('delete from health_samples where id > $1', [sampleFloor])
   await closeDb()
   for (const s of servers) s.close()
 })
@@ -89,7 +105,7 @@ test('every component is checked, and each says what it is', async () => {
   const h = await health()
   assert.deepEqual(
     h.components.map((c) => c.id),
-    ['postgres', 'directory', 'vault', 'ado', 'jira', 'jenkins', 'ollama', 'catalog', 'jenkins-history', 'jenkins-access'],
+    ['postgres', 'directory', 'vault', 'ado', 'jira', 'jenkins', 'ollama', 'catalog', 'jenkins-history', 'jenkins-access', 'health-service'],
   )
   assert.equal(component(h, 'postgres').status, 'ok')
   assert.equal(component(h, 'directory').status, 'ok')
@@ -144,42 +160,38 @@ test('answers are shared for a few seconds unless asked fresh', async () => {
   assert.equal(first.checkedAt, second.checkedAt)
 })
 
-test('a sample keeps every component, and history draws days, uptime and incidents from samples', async () => {
-  const { recordSample } = await import('../services/health.ts')
-  const now = await recordSample()
-  const kept = await query<{ n: string }>('select count(*) as n from health_samples where id > $1 and at = $2', [sampleFloor, now.checkedAt])
-  assert.equal(Number(kept.rows[0]!.n), now.components.length)
-
-  // Ollama's own story: down two days ago, then fine; a warning now and still going.
-  const day = 86_400_000
-  const at = (ms: number) => new Date(Date.now() - ms).toISOString()
-  const rows: [string, string, string][] = [
-    [at(2 * day + 30 * 60_000), 'ok', 'fine'],
-    [at(2 * day + 25 * 60_000), 'down', 'test: unreachable at night'],
-    [at(2 * day + 20 * 60_000), 'down', 'test: still unreachable'],
-    [at(2 * day + 15 * 60_000), 'ok', 'fine again'],
-    [at(10 * 60_000), 'degraded', 'test: model missing'],
-    [at(5 * 60_000), 'degraded', 'test: model missing'],
-  ]
-  for (const [when, status, summary] of rows) {
-    await query(`insert into health_samples (at, component, status, latency_ms, summary) values ($1, 'ollama', $2, 12, $3)`, [when, status, summary])
-  }
-
-  const res = await app.request('/system/history?days=7', { headers: { authorization: `Bearer ${alice}` } })
+test('the health service reads the portal’s dependencies with the shared token, and nobody else does', async () => {
+  const get = (auth?: string) => app.request('/internal/health?fresh=1', { headers: auth ? { authorization: auth } : {} })
+  assert.equal((await get()).status, 401)
+  assert.equal((await get(`Bearer ${alice}`)).status, 401, 'a person’s session is not the token')
+  assert.equal((await get('Bearer not-the-token-not-the-token')).status, 401)
+  const res = await get(`Bearer ${HEALTH_TOKEN}`)
   assert.equal(res.status, 200)
-  const h = (await res.json()) as any
-  assert.equal(h.days, 7)
-  assert.equal(h.dates.length, 7)
-  const ollama = h.components.ollama
-  assert.equal(ollama.days.length, 7)
-  const twoDaysAgo = rows[1]![0].slice(0, 10)
-  assert.equal(ollama.days.find((d: any) => d.day === twoDaysAgo).worst, 'down')
-  assert.ok(ollama.uptime > 0 && ollama.uptime < 1)
-  assert.ok(ollama.latency.length > 0)
+  const body = (await res.json()) as Health
+  assert.ok(body.components.some((c) => c.id === 'postgres'))
+  // The health service, from the portal's side: answering, its last round recent.
+  assert.equal(body.components.find((c) => c.id === 'health-service')?.status, 'ok')
+})
 
-  // Incidents come from the samples; the API's own sampler may be writing
-  // beside these tests, so their rules are checked on rows of their own below.
-  assert.ok(Array.isArray(h.incidents))
+test('history, machines and alerts are asked of the health service, with the token and who asked', async () => {
+  const headers = { authorization: `Bearer ${alice}`, 'content-type': 'application/json' }
+  asked.length = 0
+  const history = await app.request('/system/history?days=7', { headers })
+  assert.equal(history.status, 200)
+  assert.equal(((await history.json()) as { days: number }).days, 7)
+
+  const added = await app.request('/system/machines', { method: 'POST', headers, body: JSON.stringify({ name: 'jenkins-agent-01', host: 'agent01.example', ports: [22] }) })
+  assert.equal(added.status, 201)
+  const post = asked.find((a) => a.method === 'POST' && a.path === '/v1/machines')!
+  assert.equal(post.auth, `Bearer ${HEALTH_TOKEN}`)
+  assert.equal(post.actor, 'alice (Alice Example)')
+  assert.deepEqual(post.body, { name: 'jenkins-agent-01', host: 'agent01.example', ports: [22] })
+  assert.equal(asked.find((a) => a.path === '/v1/history?days=7')?.auth, `Bearer ${HEALTH_TOKEN}`)
+
+  // Its refusals come through as the portal's own.
+  const taken = await app.request('/system/machines', { method: 'POST', headers, body: JSON.stringify({ name: 'taken', host: 'x', ports: [22] }) })
+  assert.equal(taken.status, 409)
+  assert.equal(((await taken.json()) as { error: { code: string } }).error.code, 'machine_exists')
 })
 
 test('an incident is a run of checks not ok, closed by the next ok one, open while it lasts', async () => {
