@@ -97,9 +97,10 @@ create unique index if not exists requests_one_open_create_idx on requests (
 -- level. The repository is optional there — without one, the whole project.
 alter table requests add column if not exists grantees text[];
 alter table requests add column if not exists access_level text;
-alter table requests drop constraint if exists requests_kind_check;
-alter table requests add constraint requests_kind_check
-  check (kind in ('create_repository', 'create_project', 'grant_access'));
+-- requests_kind_check gains grant_access below, with the Jira kind: this file
+-- runs top to bottom on every start, so a constraint is set once, in its
+-- final form. An earlier, narrower copy here once refused to boot as soon as
+-- a row of a later kind existed.
 alter table requests drop constraint if exists requests_repository_check;
 alter table requests add constraint requests_repository_check check (
   (kind <> 'create_repository' or repository is not null)
@@ -152,11 +153,10 @@ create table if not exists rbac_audit (
 -- Such a row names a target instead of a binding.
 alter table rbac_audit add column if not exists target text;
 alter table rbac_audit alter column binding drop not null;
-alter table rbac_audit drop constraint if exists rbac_audit_action_check;
-alter table rbac_audit add constraint rbac_audit_action_check check (action in ('grant', 'revoke', 'assume'));
 
 -- A binding's reason or expiry changed after it was granted: the row holds it
--- as it became, and `previous` as it was.
+-- as it became, and `previous` as it was. The action check, set once for
+-- 'assume' and 'update' together (see requests_kind_check above for why).
 alter table rbac_audit add column if not exists previous jsonb;
 alter table rbac_audit drop constraint if exists rbac_audit_action_check;
 alter table rbac_audit add constraint rbac_audit_action_check check (action in ('grant', 'revoke', 'assume', 'update'));
