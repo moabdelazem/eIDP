@@ -328,7 +328,12 @@ state is reported through `/catalog`. Stale data is still served; only an empty
 catalog is an error, and then the message carries the reason the last attempt
 failed.
 
-`lib/schema.sql` is applied at startup and is written to be re-runnable. There
+`lib/schema.sql` is applied at startup and is written to be re-runnable — top
+to bottom, every time, over whatever rows exist. So a check constraint is set
+**once, in its final form**: an older, narrower copy earlier in the file
+(`requests_kind_check` without the Jira kind) refused to boot the moment a
+Jira request existed, even though a later line widened it again.
+`lib/schema.test.ts` applies it over rows of the newest kinds. There
 is no migration tool — see the `ponytail:` note in `lib/db.ts` for when that
 stops being enough.
 
