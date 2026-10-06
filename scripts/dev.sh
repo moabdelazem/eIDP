@@ -170,13 +170,21 @@ ensure_ldap_seed() {
     < "$root/ldap/seed.ldif" >/dev/null
 }
 
+# The image carries node_modules, so it is only as current as the lockfile it
+# was built from. It is labelled with that lockfile's hash, and rebuilt when
+# the lockfile changes — after a pull that adds a package, a stale image would
+# fail to import it.
 build_image() {
-  if [[ -n "$(podman images -q "$APP_IMAGE" 2>/dev/null)" && "${REBUILD:-}" != "1" ]]; then
+  local lock built
+  lock="$(sha256sum "$root/pnpm-lock.yaml" | cut -c1-16)"
+  built="$(podman image inspect --format '{{ index .Labels "eidp.lock" }}' "$APP_IMAGE" 2>/dev/null || true)"
+  if [[ -n "$built" && "$built" == "$lock" && "${REBUILD:-}" != "1" ]]; then
     note "Using existing image $APP_IMAGE (REBUILD=1 to rebuild)"
     return 0
   fi
+  if [[ -n "$built" && "$built" != "$lock" ]]; then note "pnpm-lock.yaml changed since $APP_IMAGE was built; rebuilding"; fi
   note "Building $APP_IMAGE"
-  podman build -f "$root/Containerfile.dev" -t "$APP_IMAGE" "$root"
+  podman build -f "$root/Containerfile.dev" --label "eidp.lock=$lock" -t "$APP_IMAGE" "$root"
 }
 
 # Inside the pod the containers share a network namespace, so a service in the
@@ -238,6 +246,8 @@ report_apps() {
 }
 
 restart_apps() {
+  # Cheap when nothing changed; after a pull that added a package, the rebuild it needs.
+  build_image
   start_apps
   report_apps
 }
