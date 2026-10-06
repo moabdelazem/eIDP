@@ -201,7 +201,7 @@ if [[ "$USE_LOCAL_LDAP" == 1 ]]; then
 fi
 
 start_apps() {
-  podman rm -f "$pod-api" "$pod-web" >/dev/null 2>&1 || true
+  podman rm -f "$pod-api" "$pod-web" "$pod-health" >/dev/null 2>&1 || true
 
   note "Starting api"
   podman run -d --pod "$pod" --name "$pod-api" \
@@ -210,6 +210,16 @@ start_apps() {
     -v "$root/apps/api/src:/app/apps/api/src:Z" \
     -v "$pod-checkout:/app/.cache" \
     "$APP_IMAGE" pnpm --filter @eidp/api dev >/dev/null
+
+  # The health service samples the api (on its container port, inside the pod)
+  # and our machines on its own; the api reaches it the same way.
+  note "Starting health"
+  podman run -d --pod "$pod" --name "$pod-health" \
+    --env-file "$env_file" \
+    "${in_pod_env[@]}" \
+    -e "PORTAL_URL=http://localhost:3000" \
+    -v "$root/apps/health/src:/app/apps/health/src:Z" \
+    "$APP_IMAGE" pnpm --filter @eidp/health dev >/dev/null
 
   note "Starting web"
   podman run -d --pod "$pod" --name "$pod-web" \

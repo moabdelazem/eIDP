@@ -1,5 +1,6 @@
 import { InvalidCredentialsError } from 'ldapts'
 import * as ado from '../integrations/ado/index.ts'
+import * as healthService from '../integrations/health-service/index.ts'
 import * as jenkins from '../integrations/jenkins/index.ts'
 import * as jira from '../integrations/jira/index.ts'
 import { probe as probeDirectory } from '../integrations/ldap/index.ts'
@@ -14,7 +15,9 @@ import { accessState } from './jenkins-access.ts'
 import { syncState } from './jenkins-sync.ts'
 
 /**
- * The portal's health: everything it depends on, each asked now.
+ * The portal's health: everything it depends on, each asked now. The health
+ * service (apps/health) reads this through `/internal/health` every few
+ * minutes and keeps the history; this file only answers "how is it now".
  *
  * Three groups. **Core** — Postgres and the directory — is what the portal
  * cannot work without: either down is the portal down. Secrets (Vault) sit
@@ -83,6 +86,7 @@ const CHECKS: Check[] = [
   { id: 'catalog', name: 'Catalog sync', group: 'background', uses: 'The projects map, ownership, and team-scoped access.', run: checkCatalog },
   { id: 'jenkins-history', name: 'Jenkins history', group: 'background', uses: 'The Jenkins dashboard, build search and My pipelines.', run: checkJenkinsHistory },
   { id: 'jenkins-access', name: 'Jenkins access rules', group: 'background', uses: 'Which teams see which runs on My pipelines.', run: checkJenkinsAccess },
+  { id: 'health-service', name: 'Health service', group: 'background', uses: 'This page’s history and incidents, our machines, and alerts.', run: checkHealthService },
 ]
 
 async function checkAll(): Promise<Health> {
@@ -334,36 +338,38 @@ async function checkJenkinsAccess() {
   return { status: 'ok' as const, summary: s.source === 'none' ? 'Read; Jenkins has no per-team rules, so the catalog decides who sees what.' : 'Current.', facts }
 }
 
-// ---- history ---------------------------------------------------------------------------
+// ---- the health service ------------------------------------------------------------
 
 /**
- * Asks everything now and keeps the answer — one row per component — for the
- * uptime bars and past incidents. Run on a timer (`HEALTH_SAMPLE_MINUTES`),
- * so history is sampled evenly whether or not anyone has the page open.
- *
- * ponytail: one API process samples; two would sample twice, which doubles
- * the rows but changes no percentage.
+ * The health service samples on its own; here it is judged as a background
+ * job is — answering, and its last round within three of its intervals.
+ * Not configured is off: the page still checks everything now, without
+ * history, machines or alerts.
  */
-export async function recordSample(): Promise<Health> {
-  const now = await health({ fresh: true })
-  await query(
-    `insert into health_samples (at, component, status, latency_ms, summary)
-     select $1, * from unnest($2::text[], $3::text[], $4::int[], $5::text[])`,
-    [
-      now.checkedAt,
-      now.components.map((c) => c.id),
-      now.components.map((c) => c.status),
-      now.components.map((c) => c.latencyMs),
-      now.components.map((c) => c.summary.slice(0, 500)),
-    ],
-  )
-  await query(`delete from health_samples where at < now() - make_interval(days => $1)`, [config.HEALTH_RETENTION_DAYS])
-  return now
+async function checkHealthService() {
+  const c = healthService.healthServiceConfig()
+  if (!c) return { status: 'off' as const, summary: 'Not configured — set HEALTH_SERVICE_URL and HEALTH_TOKEN for history, machines and alerts.', facts: [] }
+  let live
+  try {
+    live = await healthService.liveness()
+  } catch (err) {
+    return { status: 'down' as const, summary: `Not answering at ${host(c.url)}: ${err instanceof Error ? err.message : err}. Nothing is being sampled or alerted.`, facts: [] }
+  }
+  const facts = [
+    { label: 'At', value: host(c.url) },
+    { label: 'Every', value: live.sampleMinutes > 0 ? `${live.sampleMinutes} min` : 'off' },
+    ...(live.lastRound ? [{ label: 'Last round', value: ago(live.lastRound.at) }] : []),
+  ]
+  if (live.sampleMinutes <= 0) return { status: 'degraded' as const, summary: 'Answering, but sampling is off (HEALTH_SAMPLE_MINUTES=0).', facts }
+  // Not run yet is how it starts, not a fault — its first round asks this very check, and would record itself degraded on every restart.
+  if (!live.lastRound) return { status: 'ok' as const, summary: 'Answering; its first round is running or due.', facts }
+  if (!live.lastRound.ok) return { status: 'degraded' as const, summary: 'Its last round failed — see its log.', facts }
+  const late = Date.now() - Date.parse(live.lastRound.at) > LATE_INTERVALS * live.sampleMinutes * 60_000
+  if (late) return { status: 'degraded' as const, summary: `No round since ${ago(live.lastRound.at)} — its timer may have stopped.`, facts }
+  return { status: 'ok' as const, summary: 'Sampling.', facts }
 }
 
-/** One day of one component: its worst status, and how many samples said what. */
-export type Day = { day: string; samples: number; down: number; degraded: number; worst: Status | 'none' }
-
+/** A run of samples not ok — the weekly digest lists the portal's (the health service draws its own). */
 export type Incident = {
   component: string
   name: string
@@ -376,90 +382,8 @@ export type Incident = {
   summary: string
 }
 
-export type History = {
-  days: number
-  /** The day each bar is, oldest first, so every component's bars line up. */
-  dates: string[]
-  components: Record<string, { uptime: number | null; days: Day[]; latency: { at: string; ms: number }[] }>
-  incidents: Incident[]
-  /** When sampling started — bars before it have no data, not an outage. */
-  since: string | null
-  sampleMinutes: number
-}
-
-const INCIDENT_DAYS = 14
-
-/**
- * The last `days` days per component, as the status page draws them: each
- * day's worst status, the window's uptime (samples not down, out of samples
- * where it was configured), the last day's response times by hour, and the
- * incidents — runs of samples not ok — of the last two weeks.
- */
-export async function history(days = 90): Promise<History> {
-  const span = Math.min(days, config.HEALTH_RETENTION_DAYS)
-  const [daily, latency, recent, first] = await Promise.all([
-    query<{ component: string; day: string; samples: string; down: string; degraded: string; off: string }>(
-      `select component, to_char(date_trunc('day', at), 'YYYY-MM-DD') as day, count(*) as samples,
-              count(*) filter (where status = 'down') as down,
-              count(*) filter (where status = 'degraded') as degraded,
-              count(*) filter (where status = 'off') as off
-         from health_samples where at >= date_trunc('day', now()) - make_interval(days => $1 - 1)
-        group by 1, 2`,
-      [span],
-    ),
-    query<{ component: string; at: Date; ms: number }>(
-      `select component, date_trunc('hour', at) as at, round(avg(latency_ms))::int as ms
-         from health_samples where at >= now() - interval '24 hours' and status <> 'off' and latency_ms is not null
-        group by 1, 2 order by 2`,
-    ),
-    query<{ component: string; at: Date; status: Status; summary: string }>(
-      `select component, at, status, summary from health_samples
-        where at >= now() - make_interval(days => $1) order by component, at`,
-      [INCIDENT_DAYS],
-    ),
-    query<{ at: Date | null }>('select min(at) as at from health_samples'),
-  ])
-
-  const dates: string[] = []
-  const today = new Date()
-  for (let i = span - 1; i >= 0; i--) {
-    const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i))
-    dates.push(d.toISOString().slice(0, 10))
-  }
-
-  const components: History['components'] = {}
-  for (const check of CHECKS) {
-    const rows = new Map(daily.rows.filter((r) => r.component === check.id).map((r) => [r.day, r]))
-    let counted = 0
-    let up = 0
-    const bars = dates.map((day): Day => {
-      const r = rows.get(day)
-      if (!r) return { day, samples: 0, down: 0, degraded: 0, worst: 'none' }
-      const [samples, down, degraded, off] = [r.samples, r.down, r.degraded, r.off].map(Number) as [number, number, number, number]
-      counted += samples - off
-      up += samples - off - down
-      const worst: Day['worst'] = down ? 'down' : degraded ? 'degraded' : samples > off ? 'ok' : 'off'
-      return { day, samples, down, degraded, worst }
-    })
-    components[check.id] = {
-      uptime: counted ? up / counted : null,
-      days: bars,
-      latency: latency.rows.filter((r) => r.component === check.id).map((r) => ({ at: r.at.toISOString(), ms: r.ms })),
-    }
-  }
-
-  return {
-    days: span,
-    dates,
-    components,
-    incidents: incidentsOf(recent.rows),
-    since: first.rows[0]?.at?.toISOString() ?? null,
-    sampleMinutes: config.HEALTH_SAMPLE_MINUTES,
-  }
-}
-
 /** Runs of samples that were not ok, per component, newest first. Off is not an incident. */
-export function incidentsOf(rows: { component: string; at: Date; status: Status; summary: string }[]): Incident[] {
+export function incidentsOf(rows: { component: string; name?: string | null; at: Date; status: Status; summary: string }[]): Incident[] {
   const names = new Map(CHECKS.map((c) => [c.id, c.name]))
   const incidents: Incident[] = []
   let open: Incident | null = null
@@ -473,7 +397,7 @@ export function incidentsOf(rows: { component: string; at: Date; status: Status;
     const bad = row.status === 'down' || row.status === 'degraded'
     if (bad) {
       if (!open) {
-        open = { component: row.component, name: names.get(row.component) ?? row.component, status: row.status as 'down' | 'degraded', from: row.at.toISOString(), to: null, summary: row.summary }
+        open = { component: row.component, name: row.name ?? names.get(row.component) ?? row.component, status: row.status as 'down' | 'degraded', from: row.at.toISOString(), to: null, summary: row.summary }
       } else if (row.status === 'down') open.status = 'down'
     } else if (open) {
       open.to = row.at.toISOString()
