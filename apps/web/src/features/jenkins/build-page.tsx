@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { lazy, Suspense, useRef, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router'
 import { Copy, ExternalLink, GitCommitHorizontal, List, Maximize2, Workflow } from 'lucide-react'
 import { toast } from 'sonner'
@@ -6,6 +6,7 @@ import { JenkinsIcon } from '@/components/brand-icons.tsx'
 import { EmptyState } from '@/components/empty-state.tsx'
 import { Facts, PAGE, PageHeader, Section, Split } from '@/components/page-layout.tsx'
 import { FactsSkeleton, HeaderSkeleton, Loading, RowsSkeleton } from '@/components/skeletons.tsx'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
@@ -19,7 +20,9 @@ import { ExplainPanel } from './explain-panel.tsx'
 import { LogViewer } from './log-viewer.tsx'
 import { JobName, RESULT, ResultBadge } from './result.tsx'
 import { RunAction } from './runs.tsx'
-import { StageGraph } from './stage-graph.tsx'
+
+// React Flow is the graph's canvas — ~50 KB that only a build page needs, so it loads with the graph.
+const StageGraph = lazy(() => import('./stage-graph.tsx').then((m) => ({ default: m.StageGraph })))
 
 /**
  * One build, for working out what happened: the facts and what started it,
@@ -222,7 +225,13 @@ function Stages({ run: r, onJump }: { run: RunDetail; onJump: (line: number) => 
         </div>
       }
     >
-      {view === 'graph' ? <StageGraph stages={r.stages} onOpen={open} /> : <StageList stages={r.stages} open={open} />}
+      {view === 'graph' ? (
+        <Suspense fallback={<Skeleton className="h-56 w-full rounded-lg" />}>
+          <StageGraph stages={r.stages} onOpen={open} />
+        </Suspense>
+      ) : (
+        <StageList stages={r.stages} open={open} />
+      )}
     </Section>
   )
 }
@@ -286,8 +295,10 @@ function StagesDialog({
           </DialogTitle>
           <DialogDescription>{summary}. Pick a stage to read its log.</DialogDescription>
         </DialogHeader>
-        <div className="min-h-0 overflow-auto rounded-lg border bg-muted/30 p-6">
-          <StageGraph stages={r.stages} onOpen={openAndClose} size="large" />
+        <div className="h-[70vh] min-h-0 overflow-hidden rounded-lg border bg-muted/30">
+          <Suspense fallback={<Skeleton className="size-full" />}>
+            <StageGraph stages={r.stages} onOpen={openAndClose} size="large" />
+          </Suspense>
         </div>
       </DialogContent>
     </Dialog>

@@ -243,57 +243,70 @@
 }
 
 /*
- * The pipeline graph (features/jenkins/stage-graph.tsx). Stages arrive column
- * by column (`--i` is the column, `--step` the wait between them) and the
- * lines draw in behind them, so the eye follows the run in order. A line into
- * a running stage keeps marching and the running stage pulses: the one part
- * still changing. Without `no-preference` the graph is simply there, its
- * lines solid, a running one dashed and still.
+ * The pipeline graph (features/jenkins/stage-graph.tsx). Stages fade in column
+ * by column (`--i` is the column, `--step` the wait between them), so the eye
+ * follows the run in order — opacity only: React Flow measures a node the
+ * moment it mounts, and an entrance that moved it anchored every line where
+ * the node started rather than where it rests. The running stage pulses, the
+ * one part still changing. Without `no-preference` the graph is simply there.
  */
 @media (prefers-reduced-motion: no-preference) {
-  .graph-node {
-    animation: graph-node 320ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  .graph-fade {
+    animation: reveal 320ms ease-out both;
     animation-delay: calc(var(--i, 0) * var(--step, 90ms));
-  }
-  .graph-line {
-    stroke-dasharray: 1;
-    stroke-dashoffset: 1;
-    animation: graph-draw 360ms ease-out forwards;
-    animation-delay: calc(var(--i, 0) * var(--step, 90ms) + 160ms);
-  }
-  .graph-line-live {
-    animation: graph-march 900ms linear infinite;
   }
   .graph-pulse {
     animation: graph-pulse 1.8s ease-out infinite;
   }
-  .graph-lift {
-    transition:
-      transform 150ms ease-out,
-      box-shadow 150ms ease-out,
-      background-color 150ms ease-out;
-  }
-  .graph-lift:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px -8px color-mix(in oklab, var(--foreground) 35%, transparent);
+}
+
+/*
+ * React Flow, the pipeline graph's canvas, in our tokens — so it follows the
+ * theme without being told which one. Lines are the muted ink; a line into a
+ * stage that never ran is dashed and fainter; one into a running stage is
+ * info-blue and marches (React Flow's own `animated`), still under reduced
+ * motion.
+ */
+.stage-graph .react-flow {
+  --xy-background-color: transparent;
+  --xy-background-pattern-dots-color-default: color-mix(in oklab, var(--muted-foreground) 22%, transparent);
+  --xy-controls-button-background-color-default: var(--card);
+  --xy-controls-button-background-color-hover-default: var(--secondary);
+  --xy-controls-button-color-default: var(--foreground);
+  --xy-controls-button-color-hover-default: var(--secondary-foreground);
+  --xy-controls-button-border-color-default: var(--border);
+  --xy-controls-box-shadow-default: 0 1px 2px color-mix(in oklab, var(--foreground) 12%, transparent);
+  font-family: inherit;
+}
+.stage-graph .react-flow__controls {
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.stage-graph .react-flow__node {
+  cursor: default;
+}
+.stage-graph .stage-edge path,
+.stage-graph .stage-edge .react-flow__edge-path {
+  /* Opaque, mixed into the card: where a fork's lines share a stretch, a translucent stroke drew it darker. */
+  stroke: color-mix(in oklab, var(--muted-foreground) 55%, var(--card));
+  stroke-width: 2;
+}
+.stage-graph .stage-edge-skipped .react-flow__edge-path {
+  stroke: color-mix(in oklab, var(--muted-foreground) 32%, var(--card));
+  stroke-width: 2;
+  stroke-dasharray: 4 5;
+}
+.stage-graph .stage-edge-live .react-flow__edge-path {
+  stroke: var(--info);
+  stroke-width: 2;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage-graph .react-flow__edge.animated path {
+    animation: none;
   }
 }
-@keyframes graph-node {
-  from {
-    opacity: 0;
-    transform: translateY(6px) scale(0.98);
-  }
-}
-@keyframes graph-draw {
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-@keyframes graph-march {
-  to {
-    stroke-dashoffset: -12;
-  }
-}
+
 @keyframes graph-pulse {
   0% {
     box-shadow: 0 0 0 0 color-mix(in oklab, var(--info) 45%, transparent);

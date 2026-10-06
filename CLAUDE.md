@@ -310,7 +310,10 @@ old `/:id` route's 404. Watching the directory catches replaced files. If an
 api still looks stale, `scripts/dev.sh restart`.
 
 `Containerfile.dev` installs dependencies into the image and only source is
-bind-mounted, so the container never sees the host's `node_modules`. It also
+bind-mounted, so the container never sees the host's `node_modules`. The
+image is labelled with `pnpm-lock.yaml`'s hash and `up`/`restart` rebuild it
+when the lockfile changes — a pull that added a package used to leave a stale
+image that could not import it. It also
 installs `git`, which the catalog sync shells out to and the base image lacks.
 `.containerignore` keeps `.env` out of the image layers.
 
@@ -823,20 +826,30 @@ folders, so it rides in the query): its stages — from the **Pipeline Graph
 View** plugin's `pipeline-graph/tree` when the server has it, the only source
 that says what ran in parallel (`Stage.branches`), else Stage View's flat
 `wfapi` (`stagesFrom` says which; none on a freestyle job) — drawn as a graph
-(`stage-graph.tsx`: stages left to right, a parallel stage's branches stacked
-in its column, SVG lines under HTML nodes so each node is a real button) or
-as a list, the plain path to the same stages; phones open on the list, and the
-choice is kept per browser. **Expand** opens the graph in a dialog nearly the
-screen's width — larger nodes with each stage's agent and start, and a line
-saying how the run went — and where the stages will not sit side by side (a
-phone) it runs top to bottom, parallel branches side by side, rather than
-scrolling sideways. Picking a stage there closes the dialog without focus
-returning to the button, which would scroll the page away from the log. Its
-motion (`graph-*` in `index.css`, all under `no-preference`) follows the run:
-stages arrive column by column, `--i` times `--step`, the lines draw in
-behind them (`pathLength=1`, so every curve draws over the same dash), a line
-into a running stage marches and the running stage pulses; a stage that never
-ran is reached by a dashed line. A stage opens the log at its
+the way Jenkins' own Pipeline Graph View draws it (`stage-graph.tsx`): a track
+from Start to End, each stage a status circle on it (filled green/red/amber,
+info-blue and pulsing while it runs, a dashed ring if it never ran) with its
+name and time beneath, and a parallel stage's branches leaving the track on
+rounded elbows, one row each, under the parallel stage's name. The canvas is
+**React Flow** (`@xyflow/react`): pan by dragging, zoom from its controls (the
+wheel too, in the large view), fit to view; it is lazy-loaded with the graph
+(~44 KB gzipped), never in the main bundle. The layout is ours — a pipeline is
+a row of columns, not a graph for dagre or ELK to guess at — and the elbows are
+`smoothstep` edges meeting at an invisible junction between columns, so a fork
+or a join is drawn once rather than once per pair. Three traps it has: React
+Flow measures a node the moment it mounts, so its entrance is opacity only
+(`graph-fade`) — the old `translateY` entrance anchored every line 6 px low; a
+node that cannot be dragged or selected gets `pointer-events: none`, so stage
+nodes take them back or the pane swallows the click; and strokes are opaque
+(mixed into `--card`), because a fork's lines share a stretch and translucent
+ones drew it darker. Inline it never fits below 85 % zoom — a long pipeline
+is panned, not squeezed; **Expand** opens it in a dialog nearly the screen's
+width, with each stage's agent too. Or as a list, the plain path to the same
+stages; phones open on the list, and the choice is kept per browser. Picking a
+stage in the dialog closes it without focus returning to the button, which
+would scroll the page away from the log. A running stage pulses and the line
+into it marches (React Flow's `animated`, stilled under reduced motion); a
+stage that never ran is reached by a dashed line. A stage opens the log at its
 `[Pipeline] { (name)` heading (a branch's `Branch: name`, else its stage's).
 The sync's agent lookup still reads `wfapi` only — the tree is one more call
 per build it does not need. The fake serves the tree for the `payments`
