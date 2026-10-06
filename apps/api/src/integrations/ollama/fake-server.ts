@@ -164,6 +164,9 @@ export function createFakeOllama({ models = ['qwen2.5:latest'] }: { models?: str
       const link = /"link":"([^"]+)"/.exec(last.content)?.[1]
       const error = /"error":"([^"]+)"/.exec(last.content)?.[1]
       answer = error ? `I could not find that: ${error}` : `Here is what I found: ${last.content.slice(0, 240)}${link ? `\n\n[Open it](${link})` : ''}`
+    } else if (/quote a log/i.test(question)) {
+      // As the prompt asks: log lines in a log fence, which the page shows as a log viewer.
+      answer = `It failed in Test:\n\n\`\`\`log\n[Pipeline] { (Test)\n+ mvn -B test\nTests run: 42, Failures: 3, Errors: 0\n[ERROR] ScoreCalculatorTest.rejectsNegativeIncome: expected <false> but was <true>\nSee https://nexus.example.com/reports/42\nERROR: script returned exit code 1\n\`\`\`\n\nRun that test locally.`
     } else {
       answer = `**Answer.** ${question.slice(0, 80)} — here is a general explanation.\n\n- First point\n- Second point\n\n\`\`\`bash\ngit status\n\`\`\``
     }

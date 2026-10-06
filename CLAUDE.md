@@ -902,7 +902,7 @@ The sync's agent lookup still reads `wfapi` only — the tree is one more call
 per build it does not need. The fake serves the tree for the `payments`
 folder only, so both paths stay tested. Then parameters (each a
 link to every build that had it), commits, agent, and the last 256 KB of the
-log in `log-viewer.tsx` — opened at the first error, with find, error-to-error
+log in the log viewer — opened at the first error, with find, error-to-error
 jumps, errors-with-context, hiding `[Pipeline]` steps, and wrap. Find wins over
 those filters, or "3 of 40" steps through lines nobody can see. Stage headings
 stay pinned at the top of the box while their lines scroll under them (lines
@@ -918,6 +918,28 @@ scrolling back down resumes it. The fake's running build grows its log two
 lines a second from when the fake started. It scrolls the
 log box itself, never `scrollIntoView`, which also scrolled the page and
 shifted the sidebar rail.
+
+**The log viewer is the app's one** (`components/log-viewer/`: `parse.ts`
+reads lines, `prefs.ts` keeps wrap, step hiding, timestamps and text size per
+browser in `eidp.log`). The build page uses it, and so does the chatbot:
+a ` ```log ` or ` ```console ` fence in an answer renders as a `compact`
+viewer, and the system prompt asks the model to quote log lines that way.
+**Expand** (or `f`) opens the same viewer in a Radix `Dialog` nearly the
+window's size — not a portal of our own, because the chatbot's dock is a
+sheet whose focus trap and `pointer-events: none` would leave our portal
+dead; nested Radix dialogs stack. The state is the viewer's, so find,
+filters, selection and live following carry across, and the line at the top
+stays at the top. A line number selects (shift: a range) for *Copy lines*;
+with `linkable` (the build page) it writes `#L12-L20` into the address with
+`replaceState`, and the log opens on it — not for a truncated log, whose
+numbers drift. The Stages menu jumps to a heading with its error count;
+"N lines hidden" opens with a click; http(s) URLs are links, except ones
+carrying credentials. Keys work only for events from inside the viewer's
+own DOM — React bubbles a portalled menu's Esc up to it, which once cleared
+the selection along with closing the menu: `/` find, `e`/`E` errors, `f`
+expand, `w` wrap; Esc clears find, then closes, then clears the selection. A
+pinned heading takes an opaque selected fill (`color-mix`), never a
+translucent one, or lines show through it.
 
 **"What went wrong"** on a failed or unstable build (`explain-panel.tsx`,
 `services/build-explainer.ts`) is made **automatically** for each job's latest
@@ -946,7 +968,7 @@ gets the facts (failed stage, parameters, commits, agent) and an *excerpt* of
 the log, numbered as the build page numbers it: each error line with six
 before and three after, every stage heading, and the last 30 lines — or the
 last 120 when nothing reads as an error. "Error line" is the same regex on both
-sides (`ERROR` in `build-explainer.ts` and `log-viewer.tsx`); change them
+sides (`ERROR` in `build-explainer.ts` and `components/log-viewer/parse.ts`); change them
 together. Over budget, the first error and the end are kept, then errors from
 the last backwards: the first is usually the cause, the last what stopped it.
 
