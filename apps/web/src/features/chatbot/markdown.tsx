@@ -3,7 +3,10 @@ import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Check, Copy } from 'lucide-react'
 import { Link } from 'react-router'
+import { LogViewer } from '@/components/log-viewer/log-viewer.tsx'
 import { highlightCode, languageOf } from '@/lib/highlight.ts'
+
+const LOG_FENCES = new Set(['log', 'console'])
 
 /**
  * The chatbot's answers are markdown, rendered by react-markdown with GitHub's
@@ -43,7 +46,10 @@ export function Markdown({ text, onNavigate }: { text: string; onNavigate?: () =
     pre: ({ children }) => {
       const code = children as ReactElement<{ className?: string; children?: ReactNode }>
       const language = /language-([\w+-]+)/.exec(code?.props?.className ?? '')?.[1] ?? ''
-      return <CodeBlock language={language} code={String(code?.props?.children ?? '').replace(/\n$/, '')} />
+      const text = String(code?.props?.children ?? '').replace(/\n$/, '')
+      // A quoted log reads as the build page reads it: numbered, errors marked, findable, expandable.
+      if (LOG_FENCES.has(language)) return <LogViewer log={text} compact title="Quoted log" fileName="chatbot-log" />
+      return <CodeBlock language={language} code={text} />
     },
     code: ({ children }) => <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]">{children}</code>,
     table: ({ children }) => (

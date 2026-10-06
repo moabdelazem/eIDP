@@ -65,7 +65,7 @@ export type Explanation = {
 // eslint-disable-next-line no-control-regex
 const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g
 const STAGE = /^\[Pipeline\] \{ \((.+)\)$/
-// The same rules as the build page's log viewer (apps/web log-viewer.tsx), so
+// The same rules as the log viewer (apps/web components/log-viewer/parse.ts), so
 // "an error line" means the same thing on both sides. Case-sensitive: ERROR is
 // a log level, "error" is often prose.
 const ERROR = /(^|[\s[])(ERROR|FATAL|SEVERE)\b|\bBUILD FAILURE\b|Finished: FAILURE|\b(Failures|Errors): [1-9]|exit code [1-9]|Exception\b|^\s+at [\w$.]+\(/

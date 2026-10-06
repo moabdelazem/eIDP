@@ -8,6 +8,7 @@ import { Facts, PAGE, PageHeader, Section, Split } from '@/components/page-layou
 import { FactsSkeleton, HeaderSkeleton, Loading, RowsSkeleton } from '@/components/skeletons.tsx'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import { LogViewer } from '@/components/log-viewer/log-viewer.tsx'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useProfile } from '@/features/auth/profile-context.tsx'
@@ -17,7 +18,6 @@ import { useResource } from '@/lib/use-resource.ts'
 import { ActionDialog, type Pending } from './actions.tsx'
 import { duration, jenkinsApi, type RunDetail, type Stage } from './api.ts'
 import { ExplainPanel } from './explain-panel.tsx'
-import { LogViewer } from './log-viewer.tsx'
 import { JobName, RESULT, ResultBadge } from './result.tsx'
 import { RunAction } from './runs.tsx'
 
@@ -154,7 +154,17 @@ export function BuildPage() {
       >
         <ExplainPanel job={job} number={number} result={r.result} onJump={(line) => setJump({ line, at: Date.now() })} />
         {r.stages.length > 0 && <Stages run={r} onJump={(line) => setJump({ line, at: Date.now() })} />}
-        <LogViewer key={`${job}#${number}`} log={r.log} truncated={r.logTruncated} fullUrl={r.logUrl} jump={jump} live={r.result === 'running'} />
+        <LogViewer
+          key={`${job}#${number}`}
+          log={r.log}
+          truncated={r.logTruncated}
+          fullUrl={r.logUrl}
+          jump={jump}
+          live={r.result === 'running'}
+          linkable
+          title={`${job} #${number}`}
+          fileName={`${job.replaceAll('/', '-')}-${number}`}
+        />
       </Split>
 
       <ActionDialog pending={pending} onClose={() => setPending(null)} onDone={run.reload} />
