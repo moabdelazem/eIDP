@@ -44,6 +44,19 @@ env_value() {
   printf '%s' "$value"
 }
 
+# A .env from before the health service has no HEALTH_TOKEN, and the health
+# service refuses to start without one. The portal and the service must hold
+# the same value, so it is made once and written into .env for both — a
+# blank `HEALTH_TOKEN=` line is replaced, a value someone set is never touched.
+if [[ -z "$(env_value HEALTH_TOKEN)" ]]; then
+  token="$(od -An -tx1 -N24 /dev/urandom | tr -d ' \n')"
+  grep -v '^[[:space:]]*HEALTH_TOKEN=' "$env_file" > "$env_file.tmp" || true
+  printf '\n# Shared by the portal and the health service; made by scripts/dev.sh.\nHEALTH_TOKEN=%s\n' "$token" >> "$env_file.tmp"
+  mv "$env_file.tmp" "$env_file"
+  note "Added a HEALTH_TOKEN to .env — the portal and the health service share it"
+fi
+HEALTH_SERVICE_URL_ENV="$(env_value HEALTH_SERVICE_URL)"
+
 DATABASE_URL_ENV="$(env_value DATABASE_URL)"
 LDAP_URL_ENV="$(env_value LDAP_URL)"
 ADO_PAT="$(env_value ADO_PAT)"
@@ -198,6 +211,11 @@ if [[ "$USE_LOCAL_POSTGRES" == 1 ]]; then
 fi
 if [[ "$USE_LOCAL_LDAP" == 1 ]]; then
   in_pod_env+=(-e "LDAP_URL=ldap://localhost:389")
+fi
+# Inside the pod the api reaches the health service on its container port;
+# a health service elsewhere that .env names is left alone.
+if points_here "$HEALTH_SERVICE_URL_ENV"; then
+  in_pod_env+=(-e "HEALTH_SERVICE_URL=http://localhost:3100")
 fi
 
 start_apps() {

@@ -6,10 +6,15 @@ import { z } from 'zod'
  * it shares with the portal, the token the two use with each other, and where
  * the portal is. Blank values count as unset, as they do in the portal.
  */
+const TOKEN_HELP =
+  'not set, or shorter than 16 characters. Put the same long random value in .env as HEALTH_TOKEN for the portal and the health service, and HEALTH_SERVICE_URL=http://localhost:3100 for the portal (see .env.example) — `openssl rand -hex 24` makes one. scripts/dev.sh fills both in.'
+
 const schema = z.object({
-  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required — the health service keeps its samples in the portal’s Postgres.'),
+  DATABASE_URL: z.string({ error: 'not set — the health service keeps its samples in the portal’s Postgres; use the portal’s DATABASE_URL.' }),
   /** Shared with the portal: it is how each knows the other. At least 16 characters. */
-  HEALTH_TOKEN: z.string().min(16, 'HEALTH_TOKEN must be set, and at least 16 characters, on both the portal and the health service.'),
+  HEALTH_TOKEN: z
+    .string({ error: TOKEN_HELP })
+    .min(16, TOKEN_HELP),
   HEALTH_PORT: z.coerce.number().int().positive().default(3100),
   /** Where the portal API answers; its dependencies are read from `<PORTAL_URL>/internal/health`. */
   PORTAL_URL: z.string().url().default('http://localhost:3000'),

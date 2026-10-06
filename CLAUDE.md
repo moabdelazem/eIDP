@@ -303,8 +303,11 @@ the page says "Uses the base", not "Not configured".
 `scripts/dev.sh up` runs everything under podman in one pod: Postgres,
 OpenLDAP, api, health and web. Because they share a network namespace, the app
 containers reach the services on the *container* ports (5432, 389), not the
-published host ports — the script passes `DATABASE_URL` and `LDAP_URL`
-overrides that win over `.env`.
+published host ports — the script passes `DATABASE_URL`, `LDAP_URL` and
+`HEALTH_SERVICE_URL` overrides that win over `.env`. A `.env` without a
+`HEALTH_TOKEN` (one copied before the health service existed) gets a random
+one written into it, because the portal and the health service must share it
+and the service will not start without it.
 
 The api runs with `node --watch-path=src`, not `--watch`: `--watch` follows
 individual files, and `git pull` replaces files rather than editing them, so
