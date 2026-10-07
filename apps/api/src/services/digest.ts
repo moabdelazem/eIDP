@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { Result } from '../integrations/jenkins/index.ts'
 import * as ollama from '../integrations/ollama/index.ts'
+import { config } from '../lib/config.ts'
 import { query } from '../lib/db.ts'
 import { ApiError } from '../lib/errors.ts'
 import { incidentsOf, type Incident, type Status } from './health.ts'
@@ -31,8 +32,8 @@ import type { RequestKind, RequestStatus } from './requests.ts'
 
 export const DIGEST_PROMPT_VERSION = 1
 
-/** Builds are kept JENKINS_RETENTION_DAYS (30), so a digest older than this could not be counted whole. */
-export const WEEKS_BACK = 4
+/** Builds are kept JENKINS_RETENTION_DAYS (30), so a week further back than that could not be counted whole. */
+export const WEEKS_BACK = Math.max(1, Math.min(4, Math.floor(config.JENKINS_RETENTION_DAYS / 7)))
 
 const DAY = 86_400_000
 

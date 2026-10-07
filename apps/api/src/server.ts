@@ -6,6 +6,7 @@ import { syncCatalog } from './services/catalog.ts'
 import { syncJenkins } from './services/jenkins-sync.ts'
 import { syncJenkinsAccess } from './services/jenkins-access.ts'
 import { prune as pruneActivity } from './services/activity.ts'
+import { pruneJenkins } from './services/jenkins-retention.ts'
 import { generateDue } from './services/digest.ts'
 import { explainNewFailures } from './services/auto-explain.ts'
 import { recoverInterrupted } from './services/requests.ts'
@@ -64,6 +65,19 @@ if (config.JENKINS_URL && config.JENKINS_USER && config.JENKINS_TOKEN && config.
       .catch((err) => console.error('jenkins access read failed:', err instanceof Error ? err.message : err))
   void refreshAccess()
   setInterval(refreshAccess, config.JENKINS_ACCESS_SYNC_MINUTES * 60_000).unref()
+}
+
+/** Jenkins history past JENKINS_RETENTION_DAYS goes, once an hour — whether or not Jenkins is still configured. */
+{
+  const prune = () =>
+    pruneJenkins()
+      .then((p) => {
+        const gone = Object.entries(p).filter(([, n]) => n > 0)
+        if (gone.length) console.log(`jenkins retention: deleted ${gone.map(([what, n]) => `${n} ${what}`).join(', ')}`)
+      })
+      .catch((err) => console.error('jenkins retention failed:', err instanceof Error ? err.message : err))
+  void prune()
+  setInterval(prune, 3_600_000).unref()
 }
 
 /** Platform activity older than ACTIVITY_RETENTION_DAYS goes, once an hour. */

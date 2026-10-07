@@ -170,10 +170,6 @@ async function store(server: string, heads: JobHead[], builds: HistoryBuild[]): 
         ],
       )
     }
-    await db.query(`delete from jenkins_builds where server = $1 and started_at < now() - make_interval(days => $2)`, [
-      server,
-      config.JENKINS_RETENTION_DAYS,
-    ])
   })
 }
 
