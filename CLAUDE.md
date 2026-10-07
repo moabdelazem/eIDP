@@ -848,6 +848,28 @@ read next time rather than skipped. Every table is keyed by `server`, so the
 tests' fake Jenkins never touches a real server's rows. Queue and agents are
 still asked live (15-second cache): only "now" matters for them.
 
+**History is let go after a window** (`services/jenkins-retention.ts`, hourly
+from `server.ts`, single-flight), because builds with their parameters are
+the fastest-growing thing the portal stores. The sync only *stores* builds
+inside `JENKINS_RETENTION_DAYS`; deleting is the retention job's alone, and it
+covers what the sync never did: builds on **every** server (a changed
+`JENKINS_URL` used to leave the old one's history forever), in batches of
+5000 per server so a first run never holds one long lock; AI explanations and
+their attempts past the window whose build is gone too — one whose build is
+still kept stays, asking again costs the GPU; `jenkins_audit` after
+`JENKINS_AUDIT_RETENTION_DAYS` (365); a server not configured and not read
+within the window (its jobs, sync and access rows); and ignores that no longer
+hold. Those go **first**: "until it passes" is `IGNORE_HOLDS` looking for the
+passing build, so pruning the pass first would quietly ignore the job again.
+Every reader goes through `IGNORE_HOLDS`, so a released row is never shown.
+`WEEKS_BACK` follows the window (four weeks at 30 days). System health's
+Jenkins history row shows what is kept — Postgres' row estimate and the
+configured server's oldest build through its index, never a count of the
+table it is there to keep small — and turns degraded when a cleanup fails,
+since the table only grows until one works. Tests:
+`routes/jenkins-retention.test.ts`, on servers named for the run, under lock
+4202 (the digest tests write builds near the edge of the window).
+
 Secrets never reach the table: parameter values under secret-like names, and
 password parameters (Jenkins never returns their value), are `[hidden]` in
 the integration, before storing — so search cannot find them either. Search

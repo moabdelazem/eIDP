@@ -82,8 +82,14 @@ export const schema = z.object({
   JENKINS_TOKEN: z.string().min(1).optional(),
   /** How often build history is pulled from Jenkins. 0 turns the timer off. */
   JENKINS_SYNC_SECONDS: z.coerce.number().min(0).default(60),
-  /** Build history older than this is dropped. The page looks back 7 days. */
+  /**
+   * Jenkins build history (and AI explanations of builds no longer kept) older
+   * than this is deleted, hourly. The 30-day views and the weekly digest's
+   * four weeks back need 30; less keeps the table smaller and shows less.
+   */
   JENKINS_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  /** Who re-ran, stopped or ignored what in Jenkins (jenkins_audit) is kept longer than the builds. */
+  JENKINS_AUDIT_RETENTION_DAYS: z.coerce.number().int().positive().default(365),
   /** How often who-may-see-which-job is read from Jenkins' authorization. 0 turns the timer off. */
   JENKINS_ACCESS_SYNC_MINUTES: z.coerce.number().min(0).default(15),
 

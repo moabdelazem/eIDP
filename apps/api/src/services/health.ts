@@ -12,6 +12,7 @@ import { ApiError } from '../lib/errors.ts'
 import { secretsState } from '../lib/secrets-state.ts'
 import { readSyncState } from './catalog.ts'
 import { accessState } from './jenkins-access.ts'
+import { retained, retentionState } from './jenkins-retention.ts'
 import { syncState } from './jenkins-sync.ts'
 
 /**
@@ -314,12 +315,17 @@ function jenkinsOff() {
 
 async function checkJenkinsHistory() {
   if (jenkinsOff()) return { status: 'off' as const, summary: 'Jenkins is not configured.', facts: [] }
-  const s = await syncState()
+  const [s, kept] = await Promise.all([syncState(), retained()])
+  const pruned = retentionState()
   const facts = [
     ...(s.finishedAt ? [{ label: 'Last read', value: ago(s.finishedAt) }] : []),
     { label: 'Every', value: config.JENKINS_SYNC_SECONDS > 0 ? `${config.JENKINS_SYNC_SECONDS}s` : 'on demand' },
     { label: 'Last run read', value: `${s.builds} build${s.builds === 1 ? '' : 's'} from ${s.jobsRead} job${s.jobsRead === 1 ? '' : 's'}` },
+    { label: 'Kept', value: `${config.JENKINS_RETENTION_DAYS} days · about ${kept.builds.toLocaleString('en')} builds${kept.oldest ? `, oldest ${ago(kept.oldest)}` : ''}` },
+    ...(pruned?.pruned ? [{ label: 'Last cleanup', value: `${ago(pruned.at)}, ${pruned.pruned.builds.toLocaleString('en')} old build${pruned.pruned.builds === 1 ? '' : 's'} deleted` }] : []),
   ]
+  // The table only grows while cleanup fails, so that is worth a look before it is a problem.
+  if (pruned && !pruned.ok) return { status: 'degraded' as const, summary: `Old history could not be deleted: ${pruned.error}. The table keeps growing until it can.`, facts }
   if (!s.finishedAt) return { status: 'degraded' as const, summary: 'Not read yet — the first sync is running or due.', facts }
   if (!s.ok) return { status: 'degraded' as const, summary: `The last read failed: ${s.error}. Pages show what was read before.`, facts }
   const late = config.JENKINS_SYNC_SECONDS > 0 && Date.now() - Date.parse(s.finishedAt) > Math.max(LATE_INTERVALS * config.JENKINS_SYNC_SECONDS * 1000, 5 * 60_000)
