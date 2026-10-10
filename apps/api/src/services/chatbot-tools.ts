@@ -5,7 +5,6 @@ import { query } from '../lib/db.ts'
 import * as explainer from './build-explainer.ts'
 import { readApplication } from './catalog.ts'
 import { demandTeam, peek, recentWeeks, teamsFor, weekOf } from './digest.ts'
-import { health } from './health.ts'
 import * as jenkins from './jenkins.ts'
 import * as pipelines from './pipelines.ts'
 import { can, canSomewhere, PERMISSIONS, type Access, type Permission } from './rbac.ts'
@@ -367,27 +366,9 @@ const TOOLS = [
   }),
 
   tool({
-    name: 'system_health',
-    description: 'The health of the portal and everything it depends on right now — Postgres, the directory, Vault, Azure DevOps, Jira, Jenkins, Ollama and the background jobs: which are down or degraded and why.',
-    args: z.object({}).catch({}),
-    allowed: (access) => can(access, 'system.health'),
-    label: () => 'Checked the portal’s health',
-    run: async () => {
-      const h = await health()
-      return {
-        overall: h.status,
-        checkedAt: h.checkedAt,
-        notOk: h.components.filter((c) => c.status === 'down' || c.status === 'degraded').map((c) => ({ name: c.name, status: c.status, summary: c.summary, affects: c.uses })),
-        ok: h.components.filter((c) => c.status === 'ok').map((c) => c.name),
-        link: '/system',
-      }
-    },
-  }),
-
-  tool({
     name: 'team_digest',
     description:
-      "A team's week: builds and success rate against the week before, pipelines that broke, requests for its projects, and portal incidents. Teams are the person's own unless they may read every team's. Defaults to the last finished week; week is the Monday's date, YYYY-MM-DD.",
+      "A team's week: builds and success rate against the week before, pipelines that broke, and requests for its projects. Teams are the person's own unless they may read every team's. Defaults to the last finished week; week is the Monday's date, YYYY-MM-DD.",
     args: z.object({ team: z.string().max(100).optional().catch(undefined), week: z.string().max(10).optional().catch(undefined) }),
     allowed: (access) => can(access, 'catalog.view'),
     label: (a) => `Read ${a.team ? `${a.team}’s` : 'your team’s'} weekly digest`,
@@ -404,7 +385,6 @@ const TOOLS = [
         inProgress: which === weekOf(new Date()),
         builds: b ? { ...b.current, pipelines: b.pipelines, weekBefore: b.previous, brokeThisWeek: b.failing.slice(0, 6), timeToFix: b.fixes } : { error: d.facts.buildsError },
         requests: { ...d.facts.requests, failed: d.facts.requests.failed.slice(0, 5), waiting: d.facts.requests.waiting.slice(0, 5) },
-        incidents: d.facts.incidents.slice(0, 5),
         summary: d.summary,
         link: `/digest?team=${encodeURIComponent(name)}&week=${which}`,
       }

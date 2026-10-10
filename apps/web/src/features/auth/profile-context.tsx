@@ -36,11 +36,9 @@ export type Permission =
   | 'jenkins.view'
   | 'jenkins.operate'
   | 'pipelines.view'
-  | 'system.health'
   | 'ai.use'
   | 'ai.chat'
   | 'activity.view'
-  | 'machines.manage'
   | 'digests.all'
 export type ScopeType = 'global' | 'team' | 'project'
 

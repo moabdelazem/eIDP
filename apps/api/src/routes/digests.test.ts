@@ -1,6 +1,6 @@
 // Weekly digests end to end: real LDAP (bob is in Payments, alice in DEVOPS,
-// dave in nothing), real Postgres, a fake Ollama — and a week of builds,
-// requests and an incident written straight into the tables, so every count
+// dave in nothing), real Postgres, a fake Ollama — and a week of builds and
+// requests written straight into the tables, so every count
 // is known. DigestLab is a team nobody is in: only digests.all reads it.
 import assert from 'node:assert/strict'
 import type { AddressInfo } from 'node:net'
@@ -42,7 +42,6 @@ const SYSTEMS = {
 }
 const catalogLock = new pg.Client({ connectionString: config.DATABASE_URL })
 const requestIds: string[] = []
-let sampleFloor = 0
 
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
@@ -109,14 +108,6 @@ before(async () => {
   await request({ project: 'Elsewhere', repository: `broke-${suffix}`, status: 'failed', teamGroup: 'DigestLab', requestedAt: at(2 * DAY), completedAt: at(2 * DAY + HOUR), error: 'digest test: could not grant access' })
   await request({ project: 'DigestProj', repository: `old-${suffix}`, status: 'completed', requestedAt: at(-20 * DAY), completedAt: at(-20 * DAY) })
 
-  sampleFloor = Number((await query<{ max: string | null }>('select max(id) from health_samples')).rows[0]?.max ?? 0)
-  for (const [when, status, summary] of [
-    [at(3 * DAY), 'degraded', 'digest test: sealed'],
-    [at(3 * DAY + HOUR), 'ok', 'fine'],
-  ] as const) {
-    await query(`insert into health_samples (at, component, status, latency_ms, summary) values ($1, 'vault', $2, 5, $3)`, [when, status, summary])
-  }
-
   for (const who of ['alice', 'bob', 'dave']) {
     const res = await app.request('/auth/login', {
       method: 'POST',
@@ -130,7 +121,6 @@ before(async () => {
 after(async () => {
   await query(`delete from weekly_digests where team in ('DigestLab', 'Payments')`)
   await query('delete from requests where id = any($1::uuid[])', [requestIds])
-  await query('delete from health_samples where id > $1', [sampleFloor])
   for (const dir of Object.keys(SYSTEMS)) await query('delete from catalog_systems where dir = $1', [dir])
   await forget()
   await catalogLock.query('select pg_advisory_unlock(4202)')
@@ -171,7 +161,7 @@ test('people read their own teams’ digests; digests.all reads every team’s',
   assert.equal((await call('bob', 'POST', `/digests/Payments/regenerate`, { week: lastWeek })).status, 403)
 })
 
-test('a finished week counts the team’s runs, requests and incidents — and the model only words them', async () => {
+test('a finished week counts the team’s runs and requests — and the model only words them', async () => {
   const d = await json(await call('alice', 'GET', `/digests/digestlab?week=${lastWeek}`))
   assert.equal(d.team, 'DigestLab', 'the catalog’s spelling')
   assert.equal(d.live, false)
@@ -194,7 +184,6 @@ test('a finished week counts the team’s runs, requests and incidents — and t
   assert.equal(r.completed, 1)
   assert.deepEqual(r.failed.map((x: any) => x.error), ['digest test: could not grant access'])
   assert.ok(r.waiting.some((x: any) => x.target.startsWith('DigestProj/waiting-')))
-  assert.ok(d.facts.incidents.some((i: any) => i.summary === 'digest test: sealed' && i.name === 'Secrets (Vault)'))
 
   assert.equal(d.summary, 'DigestLab passed 50% of its builds this week.')
   assert.deepEqual(d.highlights, ['digestlab/digest-api is still broken — worth a look.'])

@@ -5,8 +5,6 @@ import {
   SidebarFooter,
   SidebarHeader,
 } from '@/components/ui/sidebar'
-import { SystemHealthProvider } from '@/features/system/health-context.tsx'
-import { NavHealth } from './nav-health.tsx'
 import { NavManage } from './nav-manage.tsx'
 import { NavMain } from './nav-main.tsx'
 import { NavRequests } from './nav-requests.tsx'
@@ -16,14 +14,11 @@ import logo from '@/assets/logo.png'
 /**
  * Grouped by what you are doing: browsing what exists, asking for something
  * new, and — below a separator, for DevOps only — deciding and administering.
- * At the foot, for DevOps, an alert while something the portal needs is down.
  * Each group is its own component — a new group is a new file mounted here,
  * not another branch inside one long component.
  */
 export function AppSidebar() {
   return (
-    // One health answer for the alert and the System health badge.
-    <SystemHealthProvider>
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <div className="flex items-center gap-2 px-2 py-1.5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
@@ -39,13 +34,11 @@ export function AppSidebar() {
         <NavMain label="Browse" items={browseItems} />
         <NavRequests />
         <NavManage />
-        <NavHealth />
       </SidebarContent>
 
       <SidebarFooter>
         <NavUser />
       </SidebarFooter>
     </Sidebar>
-    </SystemHealthProvider>
   )
 }

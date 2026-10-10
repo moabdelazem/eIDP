@@ -20,8 +20,8 @@ import { digestApi, type Digest, type DigestIndex, type RequestItem } from './ap
 
 /**
  * A team's week (services/digest.ts): how its builds went against the week
- * before, the pipelines that broke, the requests for its projects, and the
- * portal's incidents — counted by the portal — with the model's few lines on
+ * before, the pipelines that broke and the requests for its projects —
+ * counted by the portal — with the model's few lines on
  * top, labelled as its reading. The week in progress is counted live and has
  * no summary until it ends.
  *
@@ -177,7 +177,6 @@ function Body({ digest: d }: { digest: Digest }) {
         aside={
           <>
             <Busiest digest={d} />
-            <Incidents digest={d} />
             <Section title="Projects" description="What the inventories say this team owns — the runs and requests above are theirs.">
               {f.projects.length === 0 ? (
                 <p className="text-sm text-muted-foreground">None recorded.</p>
@@ -421,40 +420,6 @@ function Busiest({ digest: d }: { digest: Digest }) {
   )
 }
 
-function Incidents({ digest: d }: { digest: Digest }) {
-  const list = d.facts.incidents
-  return (
-    <Section title="Portal incidents" description="Anything the portal depends on that was down or degraded — it touched every team.">
-      {list.length === 0 ? (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <CircleCheck className="size-4 text-success" aria-hidden /> No incidents reported.
-        </p>
-      ) : (
-        <ul className="space-y-3 text-sm">
-          {list.map((i) => (
-            <li key={`${i.component}|${i.from}`} className="flex items-start gap-2">
-              {i.status === 'down' ? (
-                <CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-label="Down:" />
-              ) : (
-                <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-label="Degraded:" />
-              )}
-              <div className="min-w-0">
-                <p className="font-medium">
-                  {i.name} {i.status === 'down' ? 'down' : 'degraded'}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {when(i.from)}
-                  {i.to ? `, for ${duration(new Date(i.to).getTime() - new Date(i.from).getTime())}` : ', still going'} — {i.summary}
-                </p>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Section>
-  )
-}
-
 // ---- dates ------------------------------------------------------------------
 
 const day = (iso: string, opts: Intl.DateTimeFormatOptions) => new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString(undefined, { timeZone: 'UTC', ...opts })
@@ -468,9 +433,5 @@ function short(week: string): string {
 function range(week: string): string {
   const sunday = new Date(new Date(`${week}T00:00:00Z`).getTime() + 6 * 86_400_000).toISOString()
   return `${day(week, { weekday: 'short', month: 'short', day: 'numeric' })} – ${day(sunday, { weekday: 'short', month: 'short', day: 'numeric' })}`
-}
-
-function when(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })
 }
 

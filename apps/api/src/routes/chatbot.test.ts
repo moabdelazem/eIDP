@@ -315,15 +315,13 @@ test('everyone may ask what they can do, and why', async () => {
   assert.ok(!me.permissions.some((p: any) => p.permission === 'rbac.manage'))
 })
 
-test('approvals and the portal’s health exist only for the people who may see them', async () => {
+test('approvals exist only for the people who may see them', async () => {
   await ask('dave', 'Anything waiting for my approval?')
   assert.ok(!offered().includes('pending_approvals'))
-  assert.ok(!offered().includes('system_health'))
 
   const { steps, result } = await ask('alice', 'Anything waiting for my approval?')
   assert.deepEqual(steps, ['Checked what is waiting for your approval'])
   assert.equal(result().link, '/approvals')
-  assert.ok(offered().includes('system_health'))
 })
 
 test('a request is drafted as a filled-in form, and nothing is filed', async () => {

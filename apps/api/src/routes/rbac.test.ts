@@ -40,13 +40,6 @@ const DEVOPS_ONLY: [method: string, path: string][] = [
   ['GET', '/jenkins/runs'],
   ['GET', '/jenkins/parameters'],
   ['POST', '/jenkins/sync'],
-  ['GET', '/system/history'],
-  ['GET', '/system/machines'],
-  ['POST', '/system/machines'],
-  ['PUT', '/system/machines/00000000-0000-4000-8000-000000000001'],
-  ['DELETE', '/system/machines/00000000-0000-4000-8000-000000000001'],
-  ['POST', '/system/machines/00000000-0000-4000-8000-000000000001/check'],
-  ['GET', '/system/alerts'],
   ['GET', '/activity/overview'],
   ['GET', '/activity/feed'],
   ['GET', '/activity/people'],
@@ -55,8 +48,6 @@ const DEVOPS_ONLY: [method: string, path: string][] = [
   ['POST', '/jenkins/queue/1/cancel'],
   ['POST', '/jenkins/ignore'],
   ['POST', '/jenkins/unignore'],
-  ['GET', '/system/health'],
-  ['GET', '/system/history'],
   ['POST', '/digests/Payments/regenerate'],
 ]
 

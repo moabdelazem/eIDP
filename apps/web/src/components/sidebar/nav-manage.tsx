@@ -12,7 +12,6 @@ import {
 } from '@/components/ui/sidebar'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { requestsApi } from '@/features/requests/api.ts'
-import { useSystemHealth } from '@/features/system/health-context.tsx'
 import { useResource } from '@/lib/use-resource.ts'
 
 /**
@@ -33,9 +32,6 @@ function ManageGroup({ items }: { items: typeof manageItems }) {
   const { pathname } = useLocation()
   const pool = useResource(() => requestsApi.pool(), [], { pollMs: 30_000 })
   const waiting = pool.data?.open.filter((r) => r.status === 'pending').length ?? 0
-  const { health } = useSystemHealth()
-  const down = health?.components.filter((c) => c.status === 'down').length ?? 0
-  const attention = health?.components.filter((c) => c.status === 'degraded').length ?? 0
 
   return (
     <>
@@ -66,22 +62,6 @@ function ManageGroup({ items }: { items: typeof manageItems }) {
                     aria-label={`${waiting} waiting`}
                   >
                     {waiting}
-                  </SidebarMenuBadge>
-                )}
-                {/* Down is red and counted — it wants someone. Needing
-                    attention is an amber dot: worth a look, not an alarm. */}
-                {item.path === '/system' && down > 0 && (
-                  <SidebarMenuBadge
-                    key={down}
-                    className="animate-in fade-in-0 zoom-in-50 motion-reduce:animate-none rounded-full bg-primary px-1.5 text-primary-foreground peer-hover/menu-button:text-primary-foreground peer-data-[active=true]/menu-button:text-primary-foreground"
-                    aria-label={`${down} down`}
-                  >
-                    {down}
-                  </SidebarMenuBadge>
-                )}
-                {item.path === '/system' && down === 0 && attention > 0 && (
-                  <SidebarMenuBadge aria-label={`${attention} need${attention === 1 ? 's' : ''} attention`} title={`${attention} need${attention === 1 ? 's' : ''} attention`}>
-                    <span className="size-2 rounded-full bg-[var(--sidebar-warning)]" />
                   </SidebarMenuBadge>
                 )}
               </SidebarMenuItem>

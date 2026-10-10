@@ -22,9 +22,6 @@ pnpm workspace. `apps/*` and `packages/*`.
   `app.request()`; `server.ts` serves it, and `index.ts` loads secrets
   (Vault, then `.env`) before importing it. Adding an integration means a new
   folder under `integrations/` and a route module — nothing else moves.
-- `apps/health` — the health service (`@eidp/health`): samples the portal and
-  our machines, keeps the history, raises alerts into an outbox. Its own
-  process on :3100, same Postgres; see *System health*.
 - `apps/web` — Vite + React UI (`@eidp/web`), organized by feature. Dev server
   proxies `/api` to the API on :3000.
 
@@ -169,12 +166,7 @@ one place colour comes from outside the palette, because that is how people
 recognise them; pass `tone="current"` where colour would be noise. Each
 provider in `kinds.ts` carries its mark, so a new provider brings its own.
 Jenkins is the exception: its brand colour is red, and red here means "act",
-so `JenkinsIcon` defaults to the text colour. `PostgresIcon` draws in its blue; `VaultIcon` defaults
-to the text colour too (its yellow vanishes on paper), and `OllamaIcon` is
-black anyway. System health shows every component by its mark
-(`features/system/icons.tsx`, Lucide where there is none — the directory,
-the portal's own jobs); the sidebar's health alert shows the down tools'
-marks in the rail's ink (`tone="current"`), never their colours.
+so `JenkinsIcon` defaults to the text colour.
 
 The Jenkins **pipeline** request is listed as Soon (`kind: null`) — what it
 does is still to be specified, so it has no form, route or API kind yet.
@@ -301,13 +293,10 @@ the page says "Uses the base", not "Not configured".
 ## Running it in containers
 
 `scripts/dev.sh up` runs everything under podman in one pod: Postgres,
-OpenLDAP, api, health and web. Because they share a network namespace, the app
+OpenLDAP, api and web. Because they share a network namespace, the app
 containers reach the services on the *container* ports (5432, 389), not the
-published host ports — the script passes `DATABASE_URL`, `LDAP_URL` and
-`HEALTH_SERVICE_URL` overrides that win over `.env`. A `.env` without a
-`HEALTH_TOKEN` (one copied before the health service existed) gets a random
-one written into it, because the portal and the health service must share it
-and the service will not start without it.
+published host ports — the script passes `DATABASE_URL` and `LDAP_URL`
+overrides that win over `.env`.
 
 The api runs with `node --watch-path=src`, not `--watch`: `--watch` follows
 individual files, and `git pull` replaces files rather than editing them, so
@@ -698,93 +687,18 @@ a job's first failure to its next pass, against the window before. Ranked
 charts are top eight plus "Other", from the API. `RankedBars` and
 `DurationChart` live in the lazy `charts.tsx` with the rest.
 
-**System health** (`/system`, `features/system/`, `services/health.ts`) is a
-Manage page behind `system.health` (`devops-admin`): every dependency asked
-now — Postgres, the directory (service bind, and whether it serves
-`LDAP_BASE_DN`), Vault (`sys/health`, and whether the secret paths still read,
-values dropped), Azure DevOps, Jira, Jenkins (version header), Ollama (model
-pulled?), and the background jobs judged against their interval (late after
-three missed runs). Each is ok, degraded, down or off (not configured is off,
-never down), says what to do, and what in the portal depends on it. Only
-Postgres or the directory down makes the portal *down*; Vault going away
-after boot is a warning — the running API keeps its settings, the next
-restart would fall back to `.env`, and a boot that already fell back says to
-restart. Checks run in parallel, each within 8 s, and one answer is shared for
-15 s (`?fresh=1`, Check again, skips it). Names, versions, counts and ages
-only — never a secret. `/health` stays the public liveness probe.
-
-It is laid out as public availability pages are: one verdict across the top
-("All systems operational", "Partial outage", "Major outage" — red only when
-something is down), then each component with its state now and a **bar per
-day** of the last 90, the worst it was that day, with its uptime — samples not
-down, out of samples where it was configured; degraded counts as up, as
-status pages count it. A row opens (shadcn `Collapsible`) to its facts and a
-24-hour response-time sparkline; a component that is down opens by itself.
-**Past incidents** follow, a day at a time for a week, "No incidents
-reported" said outright. Days before sampling began are grey "No data",
-never an outage. A phone shows the last 30 days.
-
-**The history is the health service's** (`apps/health`, `@eidp/health`, :3100)
-— its own process, so it keeps sampling, and alerting, when the portal is
-the thing that is down. It shares the portal's Postgres (`health_*` tables,
-its own `schema.sql` under advisory lock 4201) and talks to the portal over
-HTTP only, both ways, with one shared `HEALTH_TOKEN` (bearer, compared in
-constant time):
-
-- **It asks the portal.** Every `HEALTH_SAMPLE_MINUTES` (5) it reads
-  `GET /internal/health` (`routes/internal.ts`; 404 without a token set, 401
-  on a wrong one) — the portal checks its own dependencies, because it holds
-  their credentials — and records each component in `health_samples`. A
-  portal that does not answer is recorded as `portal` down and its
-  dependencies get no sample rather than a guess. The first round waits 20 s,
-  or a service started beside the portal would record it booting as an
-  outage. Kept `HEALTH_RETENTION_DAYS` (90).
-- **The portal asks it.** `integrations/health-service/` proxies `/system/
-  history`, `/machines` and `/alerts` to its `/v1/*`, naming who asked in
-  `x-eidp-actor` for its audit; its refusals already have the portal's error
-  shape and pass through. Optional like ADO: without `HEALTH_SERVICE_URL` the
-  page still answers "now" and says history, machines and alerts need it. It
-  is itself a component (`health-service`, background) — a service that has
-  not run its first round yet is ok, not degraded: that round reads this
-  very check.
-
-**Machines** (`health_machines`) are our servers, managed on the page by
-`machines.manage` (`devops-admin`) and audited in `health_machine_audit`.
-Each is checked by what it lists: TCP ports (`node:net`), an HTTP URL (below
-500 is up), and node_exporter's text format for CPU (a delta between rounds,
-kept in memory), memory, the fullest real disk (tmpfs, overlay and the like
-skipped), load and uptime. Nothing answering is down; part answering, or past
-`LIMITS` (CPU/memory 95 %, disk 90 %, load 2 per core), is degraded. They are
-components `machine:<id>` in the same history, so they get the same bars and
-incidents — the weekly digest leaves them out, it is about the portal.
-`fake-exporter.ts` serves node_exporter's format (`pnpm --filter @eidp/health
-exporter:fake`, :9100).
-
-**Alerts are an outbox** for a mail service that does not exist yet.
-`raiseAlerts` inserts into `health_alerts` once a component has been down or
-degraded `HEALTH_ALERT_AFTER` (2) rounds in a row — a blip is not an alert —
-and `recovered` when it is ok again after one; recipients are
-`HEALTH_ALERT_TO` plus the machine's own `notify`, empty meaning the mail
-service's default list. Nothing here sends. The mail service's contract: take
-`state = 'pending'` rows with `for update skip locked`, set `sending`, then
-`sent` (with `sent_at`) or `failed` (`attempts`, `last_error`). The page lists
-them with their state, pending reading "Waiting for the mail service".
-
-The **sidebar carries it** for whoever may see the page:
-`SystemHealthProvider` (`features/system/health-context.tsx`, mounted in
-`app-sidebar`) asks once a minute — nobody else's browser asks at all — and
-shares the answer. While anything is **down**, `nav-health.tsx` puts a red
-alert at the foot of the rail on every page (one red icon with a tooltip when
-collapsed), linking to the page; System health carries a red count of what is
-down, or an amber dot (`--sidebar-warning`, the amber lifted for the dark
-rail) when something only needs attention — a warning is not an alarm on
-every page. The health page publishes its own answers, Check again included,
-so the sidebar never lags what the page shows. The alert link stays a link;
-a separate `sr-only` `role="alert"` announces it once.
+**Health is not the portal's.** System health — every dependency checked
+now, 90 days of uptime, our machines, alerts — was built here and taken out
+again: a separate health service will own it. Nothing in the portal asks its
+dependencies how they are on a timer, and there is no `/system` page,
+`system.health` permission or chatbot health tool. `/health` stays: it is the
+public liveness probe compose and the dev script wait on. Databases that ran
+the old code keep its `health_*` tables; nothing reads them, and the new
+service may take them or they can be dropped.
 
 **Weekly digest** (`/digest`, `features/digest/`, `services/digest.ts`) is a
-team's week — its builds, the requests for its projects, the portal's
-incidents — for the people in it, a browse item for everyone. Built as the
+team's week — its builds and the requests for its projects — for the
+people in it, a browse item for everyone. Built as the
 risk summary is: the **facts** are counted in code, the **model** adds only a
 two-or-three-sentence summary and at most three highlights, labelled as its
 reading; without Ollama the facts stand and the page says why. A team is a
@@ -801,7 +715,7 @@ the same after its builds age out. Only the last `WEEKS_BACK` (4) weeks can be
 counted, because builds are kept 30 days. The week in progress is counted
 live and never summarised, and its count deltas are hidden: half a week
 against a whole one is not a change. Tests: `routes/digests.test.ts`, under
-lock 4202, writing their own builds, requests and samples. `Kpi`
+lock 4202, writing their own builds and requests. `Kpi`
 (`components/kpi.tsx`) is shared with the Jenkins dashboard.
 
 **Platform activity** (`/activity`, `features/activity/`, `services/activity.ts`)
@@ -862,11 +776,8 @@ within the window (its jobs, sync and access rows); and ignores that no longer
 hold. Those go **first**: "until it passes" is `IGNORE_HOLDS` looking for the
 passing build, so pruning the pass first would quietly ignore the job again.
 Every reader goes through `IGNORE_HOLDS`, so a released row is never shown.
-`WEEKS_BACK` follows the window (four weeks at 30 days). System health's
-Jenkins history row shows what is kept — Postgres' row estimate and the
-configured server's oldest build through its index, never a count of the
-table it is there to keep small — and turns degraded when a cleanup fails,
-since the table only grows until one works. Tests:
+`WEEKS_BACK` follows the window (four weeks at 30 days). What a run
+deleted is logged, when it deleted anything. Tests:
 `routes/jenkins-retention.test.ts`, on servers named for the run, under lock
 4202 (the digest tests write builds near the edge of the window).
 
@@ -1015,7 +926,7 @@ questions about *us* it answers through read-only tools in
 requests and one request, what waits for your approval, Jenkins failures,
 builds and numbers, your pipelines, one build in detail (stages, the branch
 that broke, the stored explanation, the redacted end of its log), a team's
-week (`peek` — never a second model call mid-answer), the portal's health, and
+week (`peek` — never a second model call mid-answer), and
 `whoami` (your groups, teams and every permission with the group or binding
 behind it). Five rules hold it, each tested in `routes/chatbot.test.ts`:
 

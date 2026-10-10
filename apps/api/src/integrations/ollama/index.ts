@@ -101,21 +101,6 @@ export async function chat(messages: Message[], { format, temperature = 0.2 }: {
   }
 }
 
-/** The configured model and whether Ollama has it — what the UI needs to offer the feature. */
-export async function status(): Promise<{ configured: boolean; model: string | null; reachable: boolean; hasModel: boolean }> {
-  const ollama = ollamaConfig()
-  if (!ollama) return { configured: false, model: null, reachable: false, hasModel: false }
-  try {
-    const res = await fetch(`${ollama.url}/api/tags`, { signal: AbortSignal.timeout(5000) })
-    const { models = [] } = (await res.json()) as { models?: { name: string }[] }
-    // `qwen2.5` is `qwen2.5:latest` in the list.
-    const wanted = ollama.model.includes(':') ? ollama.model : `${ollama.model}:latest`
-    return { configured: true, model: ollama.model, reachable: true, hasModel: models.some((m) => m.name === wanted || m.name === ollama.model) }
-  } catch {
-    return { configured: true, model: ollama.model, reachable: false, hasModel: false }
-  }
-}
-
 /**
  * One turn, streamed: `onDelta` gets the answer's text as it is written, and
  * the result says whether the model asked for tools instead. Qwen 2.5 decides

@@ -1,7 +1,6 @@
 import { api } from '@/lib/api-client.ts'
 import type { Result } from '@/features/jenkins/api.ts'
 import type { RequestKind, RequestStatus } from '@/features/requests/api.ts'
-import type { Incident } from '@/features/system/api.ts'
 
 /** Mirrors the API's services/digest.ts. */
 
@@ -42,7 +41,6 @@ export type DigestFacts = {
     failed: RequestItem[]
     waiting: RequestItem[]
   }
-  incidents: Incident[]
 }
 
 export type Digest = {

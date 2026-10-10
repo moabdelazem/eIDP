@@ -93,14 +93,6 @@ export const schema = z.object({
   /** How often who-may-see-which-job is read from Jenkins' authorization. 0 turns the timer off. */
   JENKINS_ACCESS_SYNC_MINUTES: z.coerce.number().min(0).default(15),
 
-  // The health service (apps/health), which samples the portal and our
-  // machines on its own. Optional: without it System health still checks
-  // everything now, but has no history, no machines and no alerts.
-  /** Where it answers, e.g. http://localhost:3100. */
-  HEALTH_SERVICE_URL: z.string().url().optional(),
-  /** Shared with the health service, both ways: it reads /internal/health with it, and the portal calls it with it. */
-  HEALTH_TOKEN: z.string().min(16, 'HEALTH_TOKEN must be at least 16 characters.').optional(),
-
   /** How long Platform activity keeps sign-ins, page visits and chatbot questions. */
   ACTIVITY_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
 

@@ -29,27 +29,14 @@ import { query } from '../lib/db.ts'
 const BATCH = 5000
 
 export type Pruned = { builds: number; explanations: number; attempts: number; audit: number; ignores: number; servers: number }
-export type RetentionState = { at: string; ok: boolean; error: string | null; pruned: Pruned | null }
 
-let last: RetentionState | null = null
 let running: Promise<Pruned> | null = null
-
-export const retentionState = () => last
 
 /** Single-flight: the timer and a test can overlap. */
 export function pruneJenkins(): Promise<Pruned> {
-  running ??= prune()
-    .then((pruned) => {
-      last = { at: new Date().toISOString(), ok: true, error: null, pruned }
-      return pruned
-    })
-    .catch((err: unknown) => {
-      last = { at: new Date().toISOString(), ok: false, error: err instanceof Error ? err.message : String(err), pruned: null }
-      throw err
-    })
-    .finally(() => {
-      running = null
-    })
+  running ??= prune().finally(() => {
+    running = null
+  })
   return running
 }
 
@@ -113,19 +100,4 @@ async function prune(): Promise<Pruned> {
 
 async function count(sql: string, params: unknown[] = []): Promise<number> {
   return (await query(sql, params)).rowCount ?? 0
-}
-
-/**
- * What is kept, for System health — cheaply, since it is asked every few
- * minutes of the table this module exists to keep small: Postgres' own row
- * estimate rather than a count, and the oldest build of the configured
- * server through its (server, started_at) index.
- */
-export async function retained(): Promise<{ builds: number; oldest: string | null }> {
-  const current = config.JENKINS_URL?.replace(/\/+$/, '') ?? ''
-  const [estimate, oldest] = await Promise.all([
-    query<{ n: string }>(`select greatest(reltuples, 0)::bigint as n from pg_class where oid = 'jenkins_builds'::regclass`),
-    query<{ at: Date }>('select started_at as at from jenkins_builds where server = $1 order by started_at limit 1', [current]),
-  ])
-  return { builds: Number(estimate.rows[0]?.n ?? 0), oldest: oldest.rows[0]?.at.toISOString() ?? null }
 }
