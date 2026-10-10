@@ -1,7 +1,7 @@
 import type { Agent, Parameter, QueueItem, Result, Stage } from '@eidp/contracts/jenkins'
 export type { Agent, Parameter, QueueItem, Result, Stage }
 import { ApiError } from '../../lib/errors.ts'
-import { fullNameFromUrl, jenkinsConfig, jenkinsGet, jenkinsHead, jenkinsPost, jenkinsTail, jobPath } from './client.ts'
+import { fullNameFromUrl, jenkinsConfig, jenkinsGet, jenkinsHead, jenkinsPost, jenkinsTail, jobPath, lastBytes } from './client.ts'
 
 export { jenkinsConfig } from './client.ts'
 export { EVERYONE_SID, readAccess, parseMatrix, type AccessRules, type JobGrant, type SidType } from './access.ts'
@@ -404,9 +404,48 @@ function isSecret(p: RawParameter): boolean {
   return Boolean(p._class?.includes('PasswordParameterValue')) || /pass|secret|token|credential|api[-_]?key/i.test(p.name)
 }
 
-/** The end of a build's console log, where a failure says why. */
-export function logTail(job: string, number: number, maxBytes = LOG_TAIL_BYTES) {
-  return jenkinsTail(`${jobPath(job)}/${number}/consoleText`, maxBytes)
+type Tail = { size: number; text: string; truncated: boolean; done: boolean }
+
+/** Logs read, newest last: a finished build's tail, or how far a running one has been read. ~8 MB at most. */
+const tails = new Map<string, Tail>()
+const TAILS_KEPT = 32
+
+/**
+ * The end of a build's console log, where a failure says why.
+ *
+ * Read through `logText/progressiveText?start=`, which sends only what comes
+ * after byte `start` and says the log's size (`X-Text-Size`) and whether it
+ * can still grow (`X-More-Data`) — Jenkins spools before writing, so those
+ * headers arrive however long the log. The first read of a build is the whole
+ * log, kept to its tail as it streams; after that a running build's polls
+ * fetch only what was added, and a finished build — Jenkins says so in the
+ * same answer — is served from memory to everyone who opens it or asks why it
+ * failed. Jenkins gives no size before reading, so the first read cannot skip
+ * ahead.
+ */
+export async function logTail(job: string, number: number, maxBytes = LOG_TAIL_BYTES): Promise<{ text: string; truncated: boolean }> {
+  const key = `${jenkinsConfig().url}|${job}#${number}|${maxBytes}`
+  const known = tails.get(key)
+  if (known?.done) {
+    tails.delete(key)
+    tails.set(key, known)
+    return { text: known.text, truncated: known.truncated }
+  }
+  const start = known?.size ?? 0
+  const read = await jenkinsTail(`${jobPath(job)}/${number}/logText/progressiveText`, maxBytes, { start })
+  const size = Number(read.headers.get('x-text-size'))
+  // A Jenkins without the header: nothing to resume from, so nothing is kept.
+  if (!Number.isFinite(size) || read.headers.get('x-text-size') === null) return { text: read.text, truncated: read.truncated }
+
+  // A size below where we were means the log was replaced, and Jenkins sent it from 0.
+  const fresh = !known || size < start
+  const joined = fresh ? read.text : known.text + read.text
+  const { text, cut } = lastBytes(Buffer.from(joined), maxBytes)
+  const tail: Tail = { size, text, truncated: (fresh ? read.truncated : known.truncated || read.truncated) || cut, done: read.headers.get('x-more-data') !== 'true' }
+  tails.delete(key)
+  tails.set(key, tail)
+  while (tails.size > TAILS_KEPT) tails.delete(tails.keys().next().value!)
+  return { text: tail.text, truncated: tail.truncated }
 }
 
 /** Queues a build, with parameters when given. Returns the queue item Jenkins made, when it says. */

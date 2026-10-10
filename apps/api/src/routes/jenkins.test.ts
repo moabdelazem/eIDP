@@ -282,6 +282,28 @@ test('a build shows its stages, commits, agent, parameters and the end of its lo
   assert.equal(run.notReplayable, null)
 })
 
+test('a log is read once: a finished build from memory after, a running one only what was added', async () => {
+  const reads = (build: string) => fake.logReads.filter((r) => r.build === build)
+  const open = async (job: string, number: number) => json(await call('alice', 'GET', `/jenkins/run?job=${encodeURIComponent(job)}&number=${number}`))
+
+  // Finished: Jenkins said so with the first read, so opening it again asks nothing.
+  await open('payments/deploy-prod', 5)
+  const before = reads('payments/deploy-prod#5').length
+  assert.ok(before >= 1)
+  await open('payments/deploy-prod', 5)
+  assert.equal(reads('payments/deploy-prod#5').length, before, 'not read again')
+
+  // Running: each look asks only from where the last one ended, and the log carries on from it.
+  const first = await open('inventories-lint', 50)
+  const from = reads('inventories-lint#50').at(-1)!
+  await new Promise((resolve) => setTimeout(resolve, 1200))
+  const second = await open('inventories-lint', 50)
+  const next = reads('inventories-lint#50').at(-1)!
+  assert.ok(next.start > from.start, `asked from ${next.start}, after ${from.start}`)
+  assert.ok(second.log.length > first.log.length)
+  assert.ok(second.log.startsWith(first.log), 'the new lines follow the old')
+})
+
 test('a freestyle build has no stages, and one with a password cannot be run again', async () => {
   const run = await json(await call('alice', 'GET', `/jenkins/run?job=${encodeURIComponent('payments/deploy-prod')}&number=5`))
   assert.deepEqual(run.stages, [])

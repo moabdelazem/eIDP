@@ -234,8 +234,16 @@ fills `built_on` for builds without one, newest first, `AGENTS_PER_SYNC` at a
 time (`agent_checked` marks a finished build already asked); a run that moved
 lists them `a, b`. The fake reports `builtOn` only for freestyle jobs, as
 Jenkins does — it once reported it for all, which is how an empty Agent column
-shipped. Build logs are read as a
-stream keeping only the last 64 KB, where a failure explains itself.
+shipped. Build logs are read through `logText/progressiveText?start=`,
+streamed and kept to their tail (the build page's 256 KB), where a failure
+explains itself. Jenkins spools that answer before writing it, so its
+`X-Text-Size` and `X-More-Data` headers arrive however long the log; a
+build's first read is the whole log (Jenkins gives no size up front), and
+after that a running build's three-second polls fetch only the bytes added
+and a finished one is served from memory (`logTail`, 32 tails, ~8 MB) to
+everyone who opens it or asks why it failed. A Jenkins that sends no size is
+read whole every time, as before. The fake serves `progressiveText` as
+LargeText does, a start past the end meaning the log rolled over.
 `fake-server.ts` stands in for it (`pnpm --filter @eidp/api jenkins:fake`).
 
 `integrations/ollama/` — Ollama on our own machines (Qwen 2.5 by default,
