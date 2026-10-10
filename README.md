@@ -5,8 +5,7 @@ Active Directory account and find, in one place:
 
 - **what exists** — every system and application, read from the `inventories` repo;
 - **what they can ask for** — repositories, projects and access, decided by DevOps;
-- **how their builds are doing** — their Jenkins runs, why they failed, and what to try;
-- **how the platform is doing** — every dependency, our machines, and their history.
+- **how their builds are doing** — their Jenkins runs, why they failed, and what to try.
 
 The portal reads the organization's systems; it does not replace them. Azure
 DevOps, Jira and Jenkins stay the source of truth, and `inventories` is
@@ -21,8 +20,8 @@ read-only input.
 | **Overview** (`/`) | Headline counts, applications by technology, the largest systems, your recent requests, and what waits on you if you decide anything. |
 | **Projects map** (`/map`) | Every system and application from `inventories`, as a zoomable map or a plain list, searchable. Each application has a page with its owners per environment, runtime settings, what each environment overrides, and every setting (secrets shown as `[hidden]`). |
 | **My pipelines** (`/pipelines`) | Your Jenkins runs and your teams' — runs you started, runs of commits you wrote, runs for projects your teams own — with *Failing now* on top: each broken pipeline, how many times in a row, and the AI's reading of why. |
-| **Weekly digest** (`/digest`) | Your team's week: builds, requests for its projects, the portal's incidents, and a short summary. |
-| **Chatbot** (`/chatbot`, or Ctrl/⌘ J anywhere) | Ask about the platform. It answers from the portal's own data through read-only tools — applications, owners, your requests, builds, health — and can fill in a request form for you to check and send. It never acts. |
+| **Weekly digest** (`/digest`) | Your team's week: builds, requests for its projects, and a short summary. |
+| **Chatbot** (`/chatbot`, or Ctrl/⌘ J anywhere) | Ask about the platform. It answers from the portal's own data through read-only tools — applications, owners, your requests, builds — and can fill in a request form for you to check and send. It never acts. |
 | **New request** (sidebar) | Ask for something; see below. |
 | **My requests** (`/requests`) | Everything you asked for, as cards or a table, with counts by status and a preview of each. |
 | **Your profile** (`/me`) | What the directory says about you, your groups, every role you hold and where it comes from. |
@@ -55,7 +54,6 @@ requester follows it to a link and a clone command.
 | **Approvals** | DevOps; team leads for their teams' access requests | The queue, with each request's risk notes, and the full history as a table. |
 | **Jenkins** | `jenkins.view` | Dashboard over 24h/7d/30d, failing jobs (ignorable with a reason), searchable builds, queue and agents; run again, stop, cancel. Each build has its stage graph, parameters, commits and a log viewer that follows a running build live, and failures are explained by the AI automatically. |
 | **Access** | `rbac.manage` | Who holds which role, granting and removing with reasons and expiries, "why can bob approve?", the audit log, and viewing the portal as someone else (read-only). |
-| **System health** | `system.health` | Every dependency checked now, 90 days of uptime bars, past incidents, our machines (ports, HTTP, CPU, memory, disk), and alerts. A red alert follows you in the sidebar while something is down. |
 | **Platform activity** | `activity.view` | Who uses the portal and what they do — sign-ins, requests, access changes, Jenkins actions — as charts, a feed and per person. |
 
 ## Who can do what
@@ -89,9 +87,8 @@ no build step for the services):
 
 | App | What | Port |
 |---|---|---|
-| `apps/api` (`@eidp/api`) | Hono API: auth, catalog, requests, RBAC, Jenkins, chatbot, health checks. Postgres for state. | 3000 |
+| `apps/api` (`@eidp/api`) | Hono API: auth, catalog, requests, RBAC, Jenkins, chatbot. Postgres for state. | 3000 |
 | `apps/web` (`@eidp/web`) | React 19 + Vite + Tailwind v4 + shadcn/ui. Proxies `/api` to the API. | 5173 |
-| `apps/health` (`@eidp/health`) | Samples the portal and our machines every 5 minutes, keeps 90 days of history, raises alerts into an outbox. Its own process, so it keeps watching when the portal is down. | 3100 |
 
 It talks to:
 
@@ -138,8 +135,8 @@ Test accounts, in `ldap/seed.ldif`:
 
 ### With podman, nothing else installed
 
-`scripts/dev.sh up` runs everything in one pod — Postgres, OpenLDAP, the API,
-the health service and the UI — reading the same `.env`.
+`scripts/dev.sh up` runs everything in one pod — Postgres, OpenLDAP, the API
+and the UI — reading the same `.env`.
 
 ```sh
 ./scripts/dev.sh up        # build and start everything
@@ -173,7 +170,6 @@ pnpm --filter @eidp/api jira:fake      # Jira Data Center
 pnpm --filter @eidp/api jenkins:fake   # Jenkins, with folders, pipelines and a live build
 pnpm --filter @eidp/api ollama:fake    # a model that answers like Qwen would
 pnpm --filter @eidp/api vault:fake     # Vault
-pnpm --filter @eidp/health exporter:fake   # a node_exporter for the Machines tab
 ```
 
 Each prints the settings to point `.env` at it.
@@ -181,8 +177,8 @@ Each prints the settings to point `.env` at it.
 ## Configuration
 
 Everything is in `.env.example`, grouped and commented: database, directory,
-Azure DevOps and `inventories`, Jira, Jenkins, Ollama, Vault, the health
-service and the weekly digests. The essentials:
+Azure DevOps and `inventories`, Jira, Jenkins, Ollama, Vault and the
+weekly digests. The essentials:
 
 ```sh
 DATABASE_URL=postgresql://eidp:eidp@localhost:5432/eidp
@@ -218,8 +214,5 @@ valid `LDAP_BASE_DN` values), then reports the service bind, the account
 lookup, the password, and the account's groups. Someone who should approve and
 cannot can open **Your profile**: it lists the groups the directory returned
 and every role they hold, with where it comes from.
-
-**A dependency is down.** **System health** checks each one now, says what to
-do, and what in the portal depends on it.
 
 **A page looks stale after a pull.** `./scripts/dev.sh restart`.

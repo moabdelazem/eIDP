@@ -21,7 +21,7 @@ process.env.JENKINS_AUDIT_RETENTION_DAYS = '365'
 
 const { config } = await import('../lib/config.ts')
 const { closeDb, ensureSchema, query } = await import('../lib/db.ts')
-const { pruneJenkins, retained } = await import('../services/jenkins-retention.ts')
+const { pruneJenkins } = await import('../services/jenkins-retention.ts')
 
 const lock = new pg.Client({ connectionString: config.DATABASE_URL })
 const servers = [current, other]
@@ -155,11 +155,4 @@ test('a server no longer configured and not read within the window is forgotten;
     // A configured server that has not synced lately is a health problem, not a cleanup.
     assert.equal(await has(`select 1 from ${table} where server = $1`, [current]), true, `${table} of the configured server`)
   }
-})
-
-test('what is kept is reported without counting the table', async () => {
-  const kept = await retained()
-  assert.ok(kept.builds >= 0)
-  // The configured server's oldest build is inside the window.
-  assert.ok(kept.oldest && Date.now() - Date.parse(kept.oldest) <= 30 * 86_400_000)
 })

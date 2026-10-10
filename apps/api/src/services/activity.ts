@@ -85,7 +85,6 @@ const SECTIONS: [RegExp, string][] = [
   [/^\/approvals(\/|$)/, 'Approvals'],
   [/^\/jenkins(\/|$)/, 'Jenkins'],
   [/^\/access(\/|$)/, 'Access'],
-  [/^\/system(\/|$)/, 'System health'],
   [/^\/activity(\/|$)/, 'Platform activity'],
   [/^\/me(\/|$)/, 'Your profile'],
 ]

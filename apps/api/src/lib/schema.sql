@@ -393,25 +393,6 @@ create table if not exists request_assessments (
   created_at       timestamptz not null default now()
 );
 
--- Every component's health, sampled every HEALTH_SAMPLE_MINUTES by the health
--- service (apps/health, which owns it): what the uptime bars and past
--- incidents on System health are made of. Created here too, so the weekly
--- digest can read it before the health service has ever run.
-create table if not exists health_samples (
-  id         bigserial primary key,
-  at         timestamptz not null default now(),
-  component  text not null,
-  status     text not null check (status in ('ok', 'degraded', 'down', 'off')),
-  latency_ms integer,
-  summary    text not null
-);
-
-create index if not exists health_samples_component_at_idx on health_samples (component, at);
--- The health service (apps/health) owns this table and writes it; these two
--- columns are its, repeated here so the digest can read them either way.
-alter table health_samples add column if not exists name text;
-alter table health_samples add column if not exists metrics jsonb;
-
 -- A team's finished week (services/digest.ts): the facts counted in code, and
 -- the model's words on top, kept so it reads the same after its builds age out.
 create table if not exists weekly_digests (

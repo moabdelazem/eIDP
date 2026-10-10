@@ -8,7 +8,6 @@ import {
   Copy,
   FileQuestion,
   GitBranch,
-  HeartPulse,
   ListChecks,
   RotateCcw,
   Search,
@@ -100,7 +99,6 @@ function suggestionsFor(page: PageContext | null, can: (p: Parameters<ReturnType
   const general: Suggestion[] = [
     ...(can('pipelines.view') ? [{ text: 'Which of my pipelines are broken?', icon: Workflow }] : []),
     ...(can('requests.decide') ? [{ text: 'Anything waiting for my approval?', icon: ListChecks }] : []),
-    ...(can('system.health') ? [{ text: 'Is anything in the portal down?', icon: HeartPulse }] : []),
     { text: 'Request a new repository for my team', icon: GitBranch },
     { text: 'What can I do in the portal?', icon: ShieldQuestion },
     { text: 'Which Spring apps do we run on prd?', icon: Search },

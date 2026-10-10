@@ -58,9 +58,6 @@
      red: where you are is not something to act on). */
   --sidebar-hover: #33213a;
   --sidebar-indicator: #c9a6d6;
-  /* The meaning amber, lifted for the dark rail: --warning is tuned for paper
-     and all but disappears here. A dot that needs attention, nothing else. */
-  --sidebar-warning: #e0aa3a;
 }
 
 .dark {

@@ -122,22 +122,3 @@ export async function authenticate(uid: string, password: string): Promise<Direc
   })
 }
 
-/**
- * Whether the directory answers and takes the service account's bind, and
- * what it is — for the health page. Throws what the bind throws, so the
- * caller can tell a refused service account from an unreachable server.
- */
-export async function probe(): Promise<{ url: string; vendor: string; baseDn: string; servesBaseDn: boolean }> {
-  return withClient(async (client) => {
-    await bindAsService(client)
-    const identity = await identifyServer(client)
-    const base = config.LDAP_BASE_DN.toLowerCase()
-    return {
-      url: config.LDAP_URL,
-      vendor: identity?.vendor ?? 'Unknown',
-      baseDn: config.LDAP_BASE_DN,
-      // A rootDSE that would not say counts as serving it: no evidence either way.
-      servesBaseDn: !identity || identity.namingContexts.length === 0 || identity.namingContexts.some((nc) => base.endsWith(nc.toLowerCase())),
-    }
-  })
-}

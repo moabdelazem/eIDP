@@ -21,7 +21,6 @@ import { ChatbotPage } from '@/features/chatbot/chatbot-page.tsx'
 import { BuildPage } from '@/features/jenkins/build-page.tsx'
 import { PipelinesPage } from '@/features/pipelines/pipelines-page.tsx'
 import { DigestPage } from '@/features/digest/digest-page.tsx'
-import { SystemHealthPage } from '@/features/system/health-page.tsx'
 import { RequireSession } from './require-session.tsx'
 
 export function AppRoutes() {
@@ -76,9 +75,6 @@ export function AppRoutes() {
           <Route element={<RequirePermission permission="jenkins.view" />}>
             <Route path="jenkins" element={<JenkinsPage />} />
             <Route path="jenkins/build" element={<BuildPage />} />
-          </Route>
-          <Route element={<RequirePermission permission="system.health" />}>
-            <Route path="system" element={<SystemHealthPage />} />
           </Route>
           <Route element={<RequirePermission permission="rbac.manage" />}>
             <Route path="access" element={<AccessPage />} />

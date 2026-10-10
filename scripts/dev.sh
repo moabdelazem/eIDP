@@ -44,19 +44,6 @@ env_value() {
   printf '%s' "$value"
 }
 
-# A .env from before the health service has no HEALTH_TOKEN, and the health
-# service refuses to start without one. The portal and the service must hold
-# the same value, so it is made once and written into .env for both — a
-# blank `HEALTH_TOKEN=` line is replaced, a value someone set is never touched.
-if [[ -z "$(env_value HEALTH_TOKEN)" ]]; then
-  token="$(od -An -tx1 -N24 /dev/urandom | tr -d ' \n')"
-  grep -v '^[[:space:]]*HEALTH_TOKEN=' "$env_file" > "$env_file.tmp" || true
-  printf '\n# Shared by the portal and the health service; made by scripts/dev.sh.\nHEALTH_TOKEN=%s\n' "$token" >> "$env_file.tmp"
-  mv "$env_file.tmp" "$env_file"
-  note "Added a HEALTH_TOKEN to .env — the portal and the health service share it"
-fi
-HEALTH_SERVICE_URL_ENV="$(env_value HEALTH_SERVICE_URL)"
-
 DATABASE_URL_ENV="$(env_value DATABASE_URL)"
 LDAP_URL_ENV="$(env_value LDAP_URL)"
 ADO_PAT="$(env_value ADO_PAT)"
@@ -212,13 +199,10 @@ fi
 if [[ "$USE_LOCAL_LDAP" == 1 ]]; then
   in_pod_env+=(-e "LDAP_URL=ldap://localhost:389")
 fi
-# Inside the pod the api reaches the health service on its container port;
-# a health service elsewhere that .env names is left alone.
-if points_here "$HEALTH_SERVICE_URL_ENV"; then
-  in_pod_env+=(-e "HEALTH_SERVICE_URL=http://localhost:3100")
-fi
 
 start_apps() {
+  # $pod-health is from before the health service left the repository: a pod
+  # made then still has it, and it would only crash on the missing code.
   podman rm -f "$pod-api" "$pod-web" "$pod-health" >/dev/null 2>&1 || true
 
   note "Starting api"
@@ -228,16 +212,6 @@ start_apps() {
     -v "$root/apps/api/src:/app/apps/api/src:Z" \
     -v "$pod-checkout:/app/.cache" \
     "$APP_IMAGE" pnpm --filter @eidp/api dev >/dev/null
-
-  # The health service samples the api (on its container port, inside the pod)
-  # and our machines on its own; the api reaches it the same way.
-  note "Starting health"
-  podman run -d --pod "$pod" --name "$pod-health" \
-    --env-file "$env_file" \
-    "${in_pod_env[@]}" \
-    -e "PORTAL_URL=http://localhost:3000" \
-    -v "$root/apps/health/src:/app/apps/health/src:Z" \
-    "$APP_IMAGE" pnpm --filter @eidp/health dev >/dev/null
 
   note "Starting web"
   podman run -d --pod "$pod" --name "$pod-web" \

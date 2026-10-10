@@ -1,4 +1,4 @@
-# Development image for every app (api, web, health). Dependencies are installed into the image;
+# Development image for both apps (api, web). Dependencies are installed into the image;
 # only source is bind-mounted at run time, so the container keeps its own
 # node_modules and never sees the host's.
 FROM docker.io/library/node:24-alpine
@@ -14,9 +14,8 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json ./apps/api/
 COPY apps/web/package.json ./apps/web/
-COPY apps/health/package.json ./apps/health/
 RUN pnpm install --frozen-lockfile
 
 COPY . .
 
-EXPOSE 3000 3100 5173
+EXPOSE 3000 5173

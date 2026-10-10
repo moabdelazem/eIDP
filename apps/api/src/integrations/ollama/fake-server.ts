@@ -42,7 +42,6 @@ function pickTool(question: string, offered: string[]): { name: string; argument
     [/my pipelines?|my runs|my builds/, 'my_pipelines', () => ({ window: '7d' })],
     [/build (\S+) #(\d+)|this build|why did (?:it|this) fail/, 'build_details', (m) => ({ job: m[1] ?? 'payments/loan-scoring-api', number: Number(m[2] ?? 40) })],
     [/waiting for (?:me|my approval)|pending approvals?/, 'pending_approvals', () => ({})],
-    [/health|is anything down/, 'system_health', () => ({})],
     [/digest|how did (?:my|our) team do/, 'team_digest', () => ({})],
     [/request (?:a )?repo(?:sitory)? (\S+) in (\S+)/, 'draft_request', (m) => ({ kind: 'repository', repository: m[1], project: m[2]!.replace(/\?$/, '') })],
     [/request (\S+) (?:on|for) (\S+)/, 'draft_request', (m) => ({ kind: 'access', people: [m[1]], project: m[2]!.replace(/\?$/, '') })],
