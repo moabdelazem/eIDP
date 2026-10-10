@@ -2,6 +2,9 @@ import { createHash } from 'node:crypto'
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { SQL } from 'drizzle-orm'
+import { drizzle } from 'drizzle-orm/node-postgres'
+import { PgDialect } from 'drizzle-orm/pg-core'
 import pg from 'pg'
 import { config } from './config.ts'
 import { instance } from './instance.ts'
@@ -9,8 +12,11 @@ import { gauge } from './metrics.ts'
 import { errorFields, log } from './log.ts'
 
 /**
- * One pool for the process. Queries go through `query`; anything that must be
- * all-or-nothing goes through `transaction`.
+ * One pool for the process, and Drizzle over it (`db`). The app's queries go
+ * through `db` — the query builder for reading and writing rows, `sql` for
+ * what reads better as SQL, `db.transaction` for anything all-or-nothing.
+ * Each module's tables are in its `schema.ts` (docs/platform.md). `query`,
+ * plain SQL text, is for the migration runner and for tests setting up rows.
  *
  * Bounded every way a database outage could hang the API: waiting for a
  * connection, and a statement running away. Each connection names its
@@ -36,26 +42,46 @@ pool.on('error', (err) => {
   log.error('postgres pool error', errorFields(err))
 })
 
+export const db = drizzle({ client: pool })
+
+const dialect = new PgDialect()
+
+/**
+ * A query that reads better as SQL than as a builder chain — a union across
+ * modules' tables, a window function, a CTE — written with Drizzle's `sql`
+ * (values are always parameters; tables and columns may be the schema's
+ * objects), and its rows as Postgres' driver types them: timestamps as Dates,
+ * names as written. `db.execute` would hand timestamps back as text.
+ */
+export async function sqlRows<T extends pg.QueryResultRow>(q: SQL): Promise<T[]> {
+  const { sql: text, params } = dialect.sqlToQuery(q)
+  return (await pool.query<T>(text, params)).rows
+}
+
+/** A unique index refused the row — Postgres' 23505, which Drizzle passes on as the error's cause. */
+export function isUniqueViolation(err: unknown): boolean {
+  const code = (e: unknown) => (e as { code?: string } | null)?.code
+  return code(err) === '23505' || code((err as { cause?: unknown } | null)?.cause) === '23505'
+}
+
 export function query<T extends pg.QueryResultRow>(text: string, values: unknown[] = []) {
   return pool.query<T>(text, values)
 }
 
-export async function transaction<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
-  const client = await pool.connect()
-  try {
-    await client.query('begin')
-    const result = await fn(client)
-    await client.query('commit')
-    return result
-  } catch (err) {
-    await client.query('rollback').catch(() => {})
-    throw err
-  } finally {
-    client.release()
-  }
-}
-
 /** Migrations live beside this file, `NNNN_name.sql`, applied in order. */
+
+/**
+ * Applied files corrected since, by the checksums they had: a database that
+ * applied the old text takes the new one as applied — and records it — rather
+ * than refusing to boot. Only for a fix that changes nothing on a database
+ * that already ran the file. Never for a schema change: that is a new file.
+ *
+ * 0001: an index was created above its table, so a fresh database could not
+ * be made at all; one that existed before migrations already had the table.
+ */
+const CORRECTED: Record<string, string[]> = {
+  '0001_baseline.sql': ['4ad961250ad7451edb7a906dc84932dc6bcba0de86776cff0caf239c951b9094'],
+}
 const MIGRATIONS = fileURLToPath(new URL('./migrations/', import.meta.url))
 const NAME = /^\d{4}_[\w-]+\.sql$/
 
@@ -103,8 +129,12 @@ export async function migrateWith(client: pg.ClientBase, dir: string): Promise<s
     const checksum = createHash('sha256').update(sql).digest('hex')
     const was = done.get(name)
     if (was !== undefined) {
-      if (was !== checksum) throw new Error(`Migration ${name} was changed after it was applied. Put the change in a new migration and restore ${name} as it was.`)
-      continue
+      if (was === checksum) continue
+      if (CORRECTED[name]?.includes(was)) {
+        await client.query('update schema_migrations set checksum = $2 where name = $1', [name, checksum])
+        continue
+      }
+      throw new Error(`Migration ${name} was changed after it was applied. Put the change in a new migration and restore ${name} as it was.`)
     }
     try {
       await client.query('begin')

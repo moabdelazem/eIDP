@@ -1,7 +1,6 @@
 import type { RequestRecord } from '@eidp/contracts/requests'
 import { addToProjectGroup, CONTRIBUTOR, findIdentity, grantRepository, READER, webUrlFor, type Principal } from '../../integrations/ado/index.ts'
-import { query } from '../../lib/db.ts'
-import { existingRepository } from './steps.ts'
+import { existingRepository, recordCompleted } from './steps.ts'
 
 /**
  * Grants access to something that exists. Every grantee is resolved first, so
@@ -24,9 +23,5 @@ export async function executeGrant(request: RequestRecord): Promise<void> {
     await addToProjectGroup(collection, request.project, read ? 'Readers' : 'Contributors', principals)
     resultUrl = webUrlFor(collection, request.project)
   }
-  await query(
-    `update requests set status = 'completed', completed_at = now(), result_url = $2, error = null
-      where id = $1`,
-    [request.id, resultUrl],
-  )
+  await recordCompleted(request.id, resultUrl)
 }

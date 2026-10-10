@@ -1,7 +1,9 @@
 import { z } from 'zod'
 import type { ToolSpec } from '../../integrations/ollama/index.ts'
 import { config } from '../../lib/config.ts'
-import { query } from '../../lib/db.ts'
+import { eq, or, sql } from 'drizzle-orm'
+import { db, sqlRows } from '../../lib/db.ts'
+import { catalogApplications, catalogSystems } from '../catalog/index.ts'
 import { explainer } from '../jenkins/index.ts'
 import { readApplication } from '../catalog/index.ts'
 import { demandTeam, peek, recentWeeks, teamsFor, weekOf } from '../digest/index.ts'
@@ -64,26 +66,20 @@ const TOOLS = [
     label: (a) => `Searched applications for “${a.query}”${a.environment ? ` in ${a.environment}` : ''}`,
     run: async ({ query: text, environment }) => {
       const words = text.trim().split(/\s+/).filter(Boolean).slice(0, 6)
-      const values: unknown[] = []
       const where = words.map((word) => {
-        values.push(`%${word.replace(/[\\%_]/g, (c) => `\\${c}`)}%`)
-        const p = `$${values.length}`
-        return `(a.name ilike ${p} or a.group_name ilike ${p} or coalesce(a.repository, '') ilike ${p}
+        const p = `%${word.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+        return sql`(a.name ilike ${p} or a.group_name ilike ${p} or coalesce(a.repository, '') ilike ${p}
                 or s.project_name ilike ${p} or s.dir ilike ${p}
                 or coalesce(a.build_technology, '') ilike ${p} or coalesce(a.deploy_technology, '') ilike ${p}
                 or coalesce(a.deploy_platform, '') ilike ${p}
                 or exists (select 1 from unnest(a.technologies) t where t ilike ${p}))`
       })
-      if (environment) {
-        values.push(environment)
-        where.push(`a.environment = $${values.length}`)
-      }
-      const { rows } = await query<{ id: string; system_dir: string; project_name: string; name: string; environment: string | null; repository: string | null; technologies: string[] }>(
-        `select a.id, a.system_dir, s.project_name, a.name, a.environment, a.repository, a.technologies
-           from catalog_applications a join catalog_systems s on s.dir = a.system_dir
-          ${where.length ? `where ${where.join(' and ')}` : ''}
+      if (environment) where.push(sql`a.environment = ${environment}`)
+      const rows = await sqlRows<{ id: string; system_dir: string; project_name: string; name: string; environment: string | null; repository: string | null; technologies: string[] }>(
+        sql`select a.id, a.system_dir, s.project_name, a.name, a.environment, a.repository, a.technologies
+           from ${catalogApplications} a join ${catalogSystems} s on s.dir = a.system_dir
+          ${where.length ? sql`where ${sql.join(where, sql` and `)}` : sql``}
           order by a.name, a.environment nulls first limit 400`,
-        values,
       )
       // One entry per application, with the environments it is in.
       const apps = new Map<string, { name: string; system: string; environments: string[]; repository: string | null; technologies: string[]; link: string }>()
@@ -136,22 +132,22 @@ const TOOLS = [
     run: async ({ name }) => {
       const dir = await systemDir(name)
       if (!dir) return { error: `There is no system called ${name}. Try search_applications.` }
-      const { rows } = await query<{ dir: string; project_name: string; company: string | null; teams: Record<string, string>; approvers: string[]; managers: string[]; ops_teams: string[] }>(
-        'select dir, project_name, company, teams, approvers, managers, ops_teams from catalog_systems where dir = $1',
-        [dir],
-      )
-      const system = rows[0]!
-      const apps = await query<{ name: string }>('select distinct name from catalog_applications where system_dir = $1 order by name', [dir])
+      const [system] = await db.select().from(catalogSystems).where(eq(catalogSystems.dir, dir))
+      const apps = await db
+        .selectDistinct({ name: catalogApplications.name })
+        .from(catalogApplications)
+        .where(eq(catalogApplications.systemDir, dir))
+        .orderBy(catalogApplications.name)
       return {
-        system: system.project_name,
-        directory: system.dir,
-        company: system.company,
-        teamPerEnvironment: system.teams,
-        productionApprovers: system.approvers,
-        projectManagers: system.managers,
-        operationsTeams: system.ops_teams,
-        applications: apps.rows.map((r) => r.name).slice(0, 50),
-        link: `/map?q=${encodeURIComponent(system.project_name)}`,
+        system: system!.projectName,
+        directory: system!.dir,
+        company: system!.company,
+        teamPerEnvironment: system!.teams,
+        productionApprovers: system!.approvers,
+        projectManagers: system!.managers,
+        operationsTeams: system!.opsTeams,
+        applications: apps.map((r) => r.name).slice(0, 50),
+        link: `/map?q=${encodeURIComponent(system!.projectName)}`,
       }
     },
   }),
@@ -481,11 +477,13 @@ function describeRequest(r: RequestRecord) {
 
 /** A system by its directory or its project name, either case. */
 async function systemDir(name: string): Promise<string | null> {
-  const { rows } = await query<{ dir: string }>(
-    'select dir from catalog_systems where lower(dir) = lower($1) or lower(project_name) = lower($1) limit 1',
-    [name.trim()],
-  )
-  return rows[0]?.dir ?? null
+  const wanted = name.trim().toLowerCase()
+  const [row] = await db
+    .select({ dir: catalogSystems.dir })
+    .from(catalogSystems)
+    .where(or(eq(sql`lower(${catalogSystems.dir})`, wanted), eq(sql`lower(${catalogSystems.projectName})`, wanted)))
+    .limit(1)
+  return row?.dir ?? null
 }
 
 /** JSON, cut to `max` characters with a note, so one result cannot fill the context window. */

@@ -9,3 +9,5 @@ export type { AccessState, Reach } from './access.ts'
 export { syncJenkins, syncState } from './sync.ts'
 export type { SyncState } from './sync.ts'
 export { jobs } from './jobs.ts'
+/** Read by Platform activity, the digest and My pipelines; written here alone. */
+export { buildExplanations, jenkinsAudit, jenkinsBuilds } from './schema.ts'

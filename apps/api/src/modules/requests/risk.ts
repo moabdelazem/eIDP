@@ -5,7 +5,10 @@ import * as ado from '../../integrations/ado/index.ts'
 import * as jira from '../../integrations/jira/index.ts'
 import { dnOf, groupsOf, profileOf } from '../../integrations/ldap/index.ts'
 import * as ollama from '../../integrations/ollama/index.ts'
-import { query } from '../../lib/db.ts'
+import { and, eq, inArray, sql } from 'drizzle-orm'
+import { db } from '../../lib/db.ts'
+import { catalogApplications, catalogSystems } from '../catalog/index.ts'
+import { requestAssessments } from './schema.ts'
 import { exclusive } from '../../lib/locks.ts'
 import { teamsOwning } from '../access/index.ts'
 import type { RequestRecord } from './service.ts'
@@ -101,12 +104,13 @@ export async function factsFor(r: RequestRecord): Promise<Fact[]> {
 
 /** Whether any application of the system by this project name is deployed to a production environment. */
 async function reachesProduction(project: string): Promise<boolean> {
-  const { rows } = await query<{ n: string }>(
-    `select count(*) as n from catalog_applications a join catalog_systems s on s.dir = a.system_dir
-      where lower(s.project_name) = lower($1) and a.environment in ('prd', 'prd_dr')`,
-    [project],
-  )
-  return Number(rows[0]!.n) > 0
+  const [found] = await db
+    .select({ id: catalogApplications.id })
+    .from(catalogApplications)
+    .innerJoin(catalogSystems, eq(catalogSystems.dir, catalogApplications.systemDir))
+    .where(and(eq(sql`lower(${catalogSystems.projectName})`, project.toLowerCase()), inArray(catalogApplications.environment, ['prd', 'prd_dr'])))
+    .limit(1)
+  return found !== undefined
 }
 
 /** Existing names close to the one being created — the same thing under another spelling. */
@@ -235,17 +239,21 @@ export function assess(r: RequestRecord): Promise<Assessment> {
         error = err instanceof Error ? err.message : String(err)
       }
     }
-    const { rows } = await query<AssessmentRow>(
-      `insert into request_assessments (request_id, level, facts, summary, reason_concerns, model, prompt_version, error)
-       values ($1, $2, $3, $4, $5, $6, $7, $8)
-       on conflict (request_id) do update set
-         level = excluded.level, facts = excluded.facts, summary = excluded.summary,
-         reason_concerns = excluded.reason_concerns, model = excluded.model,
-         prompt_version = excluded.prompt_version, error = excluded.error, created_at = now()
-       returning *`,
-      [r.id, level, JSON.stringify(facts), said?.summary ?? null, JSON.stringify(said?.reasonConcerns ?? []), said?.model ?? null, RISK_PROMPT_VERSION, error],
-    )
-    return toAssessment(rows[0]!)
+    const assessment = {
+      level,
+      facts,
+      summary: said?.summary ?? null,
+      reasonConcerns: said?.reasonConcerns ?? [],
+      model: said?.model ?? null,
+      promptVersion: RISK_PROMPT_VERSION,
+      error,
+    }
+    const [row] = await db
+      .insert(requestAssessments)
+      .values({ requestId: r.id, ...assessment })
+      .onConflictDoUpdate({ target: requestAssessments.requestId, set: { ...assessment, createdAt: sql`now()` } })
+      .returning()
+    return toAssessment(row!)
   }, async () => (await assessmentsOf([r.id])).get(r.id) ?? null).finally(() => inFlight.delete(r.id))
   inFlight.set(r.id, work)
   return work
@@ -254,29 +262,18 @@ export function assess(r: RequestRecord): Promise<Assessment> {
 /** The kept assessments of these requests, by request id. */
 export async function assessmentsOf(ids: string[]): Promise<Map<string, Assessment>> {
   if (ids.length === 0) return new Map()
-  const { rows } = await query<AssessmentRow>('select * from request_assessments where request_id = any($1::uuid[])', [ids])
-  return new Map(rows.map((row) => [row.request_id, toAssessment(row)]))
+  const rows = await db.select().from(requestAssessments).where(inArray(requestAssessments.requestId, ids))
+  return new Map(rows.map((row) => [row.requestId, toAssessment(row)]))
 }
 
-type AssessmentRow = {
-  request_id: string
-  level: RiskLevel
-  facts: Fact[]
-  summary: string | null
-  reason_concerns: string[]
-  model: string | null
-  error: string | null
-  created_at: Date
-}
-
-function toAssessment(row: AssessmentRow): Assessment {
+function toAssessment(row: typeof requestAssessments.$inferSelect): Assessment {
   return {
     level: row.level,
     facts: row.facts,
     summary: row.summary,
-    reasonConcerns: row.reason_concerns ?? [],
+    reasonConcerns: row.reasonConcerns ?? [],
     model: row.model,
     error: row.error,
-    createdAt: row.created_at.toISOString(),
+    createdAt: row.createdAt.toISOString(),
   }
 }

@@ -2,10 +2,15 @@ import type { Check } from '@eidp/contracts/requests'
 import { listProjects, listRepositories } from '../../integrations/ado/index.ts'
 import * as jira from '../../integrations/jira/index.ts'
 import { dnOf } from '../../integrations/ldap/index.ts'
-import { query } from '../../lib/db.ts'
+import { and, eq, inArray, or, sql, type SQLWrapper } from 'drizzle-orm'
+import { db } from '../../lib/db.ts'
 import { jiraKeyProblem, jiraNameProblem, nameProblem } from './rules.ts'
 import { type AdoTarget, type JiraTarget, MAX_GRANTEES, type Target } from './model.ts'
+import { requests } from './schema.ts'
 import { same } from './rows.ts'
+
+/** A request still waiting, or being carried out: one of these for the same thing is a duplicate. */
+const open = inArray(requests.status, ['pending', 'approved'])
 
 /**
  * Whether a request could be filed as it stands: the name is one ADO accepts,
@@ -36,15 +41,21 @@ export async function check(input: Target): Promise<Check> {
     return { ok: false, reason: `${input.collection} already has a project called ${existingProject.name}.` }
   }
 
-  const { rows } = await query<{ requested_by_name: string }>(
-    `select requested_by_name from requests
-      where kind = $1 and lower(collection) = lower($2) and lower(project) = lower($3)
-        and lower(coalesce(repository, '')) = lower(coalesce($4, ''))
-        and status in ('pending', 'approved')`,
-    [input.kind, input.collection, input.project, input.repository ?? null],
-  )
-  if (rows[0]) {
-    return { ok: false, reason: `${rows[0].requested_by_name} has already asked for this; it is waiting on approval.` }
+  const lower = (column: SQLWrapper) => sql`lower(${column})`
+  const [waiting] = await db
+    .select({ by: requests.requestedByName })
+    .from(requests)
+    .where(
+      and(
+        eq(requests.kind, input.kind),
+        eq(lower(requests.collection), input.collection.toLowerCase()),
+        eq(lower(requests.project), input.project.toLowerCase()),
+        eq(sql`lower(coalesce(${requests.repository}, ''))`, (input.repository ?? '').toLowerCase()),
+        open,
+      ),
+    )
+  if (waiting) {
+    return { ok: false, reason: `${waiting.by} has already asked for this; it is waiting on approval.` }
   }
 
   return { ok: true }
@@ -97,14 +108,18 @@ async function checkJiraProject(input: JiraTarget): Promise<Check> {
   const keyProblem = await jira.keyProblem(input.projectKey)
   if (keyProblem) return { ok: false, reason: keyProblem }
 
-  const { rows } = await query<{ requested_by_name: string }>(
-    `select requested_by_name from requests
-      where kind = 'create_jira_project' and (lower(project) = lower($1) or lower(project_key) = lower($2))
-        and status in ('pending', 'approved')`,
-    [input.project, input.projectKey],
-  )
-  if (rows[0]) {
-    return { ok: false, reason: `${rows[0].requested_by_name} has already asked for this; it is waiting on approval.` }
+  const [waiting] = await db
+    .select({ by: requests.requestedByName })
+    .from(requests)
+    .where(
+      and(
+        eq(requests.kind, 'create_jira_project'),
+        or(eq(sql`lower(${requests.project})`, input.project.toLowerCase()), eq(sql`lower(${requests.projectKey})`, input.projectKey.toLowerCase())),
+        open,
+      ),
+    )
+  if (waiting) {
+    return { ok: false, reason: `${waiting.by} has already asked for this; it is waiting on approval.` }
   }
   return { ok: true }
 }

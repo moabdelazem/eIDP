@@ -3,9 +3,11 @@ export type { ChatEvent, Conversation, Feedback, PageContext, StoredMessage }
 import { z } from 'zod'
 import * as ollama from '../../integrations/ollama/index.ts'
 import type { Message } from '../../integrations/ollama/index.ts'
-import { query } from '../../lib/db.ts'
+import { and, desc, eq, getTableColumns, sql } from 'drizzle-orm'
+import { db } from '../../lib/db.ts'
 import { ApiError } from '../../lib/errors.ts'
 import { isLocked, tryWithLock } from '../../lib/locks.ts'
+import { assistantConversations as conversations, assistantMessages as messagesTable } from './schema.ts'
 import { activity } from '../activity/index.ts'
 import { runTool, toolsFor } from './tools.ts'
 import type { Me } from '../pipelines/index.ts'
@@ -55,38 +57,38 @@ export async function assertCanAsk(conversationId: string | null, uid: string, r
 }
 
 export async function listConversations(uid: string): Promise<Conversation[]> {
-  const { rows } = await query<ConversationRow>('select * from assistant_conversations where uid = $1 order by updated_at desc limit 200', [uid])
+  const rows = await db.select().from(conversations).where(eq(conversations.uid, uid)).orderBy(desc(conversations.updatedAt)).limit(200)
   return rows.map(toConversation)
 }
 
 export async function readConversation(id: string, uid: string): Promise<Thread> {
   const conversation = await own(id, uid)
-  const { rows } = await query<MessageRow>('select * from assistant_messages where conversation_id = $1 order by id', [id])
+  const rows = await db.select().from(messagesTable).where(eq(messagesTable.conversationId, id)).orderBy(messagesTable.id)
   return { conversation, messages: rows.map(toMessage) }
 }
 
 export async function deleteConversation(id: string, uid: string): Promise<void> {
   await own(id, uid)
-  await query('delete from assistant_conversations where id = $1', [id])
+  await db.delete(conversations).where(eq(conversations.id, id))
 }
 
 export async function renameConversation(id: string, uid: string, title: string): Promise<Conversation> {
   await own(id, uid)
   const clean = title.replace(/\s+/g, ' ').trim().slice(0, 120)
   if (!clean) throw new ApiError(400, 'invalid_request', 'Give it a name.')
-  const { rows } = await query<ConversationRow>('update assistant_conversations set title = $2, titled = true where id = $1 returning *', [id, clean])
+  const rows = await db.update(conversations).set({ title: clean, titled: true }).where(eq(conversations.id, id)).returning()
   return toConversation(rows[0]!)
 }
 
 /** Thumbs up or down on an answer — or neither — kept beside it, so DevOps can see where the chatbot falls short. */
 export async function setFeedback(messageId: number, uid: string, feedback: Feedback | null): Promise<StoredMessage> {
-  const { rows } = await query<MessageRow>(
-    `update assistant_messages m set feedback = $3
-       from assistant_conversations c
-      where m.id = $1 and m.role = 'assistant' and c.id = m.conversation_id and c.uid = $2
-      returning m.*`,
-    [messageId, uid, feedback],
-  )
+  // Only an answer, in one of this person's conversations.
+  const rows = await db
+    .update(messagesTable)
+    .set({ feedback })
+    .from(conversations)
+    .where(and(eq(messagesTable.id, messageId), eq(messagesTable.role, 'assistant'), eq(conversations.id, messagesTable.conversationId), eq(conversations.uid, uid)))
+    .returning({ ...getTableColumns(messagesTable) })
   if (!rows[0]) throw new ApiError(404, 'message_not_found', 'There is no such answer.')
   return toMessage(rows[0])
 }
@@ -119,9 +121,14 @@ export async function ask(
     if (regenerate) {
       if (!conversationId) throw new ApiError(400, 'invalid_request', 'Name the conversation whose last answer to write again.')
       conversation = await own(conversationId, me.uid)
-      const { rows } = await query<{ id: string; role: string }>('select id, role from assistant_messages where conversation_id = $1 order by id desc limit 1', [conversation.id])
-      if (!rows[0]) throw new ApiError(400, 'invalid_request', 'There is nothing to answer again.')
-      if (rows[0].role === 'assistant') await query('delete from assistant_messages where id = $1', [rows[0].id])
+      const [last] = await db
+        .select({ id: messagesTable.id, role: messagesTable.role })
+        .from(messagesTable)
+        .where(eq(messagesTable.conversationId, conversation.id))
+        .orderBy(desc(messagesTable.id))
+        .limit(1)
+      if (!last) throw new ApiError(400, 'invalid_request', 'There is nothing to answer again.')
+      if (last.role === 'assistant') await db.delete(messagesTable).where(eq(messagesTable.id, last.id))
     } else if (conversationId) {
       conversation = await own(conversationId, me.uid)
     } else {
@@ -130,7 +137,7 @@ export async function ask(
     }
     await emit({ type: 'conversation', conversation })
     if (!regenerate) {
-      await query(`insert into assistant_messages (conversation_id, role, content) values ($1, 'user', $2)`, [conversation.id, question])
+      await db.insert(messagesTable).values({ conversationId: conversation.id, role: 'user', content: question })
       // For Platform activity: that a question was asked, and from which page — never its words.
       void activity.record({ uid: me.uid, name: me.name, kind: 'chat', path: context?.path ?? '/chatbot' })
     }
@@ -174,12 +181,9 @@ export async function ask(
     }
 
     if (!answer) answer = 'I could not put an answer together. Try asking another way.'
-    const { rows } = await query<MessageRow>(
-      `insert into assistant_messages (conversation_id, role, content, steps, model) values ($1, 'assistant', $2, $3, $4) returning *`,
-      [conversation.id, answer, JSON.stringify(steps), model],
-    )
-    await query('update assistant_conversations set updated_at = now() where id = $1', [conversation.id])
-    await emit({ type: 'done', message: toMessage(rows[0]!) })
+    const [stored] = await db.insert(messagesTable).values({ conversationId: conversation.id, role: 'assistant', content: answer, steps, model }).returning()
+    await db.update(conversations).set({ updatedAt: sql`now()` }).where(eq(conversations.id, conversation.id))
+    await emit({ type: 'done', message: toMessage(stored!) })
 
     // A new conversation is named after its first answer, from both sides of
     // it — short, and the first question stays the name if this fails.
@@ -205,21 +209,25 @@ async function nameIt(id: string, question: string, answer: string): Promise<Con
   if (!parsed.success) return null
   const title = parsed.data.title.replace(/^["'“]+|["'”.]+$/g, '')
   // Not over a name the person gave it while the answer was being written.
-  const { rows } = await query<ConversationRow>('update assistant_conversations set title = $2 where id = $1 and not titled returning *', [id, title])
+  const rows = await db
+    .update(conversations)
+    .set({ title })
+    .where(and(eq(conversations.id, id), eq(conversations.titled, false)))
+    .returning()
   return rows[0] ? toConversation(rows[0]) : null
 }
 
 /** A new conversation, named by its first question until the model names it. */
 async function start(uid: string, question: string): Promise<Conversation> {
   const title = question.replace(/\s+/g, ' ').slice(0, 80) + (question.length > 80 ? '…' : '')
-  const { rows } = await query<ConversationRow>('insert into assistant_conversations (uid, title) values ($1, $2) returning *', [uid, title])
+  const rows = await db.insert(conversations).values({ uid, title }).returning()
   return toConversation(rows[0]!)
 }
 
 /** The conversation, if it is this person's. Anyone else's is simply not found. */
 async function own(id: string, uid: string): Promise<Conversation> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new ApiError(404, 'conversation_not_found', 'There is no such conversation.')
-  const { rows } = await query<ConversationRow>('select * from assistant_conversations where id = $1 and uid = $2', [id, uid])
+  const rows = await db.select().from(conversations).where(and(eq(conversations.id, id), eq(conversations.uid, uid)))
   if (!rows[0]) throw new ApiError(404, 'conversation_not_found', 'There is no such conversation.')
   return toConversation(rows[0])
 }
@@ -230,10 +238,12 @@ async function own(id: string, uid: string): Promise<Conversation> {
  * system prompt off the front.
  */
 async function historyFor(id: string, budget: number): Promise<Message[]> {
-  const { rows } = await query<{ role: 'user' | 'assistant'; content: string }>(
-    'select role, content from assistant_messages where conversation_id = $1 order by id desc limit 40',
-    [id],
-  )
+  const rows = await db
+    .select({ role: messagesTable.role, content: messagesTable.content })
+    .from(messagesTable)
+    .where(eq(messagesTable.conversationId, id))
+    .orderBy(desc(messagesTable.id))
+    .limit(40)
   const kept: Message[] = []
   let used = 0
   for (const row of rows) {
@@ -251,21 +261,18 @@ function budgetFor(numCtx: number): number {
   return Math.max((numCtx - 5500) * 3, 3000)
 }
 
-type ConversationRow = { id: string; uid: string; title: string; created_at: Date; updated_at: Date }
-type MessageRow = { id: string; role: 'user' | 'assistant'; content: string; steps: string[]; model: string | null; feedback: Feedback | null; created_at: Date }
-
-function toConversation(row: ConversationRow): Conversation {
-  return { id: row.id, title: row.title, createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString() }
+function toConversation(row: typeof conversations.$inferSelect): Conversation {
+  return { id: row.id, title: row.title, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() }
 }
 
-function toMessage(row: MessageRow): StoredMessage {
+function toMessage(row: typeof messagesTable.$inferSelect): StoredMessage {
   return {
-    id: Number(row.id),
+    id: row.id,
     role: row.role,
     content: row.content,
     steps: row.steps ?? [],
     model: row.model,
     feedback: row.feedback ?? null,
-    createdAt: row.created_at.toISOString(),
+    createdAt: row.createdAt.toISOString(),
   }
 }

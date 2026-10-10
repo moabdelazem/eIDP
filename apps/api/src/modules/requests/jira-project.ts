@@ -1,7 +1,6 @@
 import type { RequestRecord } from '@eidp/contracts/requests'
 import * as jira from '../../integrations/jira/index.ts'
-import { query } from '../../lib/db.ts'
-import { recordCreated, withContext } from './steps.ts'
+import { recordCompleted, recordCreated, withContext } from './steps.ts'
 
 /**
  * Creates the Jira project, led by the requester, then puts the requester and
@@ -21,9 +20,5 @@ export async function executeJiraProject(request: RequestRecord): Promise<void> 
   }
   const { memberRole } = jira.jiraConfig()
   await withContext(`Created ${key}, but could not grant access`, () => jira.addToRole(key, memberRole, members))
-  await query(
-    `update requests set status = 'completed', completed_at = now(), result_url = $2, error = null
-      where id = $1`,
-    [request.id, resultUrl],
-  )
+  await recordCompleted(request.id, resultUrl)
 }

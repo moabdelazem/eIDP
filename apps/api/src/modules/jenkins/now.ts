@@ -2,7 +2,9 @@ import type { Category, Failure, Ignore, Overview } from '@eidp/contracts/jenkin
 import * as jenkins from '../../integrations/jenkins/index.ts'
 import type { Agent, QueueItem } from '../../integrations/jenkins/index.ts'
 import { ollamaConfig } from '../../integrations/ollama/index.ts'
-import { query } from '../../lib/db.ts'
+import { sql } from 'drizzle-orm'
+import { sqlRows } from '../../lib/db.ts'
+import { buildExplanations, jenkinsBuilds, jenkinsIgnored, jenkinsJobs } from './schema.ts'
 import { PROMPT_VERSION } from './explainer.ts'
 import { syncJenkins, syncState } from './sync.ts'
 import { IGNORE_HOLDS, type RunRow, server, toRun } from './shared.ts'
@@ -49,13 +51,10 @@ export async function overview({ fresh = false, withExplanations = false } = {})
     syncState(),
     liveState({ fresh }),
     failingNow(url, withExplanations),
-    query<{ jobs: string; running: string }>(
-      `select (select count(*) from jenkins_jobs where server = $1) as jobs,
-              (select count(distinct b.job) from jenkins_builds b
-                 join jenkins_jobs j on j.server = b.server and j.full_name = b.job and j.last_number = b.number
-                where b.server = $1 and b.result = 'running') as running`,
-      [url],
-    ),
+    sqlRows<{ jobs: string; running: string }>(sql`select (select count(*) from ${jenkinsJobs} where server = ${url}) as jobs,
+              (select count(distinct b.job) from ${jenkinsBuilds} b
+                 join ${jenkinsJobs} j on j.server = b.server and j.full_name = b.job and j.last_number = b.number
+                where b.server = ${url} and b.result = 'running') as running`),
   ])
   if (!sync.finishedAt && !sync.startedAt) {
     // Never synced: start one now, so the page is not empty until the timer fires.
@@ -67,10 +66,10 @@ export async function overview({ fresh = false, withExplanations = false } = {})
     url,
     sync,
     counts: {
-      jobs: Number(counts.rows[0]!.jobs),
+      jobs: Number(counts[0]!.jobs),
       failing: failures.length,
       ignored: ignored.length,
-      running: Number(counts.rows[0]!.running),
+      running: Number(counts[0]!.running),
       queued: queue.length,
       agentsOffline: agents.filter((agent) => agent.offline).length,
     },
@@ -88,41 +87,38 @@ export async function overview({ fresh = false, withExplanations = false } = {})
 async function failingNow(url: string, withExplanations: boolean): Promise<Failure[]> {
   // Explanations for the current prompt and model only — a stale one is not served as current.
   const ai = withExplanations ? ollamaConfig() : null
-  const { rows } = await query<RunRow & { streak: string; since: Date; last_success: Date | null; job_url: string; in_queue: boolean; running: boolean; explanation: { summary: string; category: Category } | null; ignored: Ignore | null }>(
-    `with latest as (
+  const rows = await sqlRows<RunRow & { streak: string; since: Date; last_success: Date | null; job_url: string; in_queue: boolean; running: boolean; explanation: { summary: string; category: Category } | null; ignored: Ignore | null }>(sql`with latest as (
        select distinct on (b.job) b.*
-         from jenkins_builds b
-         join jenkins_jobs j on j.server = b.server and j.full_name = b.job
-        where b.server = $1 and b.result not in ('running', 'not_built')
+         from ${jenkinsBuilds} b
+         join ${jenkinsJobs} j on j.server = b.server and j.full_name = b.job
+        where b.server = ${url} and b.result not in ('running', 'not_built')
         order by b.job, b.number desc
      ),
      passed as (
        select job, max(number) as number, max(started_at) as at
-         from jenkins_builds where server = $1 and result = 'success' group by job
+         from ${jenkinsBuilds} where server = ${url} and result = 'success' group by job
      )
      select l.*, j.url as job_url, j.in_queue,
             p.at as last_success,
-            exists (select 1 from jenkins_builds r where r.server = $1 and r.job = l.job and r.result = 'running') as running,
-            (select count(*) from jenkins_builds s
-              where s.server = $1 and s.job = l.job and s.number > coalesce(p.number, 0)
+            exists (select 1 from ${jenkinsBuilds} r where r.server = ${url} and r.job = l.job and r.result = 'running') as running,
+            (select count(*) from ${jenkinsBuilds} s
+              where s.server = ${url} and s.job = l.job and s.number > coalesce(p.number, 0)
                 and s.result in ('failure', 'unstable')) as streak,
-            (select min(started_at) from jenkins_builds s
-              where s.server = $1 and s.job = l.job and s.number > coalesce(p.number, 0)
+            (select min(started_at) from ${jenkinsBuilds} s
+              where s.server = ${url} and s.job = l.job and s.number > coalesce(p.number, 0)
                 and s.result in ('failure', 'unstable')) as since,
             (select json_build_object('summary', e.explanation->>'summary', 'category', e.explanation->>'category')
-               from build_explanations e
-              where $2::text is not null and e.server = $1 and e.job = l.job and e.number = l.number
-                and e.prompt_version = $3 and e.model = $2) as explanation,
+               from ${buildExplanations} e
+              where ${ai?.model ?? null}::text is not null and e.server = ${url} and e.job = l.job and e.number = l.number
+                and e.prompt_version = ${PROMPT_VERSION} and e.model = ${ai?.model ?? null}) as explanation,
             (select json_build_object('reason', i.reason, 'by', i.ignored_by, 'byName', i.ignored_by_name, 'at', i.created_at,
                                       'untilPass', i.until_pass, 'expiresAt', i.expires_at)
-               from jenkins_ignored i where i.server = $1 and i.job = l.job and ${IGNORE_HOLDS}) as ignored
+               from ${jenkinsIgnored} i where i.server = ${url} and i.job = l.job and ${IGNORE_HOLDS}) as ignored
        from latest l
-       join jenkins_jobs j on j.server = l.server and j.full_name = l.job
+       join ${jenkinsJobs} j on j.server = l.server and j.full_name = l.job
        left join passed p on p.job = l.job
       where l.result in ('failure', 'unstable')
-      order by l.started_at desc`,
-    [url, ai?.model ?? null, PROMPT_VERSION],
-  )
+      order by l.started_at desc`)
   return rows.map((row) => ({
     job: row.job,
     url: row.job_url,

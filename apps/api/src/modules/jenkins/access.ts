@@ -2,8 +2,10 @@ import type { AccessState } from '@eidp/contracts/pipelines'
 export type { AccessState }
 import * as jenkins from '../../integrations/jenkins/index.ts'
 import { EVERYONE_SID, type SidType } from '../../integrations/jenkins/index.ts'
-import { query, transaction } from '../../lib/db.ts'
+import { eq, sql } from 'drizzle-orm'
+import { db, sqlRows } from '../../lib/db.ts'
 import { exclusive } from '../../lib/locks.ts'
+import { jenkinsAccessSync, jenkinsJobAccess } from './schema.ts'
 
 let inFlight: Promise<AccessState> | null = null
 
@@ -19,44 +21,29 @@ async function run(): Promise<AccessState> {
   const server = jenkins.jenkinsConfig().url
   try {
     const rules = await jenkins.readAccess()
-    await transaction(async (client) => {
-      await client.query('delete from jenkins_job_access where server = $1', [server])
-      // One insert per thousand rows: unnest keeps it to a handful of statements.
+    await db.transaction(async (tx) => {
+      await tx.delete(jenkinsJobAccess).where(eq(jenkinsJobAccess.server, server))
+      // A thousand rows a statement keeps a large Jenkins to a handful.
       for (let i = 0; i < rules.grants.length; i += 1000) {
-        const chunk = rules.grants.slice(i, i + 1000)
-        await client.query(
-          `insert into jenkins_job_access (server, job, sid, sid_type, via)
-           select $1, * from unnest($2::text[], $3::text[], $4::text[], $5::text[])
-           on conflict do nothing`,
-          [server, chunk.map((g) => g.job), chunk.map((g) => g.sid), chunk.map((g) => g.sidType), chunk.map((g) => g.via)],
-        )
+        await tx
+          .insert(jenkinsJobAccess)
+          .values(rules.grants.slice(i, i + 1000).map((g) => ({ server, job: g.job, sid: g.sid, sidType: g.sidType, via: g.via })))
+          .onConflictDoNothing()
       }
-      await client.query(
-        `insert into jenkins_access_sync (server, read_at, source, grants, ok, error, warnings)
-         values ($1, now(), $2, $3, true, null, $4)
-         on conflict (server) do update set read_at = now(), source = excluded.source, grants = excluded.grants,
-           ok = true, error = null, warnings = excluded.warnings`,
-        [server, rules.source, rules.grants.length, rules.warnings],
-      )
+      const read = { readAt: sql`now()`, source: rules.source, grants: rules.grants.length, ok: true, error: null, warnings: rules.warnings }
+      await tx.insert(jenkinsAccessSync).values({ server, ...read }).onConflictDoUpdate({ target: jenkinsAccessSync.server, set: read })
     })
   } catch (err) {
-    await query(
-      `insert into jenkins_access_sync (server, ok, error) values ($1, false, $2)
-       on conflict (server) do update set ok = false, error = excluded.error`,
-      [server, err instanceof Error ? err.message : String(err)],
-    )
+    const failed = { ok: false, error: err instanceof Error ? err.message : String(err) }
+    await db.insert(jenkinsAccessSync).values({ server, ...failed }).onConflictDoUpdate({ target: jenkinsAccessSync.server, set: failed })
   }
   return accessState()
 }
 
 export async function accessState(): Promise<AccessState> {
-  const { rows } = await query<{ read_at: Date | null; source: AccessState['source']; grants: number; ok: boolean; error: string | null; warnings: string[] }>(
-    'select * from jenkins_access_sync where server = $1',
-    [jenkins.jenkinsConfig().url],
-  )
-  const row = rows[0]
+  const [row] = await db.select().from(jenkinsAccessSync).where(eq(jenkinsAccessSync.server, jenkins.jenkinsConfig().url))
   if (!row) return { readAt: null, source: null, grants: 0, ok: false, error: null, warnings: [] }
-  return { readAt: row.read_at?.toISOString() ?? null, source: row.source, grants: row.grants, ok: row.ok, error: row.error, warnings: row.warnings }
+  return { readAt: row.readAt?.toISOString() ?? null, source: row.source, grants: row.grants, ok: row.ok, error: row.error, warnings: row.warnings }
 }
 
 /** A grant that reaches one person: theirs by name, or one of their groups'. */
@@ -64,12 +51,9 @@ export type Reach = { job: string; sid: string; sidType: SidType; via: string }
 
 /** Every job grant naming `uid`, one of `groups`, or everyone — optionally only for `jobs`. */
 export async function grantsReaching(uid: string, groups: string[], jobs?: string[]): Promise<Reach[]> {
-  const { rows } = await query<{ job: string; sid: string; sid_type: SidType; via: string }>(
-    `select job, sid, sid_type, via from jenkins_job_access
-      where server = $1 and ($4::text[] is null or job = any($4))
-        and ((sid_type <> 'user' and lower(sid) = any($2)) or (sid_type <> 'group' and lower(sid) = lower($3)))
-      order by job, sid`,
-    [jenkins.jenkinsConfig().url, [...groups.map((g) => g.toLowerCase()), EVERYONE_SID], uid, jobs ?? null],
-  )
+  const rows = await sqlRows<{ job: string; sid: string; sid_type: SidType; via: string }>(sql`select job, sid, sid_type, via from ${jenkinsJobAccess}
+      where server = ${jenkins.jenkinsConfig().url} and (${sql.param(jobs ?? null)}::text[] is null or job = any(${sql.param(jobs ?? null)}))
+        and ((sid_type <> 'user' and lower(sid) = any(${sql.param([...groups.map((g) => g.toLowerCase()), EVERYONE_SID])})) or (sid_type <> 'group' and lower(sid) = lower(${uid})))
+      order by job, sid`)
   return rows.map((row) => ({ job: row.job, sid: row.sid, sidType: row.sid_type, via: row.via }))
 }

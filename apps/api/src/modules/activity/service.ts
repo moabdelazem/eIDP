@@ -1,8 +1,13 @@
 import type { Activity, Feed, FeedQuery, Group, Overview, Person, Window } from '@eidp/contracts/activity'
 export type { Activity, Group, Overview, Person, Window }
 import { config } from '../../lib/config.ts'
-import { query } from '../../lib/db.ts'
+import { and, eq, gte, lt, sql, type SQL } from 'drizzle-orm'
+import { db, sqlRows } from '../../lib/db.ts'
 import { errorFields, log } from '../../lib/log.ts'
+import { rbacAudit } from '../access/index.ts'
+import { buildExplanations, jenkinsAudit } from '../jenkins/index.ts'
+import { requests } from '../requests/index.ts'
+import { activityEvents } from './schema.ts'
 
 /**
  * Platform activity: who uses the portal and what they do in it.
@@ -35,14 +40,14 @@ export const GROUPS = ['sign-in', 'requests', 'access', 'jenkins', 'ai'] as cons
 export async function record(event: { uid: string; name: string; kind: EventKind; path?: string | null; reason?: string | null }): Promise<void> {
   try {
     const path = event.path ? cleanPath(event.path) : null
-    await query(`insert into activity_events (uid, name, kind, path, section, reason) values ($1, $2, $3, $4, $5, $6)`, [
-      event.uid.slice(0, 256),
-      event.name.slice(0, 256),
-      event.kind,
+    await db.insert(activityEvents).values({
+      uid: event.uid.slice(0, 256),
+      name: event.name.slice(0, 256),
+      kind: event.kind,
       path,
-      path ? sectionOf(path) : null,
-      event.reason?.slice(0, 120) ?? null,
-    ])
+      section: path ? sectionOf(path) : null,
+      reason: event.reason?.slice(0, 120) ?? null,
+    })
   } catch (err) {
     log.error('activity could not be recorded', { kind: event.kind, ...errorFields(err) })
   }
@@ -54,19 +59,21 @@ export async function record(event: { uid: string; name: string; kind: EventKind
  */
 export async function recordVisit(uid: string, name: string, rawPath: string): Promise<void> {
   const path = cleanPath(rawPath)
-  await query(
-    `insert into activity_events (uid, name, kind, path, section)
-     select $1, $2, 'visit', $3, $4
-      where not exists (select 1 from activity_events
-                         where kind = 'visit' and lower(uid) = lower($1) and path = $3 and at > now() - interval '30 seconds')`,
-    [uid, name, path, sectionOf(path)],
-  )
+  const e = activityEvents
+  await db.execute(sql`
+    insert into ${e} (uid, name, kind, path, section)
+    select ${uid}, ${name}, 'visit', ${path}, ${sectionOf(path)}
+     where not exists (select 1 from ${e}
+                        where kind = 'visit' and lower(uid) = lower(${uid}) and path = ${path} and at > now() - interval '30 seconds')`)
 }
 
 /** Drops what is older than ACTIVITY_RETENTION_DAYS. */
 export async function prune(): Promise<number> {
-  const { rowCount } = await query(`delete from activity_events where at < now() - make_interval(days => $1)`, [config.ACTIVITY_RETENTION_DAYS])
-  return rowCount ?? 0
+  const gone = await db
+    .delete(activityEvents)
+    .where(lt(activityEvents.at, sql`now() - make_interval(days => ${config.ACTIVITY_RETENTION_DAYS})`))
+    .returning({ id: activityEvents.id })
+  return gone.length
 }
 
 /** A portal path only: no query or fragment (they can carry searches), no doubled slashes, bounded. */
@@ -98,35 +105,36 @@ export function sectionOf(path: string): string {
 // ---- reading --------------------------------------------------------------------------
 
 /**
- * Everything people did between $1 and $2, one row each, from every table
- * that records it. `grp` is what the feed filters by; a..c carry what the
- * line says, by kind. $3 is the Jenkins server whose explanations count.
+ * Everything people did between `from` and `to`, one row each, from every
+ * table that records it — the other modules' read through their indexes.
+ * `grp` is what the feed filters by; a..c carry what the line says, by kind.
+ * Only the configured Jenkins server's explanations count.
  */
-const EVERYTHING = `
+const everything = (from: Date, to: Date): SQL => sql`
   select 'e' || id as id, at, uid, name, kind,
          case kind when 'chat' then 'ai' when 'visit' then 'visit' else 'sign-in' end as grp,
          path as a, section as b, reason as c, kind <> 'sign_in_failed' as ok
-    from activity_events where at >= $1 and at < $2
+    from ${activityEvents} where at >= ${from} and at < ${to}
   union all
   select 'rf' || id, requested_at, requested_by, requested_by_name, 'request_filed', 'requests',
          kind, coalesce(repository, project_key, project), id::text, true
-    from requests where requested_at >= $1 and requested_at < $2
+    from ${requests} where requested_at >= ${from} and requested_at < ${to}
   union all
   select 'rd' || id, decided_at, decided_by, coalesce(decided_by_name, decided_by),
          case status when 'rejected' then 'request_rejected' when 'cancelled' then 'request_cancelled' else 'request_approved' end,
          'requests', kind, coalesce(repository, project_key, project), id::text, true
-    from requests where decided_at >= $1 and decided_at < $2 and decided_by is not null
+    from ${requests} where decided_at >= ${from} and decided_at < ${to} and decided_by is not null
   union all
   select 'ra' || id, at, actor, actor, case action when 'assume' then 'view_as' else 'access_' || action end, 'access',
          binding->>'role', coalesce(target, binding->>'subject'), binding->>'scope', true
-    from rbac_audit where at >= $1 and at < $2
+    from ${rbacAudit} where at >= ${from} and at < ${to}
   union all
   select 'ja' || id, at, actor, actor_name, 'jenkins_' || action, 'jenkins', job, build::text, coalesce(error, note), ok
-    from jenkins_audit where at >= $1 and at < $2
+    from ${jenkinsAudit} where at >= ${from} and at < ${to}
   union all
   select 'bx' || md5(job || '#' || number || model || prompt_version), created_at, created_by, created_by_name, 'explain', 'ai',
          job, number::text, null, true
-    from build_explanations where created_at >= $1 and created_at < $2 and server = $3 and created_by <> 'e-idp'`
+    from ${buildExplanations} where created_at >= ${from} and created_at < ${to} and server = ${server()} and created_by <> 'e-idp'`
 
 type Row = { id: string; at: Date; uid: string; name: string; kind: string; grp: string; a: string | null; b: string | null; c: string | null; ok: boolean }
 
@@ -236,21 +244,15 @@ export async function feed({
   const { start, end } = span(window)
   const until = before ? new Date(Math.min(new Date(before).getTime(), end.getTime())) : end
   const words = (q ?? '').toLowerCase().split(/\s+/).filter(Boolean)
-  const params: unknown[] = [start, until, server(), limit + 1]
-  const where = [`grp <> 'visit'`]
-  if (who) {
-    params.push(who.toLowerCase())
-    where.push(`lower(uid) = $${params.length}`)
-  }
-  if (group) {
-    params.push(group)
-    where.push(`grp = $${params.length}`)
-  }
+  const where = [sql`grp <> 'visit'`]
+  if (who) where.push(sql`lower(uid) = ${who.toLowerCase()}`)
+  if (group) where.push(sql`grp = ${group}`)
   for (const word of words) {
-    params.push(`%${word.replace(/[\\%_]/g, (m) => `\\${m}`)}%`)
-    where.push(`lower(concat_ws(' ', uid, name, a, b, c)) like $${params.length}`)
+    where.push(sql`lower(concat_ws(' ', uid, name, a, b, c)) like ${`%${word.replace(/[\\%_]/g, (m) => `\\${m}`)}%`}`)
   }
-  const { rows } = await query<Row>(`select * from (${EVERYTHING}) as e where ${where.join(' and ')} order by at desc, id desc limit $4`, params)
+  const rows = await sqlRows<Row>(
+    sql`select * from (${everything(start, until)}) as e where ${sql.join(where, sql` and `)} order by at desc, id desc limit ${limit + 1}`,
+  )
   const items = rows.slice(0, limit).map(toActivity)
   return { items, next: rows.length > limit ? items.at(-1)!.at : null }
 }
@@ -259,10 +261,11 @@ export async function feed({
 /** The window at a glance: totals against the window before, activity over time, the pages and people. */
 export async function overview(window: Window = '7d'): Promise<Overview> {
   const { start, end, before } = span(window)
-  const bucket = window === '24h' ? 'hour' : 'day'
+  const bucket = sql.raw(window === '24h' ? 'hour' : 'day')
+  const e = activityEvents
   const [totals, series, sections, people, refused] = await Promise.all([
-    query<Record<string, number> & { now: boolean }>(
-      `select at >= $4 as now,
+    sqlRows<Record<string, number> & { now: boolean }>(
+      sql`select at >= ${start} as now,
               count(distinct lower(uid)) filter (where kind <> 'sign_in_failed')::int as people,
               count(*) filter (where kind = 'sign_in')::int as "signIns",
               count(*) filter (where kind = 'sign_in_failed')::int as "failedSignIns",
@@ -271,53 +274,50 @@ export async function overview(window: Window = '7d'): Promise<Overview> {
               count(*) filter (where kind in ('request_approved', 'request_rejected'))::int as decisions,
               count(*) filter (where grp in ('access', 'jenkins'))::int as actions,
               count(*) filter (where grp = 'ai')::int as ai
-         from (${EVERYTHING}) as e group by 1`,
-      [before, end, server(), start],
+         from (${everything(before, end)}) as e group by 1`,
     ),
-    query<{ at: Date; people: number; events: number }>(
-      `select b.at, count(distinct lower(e.uid)) filter (where e.kind <> 'sign_in_failed')::int as people,
+    sqlRows<{ at: Date; people: number; events: number }>(
+      sql`select b.at, count(distinct lower(e.uid)) filter (where e.kind <> 'sign_in_failed')::int as people,
               count(e.id) filter (where e.grp <> 'visit')::int as events
-         from generate_series(date_trunc('${bucket}', $1::timestamptz), $2::timestamptz, interval '1 ${bucket}') as b(at)
-         left join (${EVERYTHING}) as e on date_trunc('${bucket}', e.at) = b.at
+         from generate_series(date_trunc('${bucket}', ${start}::timestamptz), ${end}::timestamptz, interval '1 ${bucket}') as b(at)
+         left join (${everything(start, end)}) as e on date_trunc('${bucket}', e.at) = b.at
         group by b.at order by b.at`,
-      [start, end, server()],
     ),
-    query<{ label: string; value: number; people: number }>(
-      `select section as label, count(*)::int as value, count(distinct lower(uid))::int as people
-         from activity_events where kind = 'visit' and at >= $1 and at < $2
-        group by section order by value desc, label`,
-      [start, end],
-    ),
-    query<{ uid: string; name: string; value: number }>(
-      `select min(uid) as uid, max(name) as name, count(*)::int as value
-         from (${EVERYTHING}) as e where grp not in ('visit') and kind <> 'sign_in_failed'
+    db
+      .select({ label: e.section, value: sql<number>`count(*)::int`, people: sql<number>`count(distinct lower(${e.uid}))::int` })
+      .from(e)
+      .where(and(eq(e.kind, 'visit'), gte(e.at, start), lt(e.at, end)))
+      .groupBy(e.section)
+      .orderBy(sql`2 desc`, e.section),
+    sqlRows<{ uid: string; name: string; value: number }>(
+      sql`select min(uid) as uid, max(name) as name, count(*)::int as value
+         from (${everything(start, end)}) as e where grp not in ('visit') and kind <> 'sign_in_failed'
         group by lower(uid) order by value desc, uid limit 8`,
-      [start, end, server()],
     ),
-    query<{ uid: string; count: number; reasons: string[]; last: Date }>(
-      `select min(uid) as uid, count(*)::int as count, array_agg(distinct coalesce(reason, 'unknown')) as reasons, max(at) as last
-         from activity_events where kind = 'sign_in_failed' and at >= $1 and at < $2
+    sqlRows<{ uid: string; count: number; reasons: string[]; last: Date }>(
+      sql`select min(uid) as uid, count(*)::int as count, array_agg(distinct coalesce(reason, 'unknown')) as reasons, max(at) as last
+         from ${e} where kind = 'sign_in_failed' and at >= ${start} and at < ${end}
         group by lower(uid) having count(*) >= 5 order by count desc`,
-      [start, end],
     ),
   ])
 
   const zero = { people: 0, signIns: 0, failedSignIns: 0, visits: 0, requests: 0, decisions: 0, actions: 0, ai: 0 }
-  const nowRow = totals.rows.find((r) => r.now) ?? zero
-  const beforeRow = totals.rows.find((r) => !r.now) ?? zero
+  const nowRow = totals.find((r) => r.now) ?? zero
+  const beforeRow = totals.find((r) => !r.now) ?? zero
   const keys = Object.keys(zero) as (keyof typeof zero)[]
 
-  const top = sections.rows.slice(0, 8)
-  const rest = sections.rows.slice(8)
+  const visited = sections.map((r) => ({ ...r, label: r.label ?? 'Other' }))
+  const top = visited.slice(0, 8)
+  const rest = visited.slice(8)
   return {
     window,
     totals: Object.fromEntries(keys.map((k) => [k, { now: Number(nowRow[k] ?? 0), before: Number(beforeRow[k] ?? 0) }])) as Overview['totals'],
-    series: series.rows.map((r) => ({ at: r.at.toISOString(), people: r.people, events: r.events })),
+    series: series.map((r) => ({ at: r.at.toISOString(), people: r.people, events: r.events })),
     sections: rest.length
       ? [...top, { label: 'Other', value: rest.reduce((n, r) => n + r.value, 0), people: Math.max(...rest.map((r) => r.people)) }]
       : top,
-    people: people.rows,
-    refused: refused.rows.map((r) => ({ uid: r.uid, count: r.count, reasons: r.reasons.map((x) => SIGN_IN_REASON[x] ?? x.replaceAll('_', ' ')), last: r.last.toISOString() })),
+    people,
+    refused: refused.map((r) => ({ uid: r.uid, count: r.count, reasons: r.reasons.map((x) => SIGN_IN_REASON[x] ?? x.replaceAll('_', ' ')), last: r.last.toISOString() })),
     retentionDays: config.ACTIVITY_RETENTION_DAYS,
   }
 }
@@ -326,8 +326,8 @@ export async function overview(window: Window = '7d'): Promise<Overview> {
 /** Everyone who did anything in the window, most recently seen first. */
 export async function people(window: Window = '7d'): Promise<Person[]> {
   const { start, end } = span(window)
-  const { rows } = await query<Person & { lastSeen: Date }>(
-    `select min(uid) as uid, max(name) filter (where kind <> 'sign_in_failed') as name, max(at) as "lastSeen",
+  const rows = await sqlRows<Person & { lastSeen: Date }>(
+    sql`select min(uid) as uid, max(name) filter (where kind <> 'sign_in_failed') as name, max(at) as "lastSeen",
             count(*) filter (where kind = 'sign_in')::int as "signIns",
             count(*) filter (where kind = 'sign_in_failed')::int as "failedSignIns",
             count(*) filter (where kind = 'visit')::int as visits,
@@ -336,9 +336,8 @@ export async function people(window: Window = '7d'): Promise<Person[]> {
             count(*) filter (where grp in ('access', 'jenkins'))::int as actions,
             count(*) filter (where grp = 'ai')::int as ai,
             mode() within group (order by b) filter (where kind = 'visit') as "topSection"
-       from (${EVERYTHING}) as e
+       from (${everything(start, end)}) as e
       group by lower(uid) order by max(at) desc`,
-    [start, end, server()],
   )
   return rows.map((r) => ({ ...r, name: r.name ?? r.uid, lastSeen: r.lastSeen.toISOString() }))
 }

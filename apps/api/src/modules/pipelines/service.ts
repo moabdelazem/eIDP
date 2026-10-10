@@ -3,12 +3,22 @@ export type { MyRuns, Owner, PipelineView, QueueView, Reason, RunView, RunWindow
 import { EVERYONE_SID, jenkinsConfig, webUrl } from '../../integrations/jenkins/index.ts'
 import type { Parameter, QueueItem } from '../../integrations/jenkins/index.ts'
 import { ollamaConfig } from '../../integrations/ollama/index.ts'
-import { query } from '../../lib/db.ts'
+import { sql } from 'drizzle-orm'
+import { sqlRows } from '../../lib/db.ts'
+import { catalogApplications, catalogSystems } from '../catalog/index.ts'
 import { ApiError } from '../../lib/errors.ts'
-import { explainer } from '../jenkins/index.ts'
-import { jenkins } from '../jenkins/index.ts'
-import { accessState, grantsReaching, syncJenkinsAccess, type AccessState, type Reach } from '../jenkins/index.ts'
-import { syncState, type SyncState } from '../jenkins/index.ts'
+import {
+  accessState,
+  explainer,
+  grantsReaching,
+  jenkins,
+  jenkinsBuilds,
+  syncJenkinsAccess,
+  syncState,
+  type AccessState,
+  type Reach,
+  type SyncState,
+} from '../jenkins/index.ts'
 import { can, canSomewhere, type Access, type Target } from '../access/index.ts'
 import type { Actor } from '../../lib/actor.ts'
 
@@ -64,10 +74,8 @@ let appIndex: { at: number; byName: Map<string, AppRef[]> } | null = null
 
 async function applications(): Promise<Map<string, AppRef[]>> {
   if (appIndex && Date.now() - appIndex.at < 60_000) return appIndex.byName
-  const { rows } = await query<{ name: string; repository: string | null; system: string; project: string; teams: Record<string, string> }>(
-    `select distinct a.name, a.repository, s.dir as system, s.project_name as project, s.teams
-       from catalog_applications a join catalog_systems s on s.dir = a.system_dir`,
-  )
+  const rows = await sqlRows<{ name: string; repository: string | null; system: string; project: string; teams: Record<string, string> }>(sql`select distinct a.name, a.repository, s.dir as system, s.project_name as project, s.teams
+       from ${catalogApplications} a join ${catalogSystems} s on s.dir = a.system_dir`)
   const byName = new Map<string, AppRef[]>()
   for (const row of rows) {
     const ref = { application: row.repository || row.name, system: row.system, project: row.project, teams: [...new Set(Object.values(row.teams ?? {}))] }
@@ -232,21 +240,18 @@ export async function mine(access: Access, me: Me, window: RunWindow = '7d'): Pr
 
   // A wide net in SQL — started, authored, or naming one of the team's
   // applications in a parameter or the job — then the exact rules in code.
-  const { rows } = await query<jenkins.RunRow & { authors: string[] }>(
-    `select * from jenkins_builds
-      where server = $1 and started_at >= now() - make_interval(hours => $2)
-        and (exists (select 1 from unnest(causes) c where lower(c) = any($3))
-          or exists (select 1 from unnest(authors) a where lower(a) = any($4))
-          or job = any($5)
-          or string_to_array(lower(job), '/') && $6::text[]
+  const rows = await sqlRows<jenkins.RunRow & { authors: string[] }>(sql`select * from ${jenkinsBuilds}
+      where server = ${url} and started_at >= now() - make_interval(hours => ${RUN_WINDOWS[window]})
+        and (exists (select 1 from unnest(causes) c where lower(c) = any(${sql.param(startedByCauses(me))}))
+          or exists (select 1 from unnest(authors) a where lower(a) = any(${sql.param(identities(me))}))
+          or job = any(${sql.param([...ctx.reaches.keys()])})
+          or string_to_array(lower(job), '/') && ${sql.param(names)}::text[]
           or exists (select 1 from jsonb_array_elements(parameters) p
                       where not (p->>'hidden')::boolean
-                        and (lower(p->>'value') = any($6)
-                          or lower(regexp_replace(regexp_replace(p->>'value', '(\\.git)?/*$', ''), '^.*[/:]', '')) = any($6))))
+                        and (lower(p->>'value') = any(${sql.param(names)})
+                          or lower(regexp_replace(regexp_replace(p->>'value', '(\\.git)?/*$', ''), '^.*[/:]', '')) = any(${sql.param(names)}))))
       order by started_at desc, job, number desc
-      limit $7`,
-    [url, RUN_WINDOWS[window], startedByCauses(me), identities(me), [...ctx.reaches.keys()], names, RUN_LIMIT + 1],
-  )
+      limit ${RUN_LIMIT + 1}`)
   const truncated = rows.length > RUN_LIMIT
 
   const runs: RunView[] = []
@@ -332,7 +337,7 @@ export async function accessTo(access: Access, me: Me, job: string, number?: num
   const row =
     number === undefined
       ? undefined
-      : (await query<jenkins.RunRow & { authors: string[] }>('select * from jenkins_builds where server = $1 and job = $2 and number = $3', [url, job, number])).rows[0]
+      : (await sqlRows<jenkins.RunRow & { authors: string[] }>(sql`select * from ${jenkinsBuilds} where server = ${url} and job = ${job} and number = ${number}`))[0]
   const verdict = judge(ctx, row ? { job, parameters: row.parameters, causes: row.causes, authors: row.authors } : { job, parameters: [], causes: [], authors: [] })
   return { view: viewAll || verdict.canOperate || (mayView && verdict.reasons.length > 0), operate: verdict.canOperate }
 }
@@ -390,17 +395,14 @@ export async function teamRuns(team: string, from: Date, to: Date): Promise<Team
   const owned = (ref: AppRef) => ref.teams.some((t) => t.toLowerCase() === team.toLowerCase())
   const names = [...byName.entries()].filter(([, refs]) => refs.some(owned)).map(([name]) => name)
   if (names.length === 0) return []
-  const { rows } = await query<jenkins.RunRow>(
-    `select * from jenkins_builds
-      where server = $1 and started_at >= $2 and started_at < $3
-        and (string_to_array(lower(job), '/') && $4::text[]
+  const rows = await sqlRows<jenkins.RunRow>(sql`select * from ${jenkinsBuilds}
+      where server = ${url} and started_at >= ${from} and started_at < ${to}
+        and (string_to_array(lower(job), '/') && ${sql.param(names)}::text[]
           or exists (select 1 from jsonb_array_elements(parameters) p
                       where not (p->>'hidden')::boolean
-                        and (lower(p->>'value') = any($4)
-                          or lower(regexp_replace(regexp_replace(p->>'value', '(\\.git)?/*$', ''), '^.*[/:]', '')) = any($4))))
-      order by started_at, job, number`,
-    [url, from, to, names],
-  )
+                        and (lower(p->>'value') = any(${sql.param(names)})
+                          or lower(regexp_replace(regexp_replace(p->>'value', '(\\.git)?/*$', ''), '^.*[/:]', '')) = any(${sql.param(names)}))))
+      order by started_at, job, number`)
   const readable = rules.decides === 'jenkins' ? new Set((await grantsReaching('', [team])).map((r) => r.job)) : null
   const runs: TeamRun[] = []
   for (const row of rows) {

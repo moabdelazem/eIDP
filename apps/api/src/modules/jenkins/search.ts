@@ -1,7 +1,9 @@
 import type { ParameterFacet, RunDetail, Run, Window } from '@eidp/contracts/jenkins'
 import * as jenkins from '../../integrations/jenkins/index.ts'
 import type { Result } from '../../integrations/jenkins/index.ts'
-import { query } from '../../lib/db.ts'
+import { and, eq, sql, type SQL } from 'drizzle-orm'
+import { db, sqlRows } from '../../lib/db.ts'
+import { jenkinsBuilds } from './schema.ts'
 import { type RunRow, WINDOWS, server, toRun } from './shared.ts'
 
 // ---- search ------------------------------------------------------------------
@@ -24,55 +26,50 @@ export const PAGE_LIMIT = 100
 
 /** Builds in the window matching the filter, newest first, with how many match in all. */
 export async function runs(filter: RunFilter): Promise<{ total: number; runs: Run[] }> {
-  const values: unknown[] = [server(), WINDOWS[filter.window].hours]
-  const where = [`server = $1`, `started_at >= now() - make_interval(hours => $2)`]
-  const param = (value: unknown) => `$${values.push(value)}`
+  const where: SQL[] = [sql`server = ${server()}`, sql`started_at >= now() - make_interval(hours => ${WINDOWS[filter.window].hours})`]
 
   for (const term of (filter.q ?? '').trim().split(/\s+/).filter(Boolean).slice(0, 8)) {
-    const eq = term.indexOf('=')
-    if (eq > 0) {
-      const name = param(`%${escapeLike(term.slice(0, eq))}%`)
-      const value = param(`%${escapeLike(term.slice(eq + 1))}%`)
+    const at = term.indexOf('=')
+    if (at > 0) {
+      const name = `%${escapeLike(term.slice(0, at))}%`
+      const value = `%${escapeLike(term.slice(at + 1))}%`
       where.push(
-        `exists (select 1 from jsonb_array_elements(parameters) p
-                  where p->>'name' ilike ${name} and coalesce(p->>'value', '') ilike ${value} and not (p->>'hidden')::boolean)`,
+        sql`exists (select 1 from jsonb_array_elements(parameters) p
+                     where p->>'name' ilike ${name} and coalesce(p->>'value', '') ilike ${value} and not (p->>'hidden')::boolean)`,
       )
     } else {
-      const like = param(`%${escapeLike(term.replace(/^#(?=\d+$)/, ''))}%`)
-      const number = /^#?\d+$/.test(term) ? `or number = ${param(Number(term.replace('#', '')))}` : ''
+      const like = `%${escapeLike(term.replace(/^#(?=\d+$)/, ''))}%`
+      const number = /^#?\d+$/.test(term) ? sql`or number = ${Number(term.replace('#', ''))}` : sql``
       where.push(
-        `(job ilike ${like} or coalesce(built_on, '') ilike ${like}
-          or exists (select 1 from unnest(causes) c where c ilike ${like})
-          or exists (select 1 from jsonb_array_elements(parameters) p
-                      where not (p->>'hidden')::boolean and (p->>'value' ilike ${like} or p->>'name' ilike ${like}))
-          ${number})`,
+        sql`(job ilike ${like} or coalesce(built_on, '') ilike ${like}
+             or exists (select 1 from unnest(causes) c where c ilike ${like})
+             or exists (select 1 from jsonb_array_elements(parameters) p
+                         where not (p->>'hidden')::boolean and (p->>'value' ilike ${like} or p->>'name' ilike ${like}))
+             ${number})`,
       )
     }
   }
-  if (filter.result) where.push(`result = ${param(filter.result)}`)
-  if (filter.job) where.push(`job = ${param(filter.job)}`)
+  if (filter.result) where.push(sql`result = ${filter.result}`)
+  if (filter.job) where.push(sql`job = ${filter.job}`)
 
-  const clause = where.join(' and ')
-  // The count takes the filter's parameters only; limit and offset come after.
-  const filterValues = [...values]
+  const clause = sql.join(where, sql` and `)
   const [page, count] = await Promise.all([
-    query<RunRow>(
-      `select * from jenkins_builds where ${clause} order by started_at desc, job, number desc
-        limit ${param(Math.min(filter.limit, PAGE_LIMIT))} offset ${param(filter.offset)}`,
-      values,
+    sqlRows<RunRow>(
+      sql`select * from ${jenkinsBuilds} where ${clause} order by started_at desc, job, number desc
+           limit ${Math.min(filter.limit, PAGE_LIMIT)} offset ${filter.offset}`,
     ),
-    query<{ n: string }>(`select count(*) as n from jenkins_builds where ${clause}`, filterValues),
+    sqlRows<{ n: string }>(sql`select count(*) as n from ${jenkinsBuilds} where ${clause}`),
   ])
-  return { total: Number(count.rows[0]!.n), runs: page.rows.map(toRun) }
+  return { total: Number(count[0]!.n), runs: page.map(toRun) }
 }
 
 /** The page's parameter filter: the most used parameter names in the window, each with its commonest values. */
 export async function parameters(window: Window): Promise<ParameterFacet[]> {
-  const { rows } = await query<{ name: string; builds: string; values: { value: string; builds: number }[] }>(
-    `with p as (
+  const rows = await sqlRows<{ name: string; builds: string; values: { value: string; builds: number }[] }>(
+    sql`with p as (
        select e->>'name' as name, e->>'value' as value
-         from jenkins_builds, jsonb_array_elements(parameters) e
-        where server = $1 and started_at >= now() - make_interval(hours => $2)
+         from ${jenkinsBuilds}, jsonb_array_elements(parameters) e
+        where server = ${server()} and started_at >= now() - make_interval(hours => ${WINDOWS[window].hours})
           and not (e->>'hidden')::boolean and e->>'value' is not null and e->>'value' <> ''
      ),
      v as (select name, value, count(*) as builds from p group by name, value),
@@ -81,7 +78,6 @@ export async function parameters(window: Window): Promise<ParameterFacet[]> {
             json_agg(json_build_object('value', value, 'builds', builds) order by builds desc, value)
               filter (where rank <= 10) as values
        from ranked group by name order by sum(builds) desc, name limit 30`,
-    [server(), WINDOWS[window].hours],
   )
   return rows.map((row) => ({ name: row.name, builds: Number(row.builds), values: row.values }))
 }
@@ -99,7 +95,14 @@ export async function run(job: string, number: number): Promise<Omit<RunDetail, 
   const builtOn =
     detail.builtOn ??
     (jenkins.agentsInLog(log.text).join(', ') ||
-      (await query<{ built_on: string | null }>('select built_on from jenkins_builds where server = $1 and job = $2 and number = $3', [server(), job, number])).rows[0]?.built_on ||
+      (await stored(job, number)) ||
       null)
   return { ...detail, builtOn, log: log.text, logTruncated: log.truncated, logUrl: `${detail.url}consoleText` }
+}
+
+/** The agent history found for a build, if any. */
+async function stored(job: string, number: number): Promise<string | null> {
+  const b = jenkinsBuilds
+  const [row] = await db.select({ builtOn: b.builtOn }).from(b).where(and(eq(b.server, server()), eq(b.job, job), eq(b.number, number)))
+  return row?.builtOn ?? null
 }

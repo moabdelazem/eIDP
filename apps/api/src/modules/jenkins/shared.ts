@@ -1,7 +1,9 @@
 import type { Run } from '@eidp/contracts/jenkins'
 import * as jenkins from '../../integrations/jenkins/index.ts'
 import type { Parameter, Result } from '../../integrations/jenkins/index.ts'
+import { sql } from 'drizzle-orm'
 import { ignore } from './actions.ts'
+import { jenkinsBuilds } from './schema.ts'
 import { parameters } from './search.ts'
 
 /**
@@ -12,8 +14,8 @@ import { parameters } from './search.ts'
  * Whether the ignore row `i` still holds: until the job passes after the build
  * it was ignored at, or until it expires. SQL, so every reader agrees.
  */
-export const IGNORE_HOLDS = `((i.until_pass and not exists (
-    select 1 from jenkins_builds p where p.server = i.server and p.job = i.job and p.number > i.from_number and p.result = 'success'))
+export const IGNORE_HOLDS = sql`((i.until_pass and not exists (
+    select 1 from ${jenkinsBuilds} p where p.server = i.server and p.job = i.job and p.number > i.from_number and p.result = 'success'))
   or (not i.until_pass and (i.expires_at is null or i.expires_at > now())))`
 
 export const WINDOWS = { '24h': { hours: 24, bucket: 1 }, '7d': { hours: 168, bucket: 6 } } as const

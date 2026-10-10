@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { after, before, test } from 'node:test'
 import pg from 'pg'
 import { config } from './config.ts'
@@ -52,6 +53,25 @@ test('the portal’s migrations apply once, over rows of the newest kinds', asyn
   assert.deepEqual(await migrate(), [], 'nothing left to apply')
   const { rows } = await query<{ name: string }>('select name from schema_migrations order by name')
   assert.ok(rows.some((r) => r.name === '0001_baseline.sql'))
+})
+
+test('the portal’s migrations build an empty database from nothing', async () => {
+  // A database that existed before migrations hid an index made above its
+  // table: every fresh install failed. This one starts with nothing.
+  const fresh = `${scratch}_fresh`
+  const own = new pg.Client({ connectionString: config.DATABASE_URL })
+  await own.connect()
+  try {
+    await own.query(`create schema ${fresh}`)
+    await own.query(`set search_path to ${fresh}`)
+    const applied = await migrateWith(own, fileURLToPath(new URL('./migrations/', import.meta.url)))
+    assert.equal(applied[0], '0001_baseline.sql')
+    const { rows } = await own.query<{ n: number }>('select count(*)::int as n from pg_tables where schemaname = $1', [fresh])
+    assert.ok(rows[0]!.n > 20, `${rows[0]!.n} tables`)
+  } finally {
+    await own.query(`drop schema if exists ${fresh} cascade`)
+    await own.end()
+  }
 })
 
 test('files apply in order, once each, and a new one alone next time', async () => {

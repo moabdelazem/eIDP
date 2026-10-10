@@ -1,12 +1,14 @@
 import type { AuditEntry, IgnoreFor } from '@eidp/contracts/jenkins'
 import * as jenkins from '../../integrations/jenkins/index.ts'
 import type { QueueItem } from '../../integrations/jenkins/index.ts'
-import { query, transaction } from '../../lib/db.ts'
+import { and, desc, eq, sql } from 'drizzle-orm'
+import { db } from '../../lib/db.ts'
 import { ApiError } from '../../lib/errors.ts'
 import { syncJenkins } from './sync.ts'
 import type { Actor } from '../../lib/actor.ts'
 import { forgetLive } from './now.ts'
 import { parameters, run } from './search.ts'
+import { jenkinsAudit, jenkinsBuilds, jenkinsIgnored, jenkinsJobs } from './schema.ts'
 import { server } from './shared.ts'
 
 // ---- acting ------------------------------------------------------------------
@@ -54,11 +56,7 @@ async function audited<T>(
   act: () => Promise<{ result: T; queueId: number | null }>,
 ): Promise<T> {
   const record = (ok: boolean, queueId: number | null, error: string | null) =>
-    query(
-      `insert into jenkins_audit (actor, actor_name, action, job, build, queue_id, ok, error)
-       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [actor.uid, actor.name, action, job, build, queueId, ok, error],
-    )
+    db.insert(jenkinsAudit).values({ actor: actor.uid, actorName: actor.name, action, job, build, queueId, ok, error })
   try {
     const { result, queueId } = await act()
     await record(true, queueId, null)
@@ -85,26 +83,32 @@ export const IGNORE_FOR = { pass: null, '1d': 1, '7d': 7, '30d': 30, always: nul
  */
 export async function ignore(job: string, until: IgnoreFor, reason: string, actor: Actor): Promise<void> {
   const url = server()
-  const { rows } = await query<{ number: number | null }>(
-    `select (select max(number) from jenkins_builds b where b.server = $1 and b.job = $2 and b.result not in ('running', 'not_built')) as number
-       from jenkins_jobs where server = $1 and full_name = $2`,
-    [url, job],
-  )
-  if (!rows[0]) throw new ApiError(404, 'jenkins_not_found', 'Jenkins has no such job.')
+  // The newest finished build is where the ignore starts; a job with none starts at 0.
+  const [found] = await db
+    .select({
+      number: sql<number | null>`(select max(b.number) from ${jenkinsBuilds} b
+                                   where b.server = ${url} and b.job = ${job} and b.result not in ('running', 'not_built'))`,
+    })
+    .from(jenkinsJobs)
+    .where(and(eq(jenkinsJobs.server, url), eq(jenkinsJobs.fullName, job)))
+  if (!found) throw new ApiError(404, 'jenkins_not_found', 'Jenkins has no such job.')
   const days = IGNORE_FOR[until]
-  await transaction(async (db) => {
-    await db.query(
-      `insert into jenkins_ignored (server, job, from_number, until_pass, expires_at, reason, ignored_by, ignored_by_name)
-       values ($1, $2, $3, $4, case when $5::int is null then null else now() + make_interval(days => $5::int) end, $6, $7, $8)
-       on conflict (server, job) do update set
-         from_number = excluded.from_number, until_pass = excluded.until_pass, expires_at = excluded.expires_at,
-         reason = excluded.reason, ignored_by = excluded.ignored_by, ignored_by_name = excluded.ignored_by_name, created_at = now()`,
-      [url, job, rows[0]!.number ?? 0, until === 'pass', days, reason, actor.uid, actor.name],
-    )
-    await db.query(
-      `insert into jenkins_audit (actor, actor_name, action, job, build, ok, note) values ($1, $2, 'ignore', $3, $4, true, $5)`,
-      [actor.uid, actor.name, job, rows[0]!.number, `${reason} (${IGNORE_LABEL[until]})`],
-    )
+  const ignored = {
+    fromNumber: found.number ?? 0,
+    untilPass: until === 'pass',
+    expiresAt: days === null ? null : sql`now() + make_interval(days => ${days})`,
+    reason,
+    ignoredBy: actor.uid,
+    ignoredByName: actor.name,
+  }
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(jenkinsIgnored)
+      .values({ server: url, job, ...ignored })
+      .onConflictDoUpdate({ target: [jenkinsIgnored.server, jenkinsIgnored.job], set: { ...ignored, createdAt: sql`now()` } })
+    await tx
+      .insert(jenkinsAudit)
+      .values({ actor: actor.uid, actorName: actor.name, action: 'ignore', job, build: found.number, ok: true, note: `${reason} (${IGNORE_LABEL[until]})` })
   })
 }
 
@@ -118,38 +122,17 @@ const IGNORE_LABEL: Record<IgnoreFor, string> = {
 
 export async function unignore(job: string, actor: Actor): Promise<void> {
   const url = server()
-  await transaction(async (db) => {
-    const { rowCount } = await db.query('delete from jenkins_ignored where server = $1 and job = $2', [url, job])
-    if (!rowCount) throw new ApiError(404, 'jenkins_not_ignored', 'That job is not being ignored.')
-    await db.query(`insert into jenkins_audit (actor, actor_name, action, job, ok) values ($1, $2, 'unignore', $3, true)`, [actor.uid, actor.name, job])
+  await db.transaction(async (tx) => {
+    const gone = await tx
+      .delete(jenkinsIgnored)
+      .where(and(eq(jenkinsIgnored.server, url), eq(jenkinsIgnored.job, job)))
+      .returning({ job: jenkinsIgnored.job })
+    if (gone.length === 0) throw new ApiError(404, 'jenkins_not_ignored', 'That job is not being ignored.')
+    await tx.insert(jenkinsAudit).values({ actor: actor.uid, actorName: actor.name, action: 'unignore', job, ok: true })
   })
 }
 
 export async function listAudit(limit = 50): Promise<AuditEntry[]> {
-  const { rows } = await query<{
-    id: string
-    at: Date
-    actor: string
-    actor_name: string
-    action: AuditEntry['action']
-    job: string
-    build: number | null
-    queue_id: string | null
-    ok: boolean
-    error: string | null
-    note: string | null
-  }>('select * from jenkins_audit order by at desc, id desc limit $1', [limit])
-  return rows.map((row) => ({
-    id: Number(row.id),
-    at: row.at.toISOString(),
-    actor: row.actor,
-    actorName: row.actor_name,
-    action: row.action,
-    job: row.job,
-    build: row.build,
-    queueId: row.queue_id === null ? null : Number(row.queue_id),
-    ok: row.ok,
-    error: row.error,
-    note: row.note,
-  }))
+  const rows = await db.select().from(jenkinsAudit).orderBy(desc(jenkinsAudit.at), desc(jenkinsAudit.id)).limit(limit)
+  return rows.map((row) => ({ ...row, at: row.at.toISOString() }))
 }

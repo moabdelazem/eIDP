@@ -3,10 +3,12 @@ export type { SyncState }
 import * as jenkins from '../../integrations/jenkins/index.ts'
 import type { HistoryBuild, JobHead } from '../../integrations/jenkins/index.ts'
 import { config } from '../../lib/config.ts'
-import { query, transaction } from '../../lib/db.ts'
+import { and, desc, eq, isNull, not, sql } from 'drizzle-orm'
+import { db } from '../../lib/db.ts'
 import { ApiError } from '../../lib/errors.ts'
 import { exclusive } from '../../lib/locks.ts'
 import { log } from '../../lib/log.ts'
+import { jenkinsBuilds, jenkinsJobs, jenkinsSync } from './schema.ts'
 
 /** Builds read from a job Jenkins has never been synced for. */
 export const BACKFILL = 100
@@ -39,11 +41,10 @@ async function finished(): Promise<SyncState> {
 
 async function run(): Promise<SyncState> {
   const server = jenkins.jenkinsConfig().url
-  await query(
-    `insert into jenkins_sync (server, started_at) values ($1, now())
-     on conflict (server) do update set started_at = now()`,
-    [server],
-  )
+  await db
+    .insert(jenkinsSync)
+    .values({ server, startedAt: sql`now()` })
+    .onConflictDoUpdate({ target: jenkinsSync.server, set: { startedAt: sql`now()` } })
   try {
     const heads = await jenkins.listJobs()
     const { plans, seen } = await plan(server, heads)
@@ -87,23 +88,27 @@ async function run(): Promise<SyncState> {
  */
 async function plan(server: string, heads: JobHead[]) {
   const [builds, jobs] = await Promise.all([
-    query<{ job: string; newest: number; oldest_running: number | null }>(
-      `select job, max(number) as newest, min(number) filter (where result = 'running') as oldest_running
-         from jenkins_builds where server = $1 group by job`,
-      [server],
-    ),
-    query<{ full_name: string; last_number: number | null }>('select full_name, last_number from jenkins_jobs where server = $1', [server]),
+    db
+      .select({
+        job: jenkinsBuilds.job,
+        newest: sql<number>`max(${jenkinsBuilds.number})`,
+        oldestRunning: sql<number | null>`min(${jenkinsBuilds.number}) filter (where ${jenkinsBuilds.result} = 'running')`,
+      })
+      .from(jenkinsBuilds)
+      .where(eq(jenkinsBuilds.server, server))
+      .groupBy(jenkinsBuilds.job),
+    db.select({ fullName: jenkinsJobs.fullName, lastNumber: jenkinsJobs.lastNumber }).from(jenkinsJobs).where(eq(jenkinsJobs.server, server)),
   ])
-  const stored = new Map(builds.rows.map((row) => [row.job, row]))
+  const stored = new Map(builds.map((row) => [row.job, row]))
   const seen = new Map<string, number>()
-  for (const row of jobs.rows) if (row.last_number !== null) seen.set(row.full_name, row.last_number)
-  for (const row of builds.rows) seen.set(row.job, Math.max(seen.get(row.job) ?? 0, row.newest))
+  for (const row of jobs) if (row.lastNumber !== null) seen.set(row.fullName, row.lastNumber)
+  for (const row of builds) seen.set(row.job, Math.max(seen.get(row.job) ?? 0, row.newest))
 
   const plans: { job: string; count: number }[] = []
   for (const head of heads) {
     if (head.lastNumber === null) continue
     const newest = seen.get(head.fullName)
-    const running = stored.get(head.fullName)?.oldest_running ?? Infinity
+    const running = stored.get(head.fullName)?.oldestRunning ?? Infinity
     const from = newest === undefined ? head.lastNumber - BACKFILL + 1 : Math.min(running, newest + 1)
     const count = Math.min(head.lastNumber - from + 1, newest === undefined ? BACKFILL : MAX_PER_JOB)
     if (count > 0) plans.push({ job: head.fullName, count })
@@ -118,80 +123,73 @@ async function plan(server: string, heads: JobHead[]) {
  * age out — they still happened, and the week's numbers include them.
  */
 async function store(server: string, heads: JobHead[], builds: HistoryBuild[]): Promise<void> {
-  await transaction(async (db) => {
-    await db.query('delete from jenkins_jobs where server = $1', [server])
-    await db.query(
-      `insert into jenkins_jobs (server, full_name, url, buildable, in_queue, last_number)
-       select $1, j.full_name, j.url, j.buildable, j.in_queue, j.last_number
-         from json_to_recordset($2::json)
-           as j(full_name text, url text, buildable boolean, in_queue boolean, last_number integer)`,
-      [
-        server,
-        JSON.stringify(
-          heads.map((h) => ({ full_name: h.fullName, url: h.url, buildable: h.buildable, in_queue: h.inQueue, last_number: h.lastNumber })),
-        ),
-      ],
-    )
+  await db.transaction(async (tx) => {
+    await tx.delete(jenkinsJobs).where(eq(jenkinsJobs.server, server))
+    if (heads.length) {
+      await tx
+        .insert(jenkinsJobs)
+        .values(heads.map((h) => ({ server, fullName: h.fullName, url: h.url, buildable: h.buildable, inQueue: h.inQueue, lastNumber: h.lastNumber })))
+    }
     // Batched, so a first sync of thousands of builds is a few statements.
     for (let i = 0; i < builds.length; i += 500) {
-      await db.query(
-        `insert into jenkins_builds (server, job, number, result, started_at, duration_ms, url, built_on, parameters, causes, authors)
-         select $1, b.job, b.number, b.result, b.started_at, b.duration_ms, b.url, b.built_on, b.parameters,
-                array(select jsonb_array_elements_text(b.causes)), array(select jsonb_array_elements_text(b.authors))
-           from json_to_recordset($2::json)
-             as b(job text, number integer, result text, started_at timestamptz, duration_ms bigint,
-                  url text, built_on text, parameters jsonb, causes jsonb, authors jsonb)
-         on conflict (server, job, number) do update set
-           result = excluded.result, started_at = excluded.started_at, duration_ms = excluded.duration_ms,
-           url = excluded.url, built_on = coalesce(excluded.built_on, jenkins_builds.built_on), parameters = excluded.parameters, causes = excluded.causes,
-           authors = excluded.authors`,
-        [
-          server,
-          JSON.stringify(
-            builds.slice(i, i + 500).map((b) => ({
-              job: b.job,
-              number: b.number,
-              result: b.result,
-              started_at: b.startedAt,
-              duration_ms: b.durationMs,
-              url: b.url,
-              built_on: b.builtOn,
-              parameters: b.parameters,
-              causes: b.causes,
-              authors: b.authors,
-            })),
-          ),
-        ],
-      )
+      await tx
+        .insert(jenkinsBuilds)
+        .values(
+          builds.slice(i, i + 500).map((b) => ({
+            server,
+            job: b.job,
+            number: b.number,
+            result: b.result,
+            startedAt: new Date(b.startedAt),
+            durationMs: b.durationMs,
+            url: b.url,
+            builtOn: b.builtOn,
+            parameters: b.parameters,
+            causes: b.causes,
+            authors: b.authors,
+          })),
+        )
+        .onConflictDoUpdate({
+          target: [jenkinsBuilds.server, jenkinsBuilds.job, jenkinsBuilds.number],
+          set: {
+            result: sql`excluded.result`,
+            startedAt: sql`excluded.started_at`,
+            durationMs: sql`excluded.duration_ms`,
+            url: sql`excluded.url`,
+            // An agent found by an earlier sync is kept when Jenkins names none.
+            builtOn: sql`coalesce(excluded.built_on, ${jenkinsBuilds.builtOn})`,
+            parameters: sql`excluded.parameters`,
+            causes: sql`excluded.causes`,
+            authors: sql`excluded.authors`,
+          },
+        })
     }
   })
 }
 
 async function finish(server: string, ok: boolean, error: string | null, builds: number, jobsRead: number): Promise<SyncState> {
-  const { rows } = await query<SyncRow>(
-    `update jenkins_sync set finished_at = now(), ok = $2, error = $3, builds = $4, jobs_read = $5
-      where server = $1 returning *`,
-    [server, ok, error, builds, jobsRead],
-  )
-  return toState(rows[0]!)
+  const [row] = await db
+    .update(jenkinsSync)
+    .set({ finishedAt: sql`now()`, ok, error, builds, jobsRead })
+    .where(eq(jenkinsSync.server, server))
+    .returning()
+  return toState(row!)
 }
 
 /** The last sync's outcome for the configured server, or a never-synced state. */
 export async function syncState(): Promise<SyncState> {
-  const { rows } = await query<SyncRow>('select * from jenkins_sync where server = $1', [jenkins.jenkinsConfig().url])
-  return rows[0] ? toState(rows[0]) : { startedAt: null, finishedAt: null, ok: false, error: null, builds: 0, jobsRead: 0 }
+  const [row] = await db.select().from(jenkinsSync).where(eq(jenkinsSync.server, jenkins.jenkinsConfig().url))
+  return row ? toState(row) : { startedAt: null, finishedAt: null, ok: false, error: null, builds: 0, jobsRead: 0 }
 }
 
-type SyncRow = { started_at: Date | null; finished_at: Date | null; ok: boolean; error: string | null; builds: number; jobs_read: number }
-
-function toState(row: SyncRow): SyncState {
+function toState(row: typeof jenkinsSync.$inferSelect): SyncState {
   return {
-    startedAt: row.started_at?.toISOString() ?? null,
-    finishedAt: row.finished_at?.toISOString() ?? null,
+    startedAt: row.startedAt?.toISOString() ?? null,
+    finishedAt: row.finishedAt?.toISOString() ?? null,
     ok: row.ok,
     error: row.error,
     builds: row.builds,
-    jobsRead: row.jobs_read,
+    jobsRead: row.jobsRead,
   }
 }
 
@@ -205,12 +203,13 @@ const AGENTS_PER_SYNC = 200
  * once, found or not. A build that cannot be read is left to try next time.
  */
 async function resolveAgents(server: string): Promise<void> {
-  const { rows } = await query<{ job: string; number: number; result: string }>(
-    `select job, number, result from jenkins_builds
-      where server = $1 and built_on is null and not agent_checked
-      order by started_at desc limit $2`,
-    [server, AGENTS_PER_SYNC],
-  )
+  const b = jenkinsBuilds
+  const rows = await db
+    .select({ job: b.job, number: b.number, result: b.result })
+    .from(b)
+    .where(and(eq(b.server, server), isNull(b.builtOn), not(b.agentChecked)))
+    .orderBy(desc(b.startedAt))
+    .limit(AGENTS_PER_SYNC)
   await pool(rows, CONCURRENCY, async ({ job, number, result }) => {
     let agents: string[]
     try {
@@ -218,10 +217,10 @@ async function resolveAgents(server: string): Promise<void> {
     } catch {
       return
     }
-    await query(
-      `update jenkins_builds set built_on = $4, agent_checked = $5 where server = $1 and job = $2 and number = $3`,
-      [server, job, number, agents.length ? agents.join(', ') : null, result !== 'running'],
-    )
+    await db
+      .update(b)
+      .set({ builtOn: agents.length ? agents.join(', ') : null, agentChecked: result !== 'running' })
+      .where(and(eq(b.server, server), eq(b.job, job), eq(b.number, number)))
   })
 }
 

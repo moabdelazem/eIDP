@@ -4,13 +4,16 @@ import { z } from 'zod'
 import type { Result } from '../../integrations/jenkins/index.ts'
 import * as ollama from '../../integrations/ollama/index.ts'
 import { config } from '../../lib/config.ts'
-import { query } from '../../lib/db.ts'
+import { and, desc, eq, sql } from 'drizzle-orm'
+import { db, sqlRows } from '../../lib/db.ts'
 import { ApiError } from '../../lib/errors.ts'
 import { exclusive } from '../../lib/locks.ts'
 import { log } from '../../lib/log.ts'
 import { teamRuns, type TeamRun } from '../pipelines/index.ts'
 import { can, type Access } from '../access/index.ts'
-import type { RequestKind, RequestStatus } from '../requests/index.ts'
+import { catalogSystems } from '../catalog/index.ts'
+import { requests, type RequestKind, type RequestStatus } from '../requests/index.ts'
+import { weeklyDigests } from './schema.ts'
 
 /**
  * A team's week, for the people in it: its builds and the requests touching
@@ -69,8 +72,8 @@ export function recentWeeks(now = new Date()): string[] {
 
 /** Every team the catalog names as owning something, as `team.yml` spells it. */
 export async function allTeams(): Promise<string[]> {
-  const { rows } = await query<{ team: string }>(
-    `select distinct t.value as team from catalog_systems s, jsonb_each_text(s.teams) t where t.value <> '' order by 1`,
+  const rows = await sqlRows<{ team: string }>(
+    sql`select distinct t.value as team from ${catalogSystems} s, jsonb_each_text(s.teams) t where t.value <> '' order by 1`,
   )
   const seen = new Set<string>()
   return rows.map((r) => r.team).filter((t) => !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase()))
@@ -96,10 +99,9 @@ export async function demandTeam(access: Access, team: string): Promise<string> 
 }
 
 async function projectsOf(team: string): Promise<string[]> {
-  const { rows } = await query<{ project: string }>(
-    `select distinct s.project_name as project from catalog_systems s, jsonb_each_text(s.teams) t
-      where lower(t.value) = lower($1) order by 1`,
-    [team],
+  const rows = await sqlRows<{ project: string }>(
+    sql`select distinct s.project_name as project from ${catalogSystems} s, jsonb_each_text(s.teams) t
+      where lower(t.value) = lower(${team}) order by 1`,
   )
   return rows.map((r) => r.project)
 }
@@ -204,15 +206,14 @@ type RequestRow = {
 
 /** Requests naming the team, or one of the projects it owns, that moved in the week or are still waiting. */
 async function requestFacts(team: string, projects: string[], from: Date, to: Date): Promise<RequestFacts> {
-  const { rows } = await query<RequestRow>(
-    `select id, kind, status, project, repository, project_key, requested_by_name, requested_at, decided_at, completed_at, error
-       from requests
-      where (lower(team_group) = lower($1) or lower(project) = any($2))
-        and requested_at < $4
-        and (requested_at >= $3 or status = 'pending'
-          or coalesce(completed_at, decided_at) >= $3 and coalesce(completed_at, decided_at) < $4)
+  const rows = await sqlRows<RequestRow>(
+    sql`select id, kind, status, project, repository, project_key, requested_by_name, requested_at, decided_at, completed_at, error
+       from ${requests}
+      where (lower(team_group) = lower(${team}) or lower(project) = any(${sql.param(projects.map((p) => p.toLowerCase()))}))
+        and requested_at < ${to}
+        and (requested_at >= ${from} or status = 'pending'
+          or coalesce(completed_at, decided_at) >= ${from} and coalesce(completed_at, decided_at) < ${to})
       order by requested_at`,
-    [team, projects.map((p) => p.toLowerCase()), from, to],
   )
   const inWeek = (at: Date | null) => !!at && at >= from && at < to
   const item = (r: RequestRow): RequestItem => ({
@@ -306,42 +307,28 @@ async function words(facts: DigestFacts): Promise<{ summary: string; highlights:
 
 // ---- the service ---------------------------------------------------------------------
 
-type DigestRow = {
-  team: string
-  week_start: string
-  facts: DigestFacts
-  summary: string | null
-  highlights: string[]
-  model: string | null
-  error: string | null
-  created_at: Date
-}
-
-const toDigest = (row: DigestRow): Digest => ({
+const toDigest = (row: typeof weeklyDigests.$inferSelect): Digest => ({
   team: row.team,
-  week: row.week_start,
+  week: row.weekStart,
   live: false,
   facts: row.facts,
   summary: row.summary,
   highlights: row.highlights ?? [],
   model: row.model,
   error: row.error,
-  createdAt: row.created_at.toISOString(),
+  createdAt: row.createdAt.toISOString(),
 })
 
-const SELECT = `select team, to_char(week_start, 'YYYY-MM-DD') as week_start, facts, summary, highlights, model, error, created_at from weekly_digests`
+const teamIs = (team: string) => eq(sql`lower(${weeklyDigests.team})`, team.toLowerCase())
 
 async function stored(team: string, week: string): Promise<Digest | null> {
-  const { rows } = await query<DigestRow>(`${SELECT} where lower(team) = lower($1) and week_start = $2`, [team, week])
-  return rows[0] ? toDigest(rows[0]) : null
+  const [row] = await db.select().from(weeklyDigests).where(and(teamIs(team), eq(weeklyDigests.weekStart, week)))
+  return row ? toDigest(row) : null
 }
 
 /** The finished weeks kept for a team, newest first. */
 export async function storedWeeks(team: string): Promise<string[]> {
-  const { rows } = await query<{ week: string }>(
-    `select to_char(week_start, 'YYYY-MM-DD') as week from weekly_digests where lower(team) = lower($1) order by week_start desc`,
-    [team],
-  )
+  const rows = await db.select({ week: weeklyDigests.weekStart }).from(weeklyDigests).where(teamIs(team)).orderBy(desc(weeklyDigests.weekStart))
   return rows.map((r) => r.week)
 }
 
@@ -366,12 +353,19 @@ export function generate(team: string, week: string): Promise<Digest> {
         error = err instanceof Error ? err.message : String(err)
       }
     }
-    await query('delete from weekly_digests where lower(team) = lower($1) and week_start = $2', [team, week])
-    await query(
-      `insert into weekly_digests (team, week_start, facts, summary, highlights, model, prompt_version, error)
-       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [team, week, JSON.stringify(facts), said?.summary ?? null, JSON.stringify(said?.highlights ?? []), said?.model ?? null, DIGEST_PROMPT_VERSION, error],
-    )
+    await db.transaction(async (tx) => {
+      await tx.delete(weeklyDigests).where(and(teamIs(team), eq(weeklyDigests.weekStart, week)))
+      await tx.insert(weeklyDigests).values({
+        team,
+        weekStart: week,
+        facts,
+        summary: said?.summary ?? null,
+        highlights: said?.highlights ?? [],
+        model: said?.model ?? null,
+        promptVersion: DIGEST_PROMPT_VERSION,
+        error,
+      })
+    })
     return (await stored(team, week))!
   }, () => stored(team, week)).finally(() => inFlight.delete(key))
   inFlight.set(key, work)
@@ -416,7 +410,7 @@ export async function peek(team: string, week: string, now = new Date()): Promis
  */
 export async function generateDue(now = new Date()): Promise<{ made: number; failed: number }> {
   const week = shift(weekOf(now), -1)
-  const { rows } = await query<{ team: string }>(`select lower(team) as team from weekly_digests where week_start = $1`, [week])
+  const rows = await db.select({ team: sql<string>`lower(${weeklyDigests.team})` }).from(weeklyDigests).where(eq(weeklyDigests.weekStart, week))
   const done = new Set(rows.map((r) => r.team))
   let made = 0
   let failed = 0

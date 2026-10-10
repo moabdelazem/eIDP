@@ -1,15 +1,16 @@
 import type { RequestRecord } from '@eidp/contracts/requests'
-import type { DatabaseError } from 'pg'
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import { profileOf } from '../../integrations/ldap/index.ts'
 import { can, type Access } from '../access/index.ts'
-import { query } from '../../lib/db.ts'
+import { db, isUniqueViolation } from '../../lib/db.ts'
 import { ApiError } from '../../lib/errors.ts'
 import { assess, assessmentsOf, type Assessment } from './risk.ts'
 import { check, uniqueNames } from './check.ts'
 import { assertCanDecide, decidableBy, mayDecide } from './deciding.ts'
 import { execute } from './execute.ts'
 import type { Actor, AdoTarget, NewRequest } from './model.ts'
-import { type Row, find, same, toRecord } from './rows.ts'
+import { find, same, toRecord } from './rows.ts'
+import { requests } from './schema.ts'
 import { errorFields, log } from '../../lib/log.ts'
 
 /**
@@ -33,30 +34,26 @@ export async function submit(input: NewRequest, actor: Actor): Promise<RequestRe
   if (!verdict.ok) throw new ApiError(409, 'request_not_possible', verdict.reason)
 
   try {
-    const { rows } = await query<Row>(
-      `insert into requests
-         (kind, collection, project, project_key, repository, description, justification,
-          requested_by, requested_by_name, team_group)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       returning *`,
-      [
-        input.kind,
-        input.kind === 'create_jira_project' ? null : input.collection,
-        input.project,
-        input.kind === 'create_jira_project' ? input.projectKey : null,
-        input.kind === 'create_repository' ? input.repository : null,
-        input.description?.trim() || null,
-        input.justification.trim(),
-        actor.uid,
-        actor.name,
-        team,
-      ],
-    )
+    const rows = await db
+      .insert(requests)
+      .values({
+        kind: input.kind,
+        collection: input.kind === 'create_jira_project' ? null : input.collection,
+        project: input.project,
+        projectKey: input.kind === 'create_jira_project' ? input.projectKey : null,
+        repository: input.kind === 'create_repository' ? input.repository : null,
+        description: input.description?.trim() || null,
+        justification: input.justification.trim(),
+        requestedBy: actor.uid,
+        requestedByName: actor.name,
+        teamGroup: team,
+      })
+      .returning()
     return filed(toRecord(rows[0]!))
   } catch (err) {
     // The check passed, but someone filed the same request in the gap. The
     // unique index is what actually decides.
-    if ((err as DatabaseError).code === '23505') {
+    if (isUniqueViolation(err)) {
       throw new ApiError(409, 'request_not_possible', 'Someone has just asked for the same thing.')
     }
     throw err
@@ -72,21 +69,20 @@ async function submitGrant(input: AdoTarget & NewRequest, actor: Actor): Promise
   input = { ...input, repository: undefined, accessLevel: 'contribute' }
   const verdict = await check(input)
   if (!verdict.ok) throw new ApiError(409, 'request_not_possible', verdict.reason)
-  const { rows } = await query<Row>(
-    `insert into requests
-       (kind, collection, project, repository, justification,
-        requested_by, requested_by_name, grantees, access_level)
-     values ('grant_access', $1, $2, null, $3, $4, $5, $6, 'contribute')
-     returning *`,
-    [
-      input.collection,
-      input.project,
-      input.justification.trim(),
-      actor.uid,
-      actor.name,
-      uniqueNames(input.grantees ?? []),
-    ],
-  )
+  const rows = await db
+    .insert(requests)
+    .values({
+      kind: 'grant_access',
+      collection: input.collection,
+      project: input.project,
+      repository: null,
+      justification: input.justification.trim(),
+      requestedBy: actor.uid,
+      requestedByName: actor.name,
+      grantees: uniqueNames(input.grantees ?? []),
+      accessLevel: 'contribute',
+    })
+    .returning()
   return filed(toRecord(rows[0]!))
 }
 
@@ -113,10 +109,7 @@ export async function reassess(id: string, access: Access): Promise<Assessment> 
 }
 
 export async function listMine(uid: string): Promise<RequestRecord[]> {
-  const { rows } = await query<Row>(
-    'select * from requests where requested_by = $1 order by requested_at desc limit 200',
-    [uid],
-  )
+  const rows = await db.select().from(requests).where(eq(requests.requestedBy, uid)).orderBy(desc(requests.requestedAt)).limit(200)
   return rows.map(toRecord)
 }
 
@@ -127,16 +120,15 @@ export async function listMine(uid: string): Promise<RequestRecord[]> {
  */
 export async function listPool(access: Access): Promise<{ open: RequestRecord[]; recent: RequestRecord[] }> {
   const [open, recent] = await Promise.all([
-    query<Row>(
-      `select * from requests where status in ('pending', 'approved', 'failed')
-        order by requested_at asc`,
-    ),
-    query<Row>(
-      `select * from requests where status in ('completed', 'rejected', 'cancelled')
-        order by coalesce(completed_at, decided_at, requested_at) desc limit 30`,
-    ),
+    db.select().from(requests).where(inArray(requests.status, ['pending', 'approved', 'failed'])).orderBy(asc(requests.requestedAt)),
+    db
+      .select()
+      .from(requests)
+      .where(inArray(requests.status, ['completed', 'rejected', 'cancelled']))
+      .orderBy(desc(sql`coalesce(${requests.completedAt}, ${requests.decidedAt}, ${requests.requestedAt})`))
+      .limit(30),
   ])
-  const all = { open: open.rows.map(toRecord), recent: recent.rows.map(toRecord) }
+  const all = { open: open.map(toRecord), recent: recent.map(toRecord) }
   // Assessments ride on the open ones only: that is where a decision is still to be made.
   if (can(access, 'requests.decide')) return { open: await withAssessments(all.open), recent: all.recent }
   const decidable = await decidableBy(access, [...all.open, ...all.recent])
@@ -154,7 +146,7 @@ export async function listPool(access: Access): Promise<{ open: RequestRecord[];
  * page it here with the filters as query parameters.
  */
 export async function listHistory(access: Access): Promise<RequestRecord[]> {
-  const { rows } = await query<Row>('select * from requests order by requested_at desc limit $1', [HISTORY_LIMIT])
+  const rows = await db.select().from(requests).orderBy(desc(requests.requestedAt)).limit(HISTORY_LIMIT)
   const all = rows.map(toRecord)
   if (can(access, 'requests.decide')) return all
   const decidable = await decidableBy(access, all)
@@ -176,13 +168,11 @@ export async function get(id: string, actor: Actor, access: Access): Promise<Req
 }
 
 export async function cancel(id: string, actor: Actor): Promise<RequestRecord> {
-  const { rows } = await query<Row>(
-    `update requests set status = 'cancelled', decided_at = now(),
-            decided_by = $2, decided_by_name = $3
-      where id = $1 and requested_by = $2 and status = 'pending'
-      returning *`,
-    [id, actor.uid, actor.name],
-  )
+  const rows = await db
+    .update(requests)
+    .set({ status: 'cancelled', decidedAt: sql`now()`, decidedBy: actor.uid, decidedByName: actor.name })
+    .where(and(eq(requests.id, id), eq(requests.requestedBy, actor.uid), eq(requests.status, 'pending')))
+    .returning()
   if (rows[0]) return toRecord(rows[0])
   await find(id) // 404 when it does not exist
   throw new ApiError(409, 'request_not_pending', 'Only your own waiting requests can be withdrawn.')
@@ -199,13 +189,7 @@ export async function approve(id: string, actor: Actor, access: Access, note?: s
   await assertCanDecide(id, access)
   // The `status = 'pending'` guard is the lock: of two approvers clicking at
   // once, exactly one update matches, so ADO is asked once.
-  const { rows } = await query<Row>(
-    `update requests set status = 'approved', decided_by = $2, decided_by_name = $3,
-            decided_at = now(), decision_note = $4
-      where id = $1 and status = 'pending'
-      returning *`,
-    [id, actor.uid, actor.name, note?.trim() || null],
-  )
+  const rows = await decide(id, { status: 'approved', decidedBy: actor.uid, decidedByName: actor.name, decisionNote: note?.trim() || null })
   if (!rows[0]) throw new ApiError(409, 'request_not_pending', 'Someone has already decided this request.')
 
   void execute(toRecord(rows[0]))
@@ -217,26 +201,31 @@ export async function reject(id: string, actor: Actor, access: Access, note: str
     throw new ApiError(400, 'invalid_request', 'Say why, so the person can fix it and ask again.')
   }
   await assertCanDecide(id, access)
-  const { rows } = await query<Row>(
-    `update requests set status = 'rejected', decided_by = $2, decided_by_name = $3,
-            decided_at = now(), decision_note = $4
-      where id = $1 and status = 'pending'
-      returning *`,
-    [id, actor.uid, actor.name, note.trim()],
-  )
+  const rows = await decide(id, { status: 'rejected', decidedBy: actor.uid, decidedByName: actor.name, decisionNote: note.trim() })
   if (!rows[0]) throw new ApiError(409, 'request_not_pending', 'Someone has already decided this request.')
   return toRecord(rows[0])
+}
+
+/**
+ * A pending request decided. The `status = 'pending'` guard is the lock: of
+ * two approvers clicking at once, exactly one update matches.
+ */
+function decide(id: string, decision: { status: 'approved' | 'rejected'; decidedBy: string; decidedByName: string; decisionNote: string | null }) {
+  return db
+    .update(requests)
+    .set({ ...decision, decidedAt: sql`now()` })
+    .where(and(eq(requests.id, id), eq(requests.status, 'pending')))
+    .returning()
 }
 
 /** Tries a failed creation again. The original approval stands. */
 export async function retry(id: string, access: Access): Promise<RequestRecord> {
   await assertCanDecide(id, access)
-  const { rows } = await query<Row>(
-    `update requests set status = 'approved', error = null
-      where id = $1 and status = 'failed'
-      returning *`,
-    [id],
-  )
+  const rows = await db
+    .update(requests)
+    .set({ status: 'approved', error: null })
+    .where(and(eq(requests.id, id), eq(requests.status, 'failed')))
+    .returning()
   if (!rows[0]) throw new ApiError(409, 'request_not_failed', 'Only a failed request can be retried.')
   void execute(toRecord(rows[0]))
   return toRecord(rows[0])

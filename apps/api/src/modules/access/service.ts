@@ -2,8 +2,11 @@ import type { AuditEntry, Binding, Explanation, Grant, NewBinding, Permission, S
 export type { AuditEntry, Binding, Grant, NewBinding, Permission, ScopeType, SubjectType }
 import { dnOf, groupsOf } from '../../integrations/ldap/index.ts'
 import { config } from '../../lib/config.ts'
-import { query } from '../../lib/db.ts'
+import { and, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm'
+import { db, isUniqueViolation, sqlRows } from '../../lib/db.ts'
 import { ApiError } from '../../lib/errors.ts'
+import { catalogSystems } from '../catalog/index.ts'
+import { rbacAudit, rbacBindings } from './schema.ts'
 
 /**
  * Who may do what.
@@ -117,13 +120,17 @@ function builtInBindings(): Binding[] {
 export async function accessOf(uid: string): Promise<Access> {
   const groups = await groupsFor(uid)
   const lowered = groups.map((g) => g.toLowerCase())
-  const { rows } = await query<BindingRow>(
-    `select * from rbac_bindings
-      where (expires_at is null or expires_at > now())
-        and ((subject_type = 'group' and lower(subject) = any($1))
-          or (subject_type = 'user' and lower(subject) = lower($2)))`,
-    [lowered, uid],
-  )
+  const b = rbacBindings
+  const subject = sql`lower(${b.subject})`
+  const rows = await db
+    .select()
+    .from(b)
+    .where(
+      and(
+        or(isNull(b.expiresAt), gt(b.expiresAt, sql`now()`)),
+        or(and(eq(b.subjectType, 'group'), inArray(subject, lowered)), and(eq(b.subjectType, 'user'), eq(subject, uid.toLowerCase()))),
+      ),
+    )
   const bindings = [
     ...builtInBindings().filter((b) => b.role === 'member' || lowered.includes(b.subject.toLowerCase())),
     ...rows.map(toBinding),
@@ -176,17 +183,17 @@ export function describe(permission: Permission): string {
  * not know has no teams, so only a project-scoped binding can reach it.
  */
 export async function teamsOwning(project: string): Promise<string[]> {
-  const { rows } = await query<{ teams: Record<string, string> }>(
-    'select teams from catalog_systems where lower(project_name) = lower($1)',
-    [project],
-  )
+  const rows = await db
+    .select({ teams: catalogSystems.teams })
+    .from(catalogSystems)
+    .where(eq(sql`lower(${catalogSystems.projectName})`, project.toLowerCase()))
   return [...new Set(rows.flatMap((row) => Object.values(row.teams ?? {})))]
 }
 
 // ---- managing bindings -------------------------------------------------------
 
 export async function listBindings(): Promise<Binding[]> {
-  const { rows } = await query<BindingRow>('select * from rbac_bindings order by role, subject_type, lower(subject)')
+  const rows = await db.select().from(rbacBindings).orderBy(rbacBindings.role, rbacBindings.subjectType, sql`lower(${rbacBindings.subject})`)
   return [...builtInBindings(), ...rows.map(toBinding)]
 }
 
@@ -220,16 +227,24 @@ export async function addBinding(input: NewBinding, actor: string): Promise<Bind
   }
 
   try {
-    const { rows } = await query<BindingRow>(
-      `insert into rbac_bindings (subject_type, subject, role, scope_type, scope, reason, expires_at, created_by)
-       values ($1, $2, $3, $4, $5, $6, $7, $8) returning *`,
-      [input.subjectType, subject, input.role, input.scopeType, scope, reason, input.expiresAt || null, actor],
-    )
+    const rows = await db
+      .insert(rbacBindings)
+      .values({
+        subjectType: input.subjectType,
+        subject,
+        role: input.role,
+        scopeType: input.scopeType,
+        scope,
+        reason,
+        expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+        createdBy: actor,
+      })
+      .returning()
     const binding = toBinding(rows[0]!)
     await audit(actor, 'grant', binding)
     return binding
   } catch (err) {
-    if ((err as { code?: string }).code === '23505') {
+    if (isUniqueViolation(err)) {
       throw new ApiError(409, 'binding_exists', 'That binding already exists.')
     }
     throw err
@@ -241,7 +256,7 @@ export async function removeBinding(id: string, actor: string): Promise<void> {
     throw new ApiError(400, 'built_in_binding', 'Built-in bindings come from configuration and cannot be removed here.')
   }
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new ApiError(404, 'binding_not_found', 'There is no such binding.')
-  const { rows } = await query<BindingRow>('delete from rbac_bindings where id = $1 returning *', [id])
+  const rows = await db.delete(rbacBindings).where(eq(rbacBindings.id, id)).returning()
   if (!rows[0]) throw new ApiError(404, 'binding_not_found', 'There is no such binding.')
   await audit(actor, 'revoke', toBinding(rows[0]))
 }
@@ -256,7 +271,7 @@ export async function updateBinding(id: string, change: { reason?: string | null
     throw new ApiError(400, 'built_in_binding', 'Built-in bindings come from configuration and cannot be changed here.')
   }
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new ApiError(404, 'binding_not_found', 'There is no such binding.')
-  const { rows: found } = await query<BindingRow>('select * from rbac_bindings where id = $1', [id])
+  const found = await db.select().from(rbacBindings).where(eq(rbacBindings.id, id))
   if (!found[0]) throw new ApiError(404, 'binding_not_found', 'There is no such binding.')
   const before = toBinding(found[0])
   const reason = change.reason === undefined ? before.reason : change.reason?.trim() || null
@@ -268,9 +283,13 @@ export async function updateBinding(id: string, change: { reason?: string | null
   if (expiresAt && expiresAt !== before.expiresAt && Date.parse(expiresAt) <= Date.now()) {
     throw new ApiError(400, 'invalid_binding', 'That expiry is already in the past.')
   }
-  const { rows } = await query<BindingRow>('update rbac_bindings set reason = $2, expires_at = $3 where id = $1 returning *', [id, reason, expiresAt])
+  const rows = await db
+    .update(rbacBindings)
+    .set({ reason, expiresAt: expiresAt ? new Date(expiresAt) : null })
+    .where(eq(rbacBindings.id, id))
+    .returning()
   const after = toBinding(rows[0]!)
-  await query(`insert into rbac_audit (actor, action, binding, previous) values ($1, 'update', $2, $3)`, [actor, after, before])
+  await db.insert(rbacAudit).values({ actor, action: 'update', binding: after, previous: before })
   return after
 }
 
@@ -281,37 +300,34 @@ export async function updateBinding(id: string, change: { reason?: string | null
  */
 export async function suggestions(): Promise<Suggestions> {
   const [teams, projects, bound] = await Promise.all([
-    query<{ v: string }>(`select distinct t.value as v from catalog_systems s, jsonb_each_text(s.teams) t where t.value <> '' order by 1`),
-    query<{ v: string }>('select distinct project_name as v from catalog_systems order by 1'),
-    query<{ v: string }>(`select distinct subject as v from rbac_bindings where subject_type = 'group' order by 1`),
+    sqlRows<{ v: string }>(sql`select distinct t.value as v from ${catalogSystems} s, jsonb_each_text(s.teams) t where t.value <> '' order by 1`),
+    db.selectDistinct({ v: catalogSystems.projectName }).from(catalogSystems).orderBy(catalogSystems.projectName),
+    db.selectDistinct({ v: rbacBindings.subject }).from(rbacBindings).where(eq(rbacBindings.subjectType, 'group')).orderBy(rbacBindings.subject),
   ])
   const uniq = (values: string[]) => {
     const seen = new Set<string>()
     return values.filter((v) => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase())).sort((a, b) => a.localeCompare(b))
   }
-  const teamNames = uniq(teams.rows.map((r) => r.v))
+  const teamNames = uniq(teams.map((r) => r.v))
   return {
     teams: teamNames,
-    projects: uniq(projects.rows.map((r) => r.v)),
-    groups: uniq([config.APPROVER_GROUP, ...teamNames, ...bound.rows.map((r) => r.v)]),
+    projects: uniq(projects.map((r) => r.v)),
+    groups: uniq([config.APPROVER_GROUP, ...teamNames, ...bound.map((r) => r.v)]),
   }
 }
 
 export async function listAudit(limit = 500): Promise<AuditEntry[]> {
-  const { rows } = await query<{ id: string; at: Date; actor: string; action: AuditEntry['action']; binding: Binding | null; previous: Binding | null; target: string | null }>(
-    'select * from rbac_audit order by at desc, id desc limit $1',
-    [limit],
-  )
+  const rows = await db.select().from(rbacAudit).orderBy(desc(rbacAudit.at), desc(rbacAudit.id)).limit(limit)
   return rows.map((r) => ({ id: String(r.id), at: r.at.toISOString(), actor: r.actor, action: r.action, binding: r.binding, previous: r.previous ?? null, target: r.target }) as AuditEntry)
 }
 
 async function audit(actor: string, action: 'grant' | 'revoke', binding: Binding): Promise<void> {
-  await query('insert into rbac_audit (actor, action, binding) values ($1, $2, $3)', [actor, action, binding])
+  await db.insert(rbacAudit).values({ actor, action, binding })
 }
 
 /** Viewing as someone is recorded like a grant: who, whom, when. */
 export async function auditAssume(actor: string, target: string): Promise<void> {
-  await query(`insert into rbac_audit (actor, action, target) values ($1, 'assume', $2)`, [actor, target])
+  await db.insert(rbacAudit).values({ actor, action: 'assume', target })
 }
 
 /**
@@ -337,31 +353,11 @@ export async function explain(uid: string): Promise<Explanation> {
 
 // ---- rows --------------------------------------------------------------------
 
-type BindingRow = {
-  id: string
-  subject_type: SubjectType
-  subject: string
-  role: string
-  scope_type: ScopeType
-  scope: string | null
-  reason: string | null
-  expires_at: Date | null
-  created_by: string
-  created_at: Date
-}
-
-function toBinding(row: BindingRow): Binding {
+function toBinding(row: typeof rbacBindings.$inferSelect): Binding {
   return {
-    id: row.id,
-    subjectType: row.subject_type,
-    subject: row.subject,
-    role: row.role,
-    scopeType: row.scope_type,
-    scope: row.scope,
-    reason: row.reason,
-    expiresAt: row.expires_at?.toISOString() ?? null,
-    createdBy: row.created_by,
-    createdAt: row.created_at.toISOString(),
+    ...row,
+    expiresAt: row.expiresAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
     builtIn: false,
   }
 }

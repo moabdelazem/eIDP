@@ -6,7 +6,9 @@ import { z } from 'zod'
 import * as jenkins from '../../integrations/jenkins/index.ts'
 import type { BuildDetail } from '../../integrations/jenkins/index.ts'
 import * as ollama from '../../integrations/ollama/index.ts'
-import { query } from '../../lib/db.ts'
+import { sql } from 'drizzle-orm'
+import { sqlRows } from '../../lib/db.ts'
+import { buildExplanations } from './schema.ts'
 import { ApiError } from '../../lib/errors.ts'
 import { exclusive } from '../../lib/locks.ts'
 import type { Actor } from '../../lib/actor.ts'
@@ -241,11 +243,8 @@ const inFlight = new Map<string, Promise<Explanation>>()
 export async function cached(job: string, number: number): Promise<Explanation | null> {
   const ai = ollama.ollamaConfig()
   if (!ai) return null
-  const { rows } = await query<ExplanationRow>(
-    `select * from build_explanations
-      where server = $1 and job = $2 and number = $3 and prompt_version = $4 and model = $5`,
-    [jenkins.jenkinsConfig().url, job, number, PROMPT_VERSION, ai.model],
-  )
+  const rows = await sqlRows<ExplanationRow>(sql`select * from ${buildExplanations}
+      where server = ${jenkins.jenkinsConfig().url} and job = ${job} and number = ${number} and prompt_version = ${PROMPT_VERSION} and model = ${ai.model}`)
   return rows[0] ? toExplanation(rows[0]) : null
 }
 
@@ -257,12 +256,9 @@ export async function keptFor(builds: { job: string; number: number }[]): Promis
   const ai = ollama.ollamaConfig()
   const found = new Map<string, Brief>()
   if (!ai || builds.length === 0) return found
-  const { rows } = await query<ExplanationRow & { job: string; number: number }>(
-    `select e.* from build_explanations e
-       join unnest($4::text[], $5::int[]) as b(job, number) on b.job = e.job and b.number = e.number
-      where e.server = $1 and e.prompt_version = $2 and e.model = $3`,
-    [jenkins.jenkinsConfig().url, PROMPT_VERSION, ai.model, builds.map((b) => b.job), builds.map((b) => b.number)],
-  )
+  const rows = await sqlRows<ExplanationRow & { job: string; number: number }>(sql`select e.* from ${buildExplanations} e
+       join unnest(${sql.param(builds.map((b) => b.job))}::text[], ${sql.param(builds.map((b) => b.number))}::int[]) as b(job, number) on b.job = e.job and b.number = e.number
+      where e.server = ${jenkins.jenkinsConfig().url} and e.prompt_version = ${PROMPT_VERSION} and e.model = ${ai.model}`)
   for (const row of rows) {
     const { summary, category, confidence, nextSteps, createdAt, automatic } = toExplanation(row)
     found.set(`${row.job}#${row.number}`, { summary, category, confidence, nextSteps, createdAt, automatic })
@@ -322,17 +318,14 @@ async function ask(job: string, number: number, actor: Actor): Promise<Explanati
   }
   const trimmed = log.truncated || part.trimmed
 
-  const { rows } = await query<ExplanationRow>(
-    `insert into build_explanations
+  const rows = await sqlRows<ExplanationRow>(sql`insert into ${buildExplanations}
        (server, job, number, prompt_version, model, explanation, trimmed, prompt_tokens, duration_ms, created_by, created_by_name)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     values (${jenkins.jenkinsConfig().url}, ${job}, ${number}, ${PROMPT_VERSION}, ${ai.model}, ${explanation}, ${trimmed}, ${answer.promptTokens}, ${answer.durationMs}, ${actor.uid}, ${actor.name})
      on conflict (server, job, number, prompt_version, model) do update set
        explanation = excluded.explanation, trimmed = excluded.trimmed, prompt_tokens = excluded.prompt_tokens,
        duration_ms = excluded.duration_ms, created_by = excluded.created_by,
        created_by_name = excluded.created_by_name, created_at = now()
-     returning *`,
-    [jenkins.jenkinsConfig().url, job, number, PROMPT_VERSION, ai.model, explanation, trimmed, answer.promptTokens, answer.durationMs, actor.uid, actor.name],
-  )
+     returning *`)
   return toExplanation(rows[0]!)
 }
 

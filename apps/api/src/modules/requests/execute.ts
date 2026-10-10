@@ -1,9 +1,11 @@
 import type { RequestRecord } from '@eidp/contracts/requests'
 import { addToProjectGroup, createProject, createRepository, findIdentity, grantRepository, webUrlFor, type Principal } from '../../integrations/ado/index.ts'
-import { query } from '../../lib/db.ts'
+import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
+import { db } from '../../lib/db.ts'
 import { executeGrant } from './grant.ts'
 import { executeJiraProject } from './jira-project.ts'
-import { existingRepository, recordCreated, withContext } from './steps.ts'
+import { existingRepository, recordCompleted, recordCreated, withContext } from './steps.ts'
+import { requests } from './schema.ts'
 import { log } from '../../lib/log.ts'
 
 /**
@@ -14,13 +16,17 @@ import { log } from '../../lib/log.ts'
  * crash is noticed without waiting for a restart.
  */
 export async function recoverInterrupted(): Promise<number> {
-  const { rowCount } = await query(
-    `update requests set status = 'failed',
-            error = 'The portal restarted before this finished. Retry to try again.'
-      where status = 'approved' and (heartbeat_at is null or heartbeat_at < now() - make_interval(secs => $1))`,
-    [HEARTBEAT_STALE_MS / 1000],
-  )
-  return rowCount ?? 0
+  const failed = await db
+    .update(requests)
+    .set({ status: 'failed', error: 'The portal restarted before this finished. Retry to try again.' })
+    .where(
+      and(
+        eq(requests.status, 'approved'),
+        or(isNull(requests.heartbeatAt), lt(requests.heartbeatAt, sql`now() - make_interval(secs => ${HEARTBEAT_STALE_MS / 1000})`)),
+      ),
+    )
+    .returning({ id: requests.id })
+  return failed.length
 }
 
 /** How often a creation in progress says so, and how long before silence means it stopped. */
@@ -29,7 +35,8 @@ const HEARTBEAT_STALE_MS = 3 * HEARTBEAT_MS
 
 /** Does the work while saying so, so recovery can tell live work from work a dead process left. */
 export async function execute(request: RequestRecord): Promise<void> {
-  const beat = () => query('update requests set heartbeat_at = now() where id = $1', [request.id])
+  const heartbeat = (at: ReturnType<typeof sql> | null) => db.update(requests).set({ heartbeatAt: at }).where(eq(requests.id, request.id))
+  const beat = () => heartbeat(sql`now()`)
   await beat().catch(() => {})
   const timer = setInterval(() => void beat().catch(() => {}), HEARTBEAT_MS)
   timer.unref()
@@ -37,7 +44,7 @@ export async function execute(request: RequestRecord): Promise<void> {
     await perform(request)
   } finally {
     clearInterval(timer)
-    await query('update requests set heartbeat_at = null where id = $1', [request.id]).catch(() => {})
+    await heartbeat(null).catch(() => {})
   }
 }
 
@@ -81,14 +88,10 @@ async function perform(request: RequestRecord): Promise<void> {
         addToProjectGroup(collection, project.name, 'Contributors', principals),
       )
     }
-    await query(
-      `update requests set status = 'completed', completed_at = now(), result_url = $2, error = null
-        where id = $1`,
-      [request.id, resultUrl],
-    )
+    await recordCompleted(request.id, resultUrl)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     log.error('request failed', { request: request.id, error: message })
-    await query(`update requests set status = 'failed', error = $2 where id = $1`, [request.id, message])
+    await db.update(requests).set({ status: 'failed', error: message }).where(eq(requests.id, request.id))
   }
 }

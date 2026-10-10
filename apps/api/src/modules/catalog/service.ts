@@ -1,12 +1,15 @@
 import type { ApplicationDetail, CatalogApplication, CatalogSystem, SyncState } from '@eidp/contracts/catalog'
 export type { ApplicationDetail, CatalogApplication, CatalogSystem, SyncState }
 import { config } from '../../lib/config.ts'
-import { query, transaction } from '../../lib/db.ts'
+import { asc, eq, sql } from 'drizzle-orm'
+import type { PgUpdateSetSource } from 'drizzle-orm/pg-core'
+import { db } from '../../lib/db.ts'
 import { cloneOrUpdate, headCommit } from '../../integrations/ado/index.ts'
 import { parseInventories, type InventorySystem } from '../../integrations/inventories/parse.ts'
 import { ApiError } from '../../lib/errors.ts'
 import { exclusive } from '../../lib/locks.ts'
 import { log } from '../../lib/log.ts'
+import { catalogApplications, catalogSync, catalogSystems } from './schema.ts'
 
 /**
  * Pulls the inventories repo and rebuilds the catalog from it.
@@ -50,7 +53,9 @@ async function runSync(): Promise<SyncState> {
     )
   }
 
-  await query('update catalog_sync set started_at = now(), error = null where id = 1')
+  // One row, id 1: the outcome of the last sync.
+  const state = (set: PgUpdateSetSource<typeof catalogSync>) => db.update(catalogSync).set(set).where(eq(catalogSync.id, 1))
+  await state({ startedAt: sql`now()`, error: null })
 
   try {
     const checkout = config.INVENTORIES_CHECKOUT
@@ -70,18 +75,10 @@ async function runSync(): Promise<SyncState> {
     }
 
     await writeCatalog(systems)
-    await query(
-      `update catalog_sync
-          set finished_at = now(), commit_sha = $1, ok = true, error = null, warnings = $2
-        where id = 1`,
-      [commit, JSON.stringify(warnings)],
-    )
+    await state({ finishedAt: sql`now()`, commitSha: commit, ok: true, error: null, warnings })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    await query(
-      'update catalog_sync set finished_at = now(), ok = false, error = $1 where id = 1',
-      [message],
-    )
+    await state({ finishedAt: sql`now()`, ok: false, error: message })
     throw err
   }
 
@@ -89,114 +86,72 @@ async function runSync(): Promise<SyncState> {
 }
 
 export async function writeCatalog(systems: InventorySystem[]): Promise<void> {
-  await transaction(async (client) => {
+  await db.transaction(async (tx) => {
     // Applications cascade from systems, so one delete clears both.
-    await client.query('delete from catalog_systems')
-
+    await tx.delete(catalogSystems)
     for (const system of systems) {
-      await client.query(
-        `insert into catalog_systems
-           (dir, project_name, company, teams, approvers, managers, ops_teams, policy)
-         values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [
-          system.dir,
-          system.projectName,
-          system.company,
-          JSON.stringify(system.teams),
-          system.approvers,
-          system.managers,
-          system.opsTeams,
-          JSON.stringify(system.policy),
-        ],
+      const { dir, projectName, company, teams, approvers, managers, opsTeams, policy } = system
+      await tx.insert(catalogSystems).values({ dir, projectName, company, teams, approvers, managers, opsTeams, policy })
+      if (system.applications.length === 0) continue
+      await tx.insert(catalogApplications).values(
+        system.applications.map((app) => ({
+          id: `${system.dir}/${app.group}`,
+          systemDir: system.dir,
+          groupName: app.group,
+          name: app.name,
+          environment: app.environment,
+          repository: app.repository,
+          buildTechnology: app.buildTechnology,
+          deployTechnology: app.deployTechnology,
+          deployPlatform: app.deployPlatform,
+          appType: app.appType,
+          microservice: app.microservice,
+          technologies: app.technologies,
+          descriptor: app.descriptor,
+        })),
       )
-
-      for (const app of system.applications) {
-        await client.query(
-          `insert into catalog_applications
-             (id, system_dir, group_name, name, environment, repository,
-              build_technology, deploy_technology, deploy_platform, app_type,
-              microservice, technologies, descriptor)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-          [
-            `${system.dir}/${app.group}`,
-            system.dir,
-            app.group,
-            app.name,
-            app.environment,
-            app.repository,
-            app.buildTechnology,
-            app.deployTechnology,
-            app.deployPlatform,
-            app.appType,
-            app.microservice,
-            app.technologies,
-            JSON.stringify(app.descriptor),
-          ],
-        )
-      }
     }
   })
 }
 
 export async function readSyncState(): Promise<SyncState> {
-  const { rows } = await query<{
-    started_at: Date | null
-    finished_at: Date | null
-    commit_sha: string | null
-    ok: boolean
-    error: string | null
-    warnings: string[] | null
-  }>('select started_at, finished_at, commit_sha, ok, error, warnings from catalog_sync where id = 1')
-
-  const row = rows[0]
+  const [row] = await db.select().from(catalogSync).where(eq(catalogSync.id, 1))
   return {
-    startedAt: row?.started_at?.toISOString() ?? null,
-    finishedAt: row?.finished_at?.toISOString() ?? null,
-    commit: row?.commit_sha ?? null,
+    startedAt: row?.startedAt?.toISOString() ?? null,
+    finishedAt: row?.finishedAt?.toISOString() ?? null,
+    commit: row?.commitSha ?? null,
     ok: row?.ok ?? false,
     error: row?.error ?? null,
     warnings: row?.warnings ?? [],
   }
 }
 
+/** A stored application as the list shows it. */
+const listed = (row: typeof catalogApplications.$inferSelect): CatalogApplication => ({
+  id: row.id,
+  name: row.name,
+  group: row.groupName,
+  environment: row.environment,
+  repository: row.repository,
+  buildTechnology: row.buildTechnology,
+  deployTechnology: row.deployTechnology,
+  deployPlatform: row.deployPlatform,
+  appType: row.appType,
+  microservice: row.microservice,
+  technologies: row.technologies,
+})
+
 /**
  * One application's rows — the base and each environment override — with the
  * full configuration the list view leaves out. Base first, then environments.
  */
 export async function readApplication(system: string, name: string): Promise<ApplicationDetail[]> {
-  const { rows } = await query<{
-    id: string
-    group_name: string
-    name: string
-    environment: string | null
-    repository: string | null
-    build_technology: string | null
-    deploy_technology: string | null
-    deploy_platform: string | null
-    app_type: string | null
-    microservice: boolean | null
-    technologies: string[]
-    descriptor: Record<string, unknown>
-  }>(
-    `select * from catalog_applications
-      where system_dir = $1 and name = $2
-      order by environment nulls first, environment`,
-    [system, name],
-  )
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    group: row.group_name,
-    environment: row.environment,
-    repository: row.repository,
-    buildTechnology: row.build_technology,
-    deployTechnology: row.deploy_technology,
-    deployPlatform: row.deploy_platform,
-    appType: row.app_type,
-    microservice: row.microservice,
-    technologies: row.technologies,
-    descriptor: row.descriptor ?? {},
-  }))
+  const rows = await db
+    .select()
+    .from(catalogApplications)
+    .where(sql`${catalogApplications.systemDir} = ${system} and ${catalogApplications.name} = ${name}`)
+    .orderBy(sql`${catalogApplications.environment} nulls first`)
+  return rows.map((row) => ({ ...listed(row), descriptor: row.descriptor ?? {} }))
 }
 
 /**
@@ -206,52 +161,20 @@ export async function readApplication(system: string, name: string): Promise<App
  */
 export async function readCatalog(): Promise<CatalogSystem[]> {
   const [systems, applications] = await Promise.all([
-    query<{
-      dir: string
-      project_name: string
-      company: string | null
-      teams: Record<string, string>
-      approvers: string[]
-      managers: string[]
-    }>('select dir, project_name, company, teams, approvers, managers from catalog_systems order by project_name'),
-    query<{
-      id: string
-      system_dir: string
-      group_name: string
-      name: string
-      environment: string | null
-      repository: string | null
-      build_technology: string | null
-      deploy_technology: string | null
-      deploy_platform: string | null
-      app_type: string | null
-      microservice: boolean | null
-      technologies: string[]
-    }>('select * from catalog_applications order by name, environment nulls first'),
+    db.select().from(catalogSystems).orderBy(asc(catalogSystems.projectName)),
+    db.select().from(catalogApplications).orderBy(asc(catalogApplications.name), sql`${catalogApplications.environment} nulls first`),
   ])
 
   const bySystem = new Map<string, CatalogApplication[]>()
-  for (const row of applications.rows) {
-    const list = bySystem.get(row.system_dir) ?? []
-    list.push({
-      id: row.id,
-      name: row.name,
-      group: row.group_name,
-      environment: row.environment,
-      repository: row.repository,
-      buildTechnology: row.build_technology,
-      deployTechnology: row.deploy_technology,
-      deployPlatform: row.deploy_platform,
-      appType: row.app_type,
-      microservice: row.microservice,
-      technologies: row.technologies,
-    })
-    bySystem.set(row.system_dir, list)
+  for (const row of applications) {
+    const list = bySystem.get(row.systemDir) ?? []
+    list.push(listed(row))
+    bySystem.set(row.systemDir, list)
   }
 
-  return systems.rows.map((row) => ({
+  return systems.map((row) => ({
     id: row.dir,
-    projectName: row.project_name,
+    projectName: row.projectName,
     company: row.company,
     teams: row.teams ?? {},
     approvers: row.approvers ?? [],

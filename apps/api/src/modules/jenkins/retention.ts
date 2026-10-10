@@ -1,5 +1,17 @@
+import { and, eq, lt, ne, sql, type SQL } from 'drizzle-orm'
 import { config } from '../../lib/config.ts'
-import { query } from '../../lib/db.ts'
+import { db } from '../../lib/db.ts'
+import {
+  buildExplainAttempts,
+  buildExplanations,
+  jenkinsAccessSync,
+  jenkinsAudit,
+  jenkinsBuilds,
+  jenkinsIgnored,
+  jenkinsJobAccess,
+  jenkinsJobs,
+  jenkinsSync,
+} from './schema.ts'
 
 /**
  * Jenkins history is derived data and the busiest thing the portal stores —
@@ -45,59 +57,59 @@ async function prune(): Promise<Pruned> {
   // As the sync keys it (jenkinsConfig): the URL without its trailing slashes.
   const current = config.JENKINS_URL?.replace(/\/+$/, '') ?? null
 
+  const ago = sql`now() - make_interval(days => ${days})`
+
   // Released ignores first — see above.
-  const ignores = await count(
-    `delete from jenkins_ignored i
-      where (not i.until_pass and i.expires_at is not null and i.expires_at <= now())
-         or (i.until_pass and exists (
-              select 1 from jenkins_builds p
-               where p.server = i.server and p.job = i.job and p.number > i.from_number and p.result = 'success'))`,
-  )
+  const ignores = await count(sql`
+    delete from ${jenkinsIgnored} i
+     where (not i.until_pass and i.expires_at is not null and i.expires_at <= now())
+        or (i.until_pass and exists (
+             select 1 from ${jenkinsBuilds} p
+              where p.server = i.server and p.job = i.job and p.number > i.from_number and p.result = 'success'))`)
 
   // Per server, so each delete walks (server, started_at desc).
   let builds = 0
-  const { rows: servers } = await query<{ server: string }>('select distinct server from jenkins_builds')
+  const servers = await db.selectDistinct({ server: jenkinsBuilds.server }).from(jenkinsBuilds)
   for (const { server } of servers) {
     for (;;) {
-      const n = await count(
-        `delete from jenkins_builds where ctid in (
-           select ctid from jenkins_builds
-            where server = $1 and started_at < now() - make_interval(days => $2)
-            limit ${BATCH})`,
-        [server, days],
-      )
+      const n = await count(sql`
+        delete from ${jenkinsBuilds} where ctid in (
+          select ctid from ${jenkinsBuilds} where server = ${server} and started_at < ${ago} limit ${BATCH})`)
       builds += n
       if (n < BATCH) break
     }
   }
 
-  const orphan = (table: string, stamp: string) =>
-    count(
-      `delete from ${table} e
-        where e.${stamp} < now() - make_interval(days => $1)
-          and not exists (select 1 from jenkins_builds b where b.server = e.server and b.job = e.job and b.number = e.number)`,
-      [days],
-    )
-  const explanations = await orphan('build_explanations', 'created_at')
-  const attempts = await orphan('build_explain_attempts', 'last_attempt_at')
+  // An explanation, or a record of trying, older than the window whose build is gone too.
+  const orphan = (table: typeof buildExplanations | typeof buildExplainAttempts, stamp: SQL) =>
+    count(sql`
+      delete from ${table} e
+       where ${stamp} < ${ago}
+         and not exists (select 1 from ${jenkinsBuilds} b where b.server = e.server and b.job = e.job and b.number = e.number)`)
+  const explanations = await orphan(buildExplanations, sql`e.created_at`)
+  const attempts = await orphan(buildExplainAttempts, sql`e.last_attempt_at`)
 
-  const audit = await count(`delete from jenkins_audit where at < now() - make_interval(days => $1)`, [config.JENKINS_AUDIT_RETENTION_DAYS])
+  const audit = await count(sql`delete from ${jenkinsAudit} where at < now() - make_interval(days => ${config.JENKINS_AUDIT_RETENTION_DAYS})`)
 
   // A server nobody has read within the window, and not the one configured now.
-  const { rows: gone } = await query<{ server: string }>(
-    `select server from jenkins_sync
-      where ($1::text is null or server <> $1) and coalesce(finished_at, started_at) < now() - make_interval(days => $2)`,
-    [current, days],
-  )
+  const gone = await db
+    .select({ server: jenkinsSync.server })
+    .from(jenkinsSync)
+    .where(and(current === null ? undefined : ne(jenkinsSync.server, current), lt(sql`coalesce(${jenkinsSync.finishedAt}, ${jenkinsSync.startedAt})`, ago)))
   for (const { server } of gone) {
-    for (const table of ['jenkins_jobs', 'jenkins_job_access', 'jenkins_access_sync', 'jenkins_ignored', 'jenkins_sync']) {
-      await query(`delete from ${table} where server = $1`, [server])
-    }
+    await db.transaction(async (tx) => {
+      await tx.delete(jenkinsJobs).where(eq(jenkinsJobs.server, server))
+      await tx.delete(jenkinsJobAccess).where(eq(jenkinsJobAccess.server, server))
+      await tx.delete(jenkinsAccessSync).where(eq(jenkinsAccessSync.server, server))
+      await tx.delete(jenkinsIgnored).where(eq(jenkinsIgnored.server, server))
+      await tx.delete(jenkinsSync).where(eq(jenkinsSync.server, server))
+    })
   }
 
   return { builds, explanations, attempts, audit, ignores, servers: gone.length }
 }
 
-async function count(sql: string, params: unknown[] = []): Promise<number> {
-  return (await query(sql, params)).rowCount ?? 0
+/** Rows a statement touched. */
+async function count(statement: SQL): Promise<number> {
+  return (await db.execute(statement)).rowCount ?? 0
 }

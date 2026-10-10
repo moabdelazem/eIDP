@@ -271,8 +271,6 @@ alter table jenkins_builds add column if not exists authors text[] not null defa
 alter table jenkins_builds add column if not exists agent_checked boolean not null default false;
 
 create index if not exists jenkins_builds_started_idx on jenkins_builds (server, started_at desc);
--- For the hourly retention (services/jenkins-retention.ts).
-create index if not exists build_explanations_created_idx on build_explanations (created_at);
 create index if not exists jenkins_audit_at_idx on jenkins_audit (at);
 create index if not exists jenkins_builds_running_idx on jenkins_builds (server, job) where result = 'running';
 
@@ -338,6 +336,8 @@ create table if not exists build_explanations (
   created_at       timestamptz not null default now(),
   primary key (server, job, number, prompt_version, model)
 );
+-- For the hourly retention (services/jenkins-retention.ts).
+create index if not exists build_explanations_created_idx on build_explanations (created_at);
 
 -- The assistant's conversations. Each belongs to one person, who alone can
 -- read it; deleting it deletes its messages. Tool results are not kept —

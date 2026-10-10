@@ -1,7 +1,9 @@
 import * as jenkins from '../../integrations/jenkins/index.ts'
 import * as ollama from '../../integrations/ollama/index.ts'
 import { config } from '../../lib/config.ts'
-import { query } from '../../lib/db.ts'
+import { sql } from 'drizzle-orm'
+import { sqlRows } from '../../lib/db.ts'
+import { buildExplainAttempts, buildExplanations, jenkinsBuilds, jenkinsIgnored, jenkinsJobs } from './schema.ts'
 import { ApiError } from '../../lib/errors.ts'
 import { explain, PROMPT_VERSION } from './explainer.ts'
 import { IGNORE_HOLDS } from './service.ts'
@@ -82,43 +84,37 @@ async function run(): Promise<{ explained: number; failed: number }> {
  */
 async function candidates(limit: number, only?: { job: string; number: number }): Promise<{ job: string; number: number }[]> {
   const ai = ollama.ollamaConfig()!
-  const { rows } = await query<{ job: string; number: number }>(
-    `with latest as (
+  const rows = await sqlRows<{ job: string; number: number }>(sql`with latest as (
        select distinct on (b.job) b.job, b.number, b.result, b.started_at
-         from jenkins_builds b
-         join jenkins_jobs j on j.server = b.server and j.full_name = b.job
-        where b.server = $1 and b.result not in ('running', 'not_built')
+         from ${jenkinsBuilds} b
+         join ${jenkinsJobs} j on j.server = b.server and j.full_name = b.job
+        where b.server = ${jenkins.jenkinsConfig().url} and b.result not in ('running', 'not_built')
         order by b.job, b.number desc
      )
      select l.job, l.number from latest l
       where l.result in ('failure', 'unstable')
-        and l.started_at >= now() - make_interval(hours => $2)
-        and ($6::text is null or (l.job = $6 and l.number = $7))
+        and l.started_at >= now() - make_interval(hours => ${config.OLLAMA_AUTO_EXPLAIN_HOURS})
+        and (${only?.job ?? null}::text is null or (l.job = ${only?.job ?? null} and l.number = ${only?.number ?? null}))
         -- Set aside on purpose: no GPU time for it.
-        and not exists (select 1 from jenkins_ignored i where i.server = $1 and i.job = l.job and ${IGNORE_HOLDS})
+        and not exists (select 1 from ${jenkinsIgnored} i where i.server = ${jenkins.jenkinsConfig().url} and i.job = l.job and ${IGNORE_HOLDS})
         and not exists (
-          select 1 from build_explanations e
-           where e.server = $1 and e.job = l.job and e.number = l.number and e.prompt_version = $3 and e.model = $4)
+          select 1 from ${buildExplanations} e
+           where e.server = ${jenkins.jenkinsConfig().url} and e.job = l.job and e.number = l.number and e.prompt_version = ${PROMPT_VERSION} and e.model = ${ai.model})
         and not exists (
-          select 1 from build_explain_attempts a
-           where a.server = $1 and a.job = l.job and a.number = l.number and a.prompt_version = $3 and a.model = $4
+          select 1 from ${buildExplainAttempts} a
+           where a.server = ${jenkins.jenkinsConfig().url} and a.job = l.job and a.number = l.number and a.prompt_version = ${PROMPT_VERSION} and a.model = ${ai.model}
              and (a.attempts >= ${MAX_ATTEMPTS} or a.last_attempt_at > now() - make_interval(mins => ${RETRY_AFTER_MINUTES})))
       order by l.started_at desc
-      limit $5`,
-    [jenkins.jenkinsConfig().url, config.OLLAMA_AUTO_EXPLAIN_HOURS, PROMPT_VERSION, ai.model, limit, only?.job ?? null, only?.number ?? null],
-  )
+      limit ${limit}`)
   return rows
 }
 
 async function recordFailure(job: string, number: number, error: string): Promise<void> {
   const ai = ollama.ollamaConfig()!
-  await query(
-    `insert into build_explain_attempts (server, job, number, prompt_version, model, attempts, last_error)
-     values ($1, $2, $3, $4, $5, 1, $6)
+  await sqlRows(sql`insert into ${buildExplainAttempts} (server, job, number, prompt_version, model, attempts, last_error)
+     values (${jenkins.jenkinsConfig().url}, ${job}, ${number}, ${PROMPT_VERSION}, ${ai.model}, 1, ${error.slice(0, 1000)})
      on conflict (server, job, number, prompt_version, model) do update set
-       attempts = build_explain_attempts.attempts + 1, last_error = excluded.last_error, last_attempt_at = now()`,
-    [jenkins.jenkinsConfig().url, job, number, PROMPT_VERSION, ai.model, error.slice(0, 1000)],
-  )
+       attempts = build_explain_attempts.attempts + 1, last_error = excluded.last_error, last_attempt_at = now()`)
 }
 
 /**
@@ -130,11 +126,8 @@ async function recordFailure(job: string, number: number, error: string): Promis
 export async function status(job: string, number: number): Promise<{ state: 'queued' | 'failed' | 'off'; error: string | null }> {
   if (!enabled()) return { state: 'off', error: null }
   const ai = ollama.ollamaConfig()!
-  const { rows } = await query<{ attempts: number; last_error: string | null }>(
-    `select attempts, last_error from build_explain_attempts
-      where server = $1 and job = $2 and number = $3 and prompt_version = $4 and model = $5`,
-    [jenkins.jenkinsConfig().url, job, number, PROMPT_VERSION, ai.model],
-  )
+  const rows = await sqlRows<{ attempts: number; last_error: string | null }>(sql`select attempts, last_error from ${buildExplainAttempts}
+      where server = ${jenkins.jenkinsConfig().url} and job = ${job} and number = ${number} and prompt_version = ${PROMPT_VERSION} and model = ${ai.model}`)
   if ((await candidates(1, { job, number })).length > 0) return { state: 'queued', error: null }
   if (rows[0]) return { state: 'failed', error: rows[0].last_error }
   return { state: 'off', error: null }

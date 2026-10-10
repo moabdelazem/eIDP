@@ -18,6 +18,7 @@ pnpm workspace. `apps/*` and `packages/*`.
   | `modules/<name>/routes.ts` | HTTP shape: paths, validation, status codes | Mounted by `app.ts` alone; no business logic |
   | `modules/<name>/service.ts` (and its parts) | The area's logic | Knows nothing about HTTP |
   | `modules/<name>/jobs.ts` | The area's background jobs | Scheduled by `server.ts` from the index |
+  | `modules/<name>/schema.ts` | The area's tables, for Drizzle | Written by this module alone |
   | `integrations/<name>/` | One outside system, one folder | `index.ts` is the only entry point others import; knows no module |
   | `middleware/` | Cross-cutting request handling | Owns `AppEnv`, the typed context |
   | `lib/` | Config, db, errors, jobs, locks, log, metrics | No feature knowledge; knows no module |
@@ -65,7 +66,7 @@ pnpm workspace. `apps/*` and `packages/*`.
 - Node 24 — runs `.ts` directly via native type stripping. No tsx, no build
   step, no ts-node. `erasableSyntaxOnly` is on: no enums, no parameter
   properties, no namespaces.
-- Hono + `@hono/node-server`. Zod for env and request validation.
+- Hono + `@hono/node-server`. Drizzle ORM over `pg` for Postgres. Zod for env and request validation.
   `lib/config.ts` parses `process.env` once at boot, so a missing variable
   fails immediately with a readable message — read config from there, never
   `process.env` directly. Routes use `lib/validate.ts`, not `zValidator`, so
@@ -106,7 +107,8 @@ Each area's detail — what it does, why, and the traps it has hit — lives in
 The ones that have broken something before, or would quietly. Each doc says why.
 
 - **Config** comes from `lib/config.ts`, never `process.env`. Blank `.env` values are unset.
-- **A schema change is a new migration** in `lib/migrations/`; an applied file is frozen and editing it stops the boot. (`docs/platform.md`)
+- **A schema change is an edit to the module's `schema.ts` plus `pnpm --filter @eidp/api db:generate <name>`**, which writes the next migration into `lib/migrations/`; read it before committing. An applied file is frozen and editing it stops the boot; `lib/schema.test.ts` fails when the schema files and the migrations disagree. (`docs/platform.md`)
+- **Queries go through Drizzle** (`db` from `lib/db.ts`): the builder for rows, `sqlRows(sql\`…\`)` for SQL-shaped reads, arrays as `sql.param(list)`. A module writes only its own tables; it reads another's only through the tables that module's `index.ts` exports. (`docs/platform.md`)
 - **Background work is `schedule()`** in `server.ts` (`lib/jobs.ts`), never a bare `setInterval`: the API may run as several processes. (`docs/platform.md`)
 - **Work a person can start that must happen once goes through `lib/locks.ts`** (`exclusive`, `tryWithLock`), not a module-level promise or `Set` alone — those hold in one replica only. (`docs/platform.md`)
 - **Log with `lib/log.ts`**, never `console` (the CLI scripts aside): one line per event, fields not prose, and the request id rides along. (`docs/operations.md`)
@@ -128,6 +130,7 @@ pnpm dev                           # .env + containers + both apps
 pnpm test                          # all package tests
 pnpm --filter @eidp/api dev        # watch mode
 pnpm --filter @eidp/api typecheck  # tsc --noEmit
+pnpm --filter @eidp/api db:generate <name>  # schema.ts change → next migration
 pnpm --filter @eidp/api test       # needs openldap up
 pnpm --filter @eidp/web dev        # http://localhost:5173
 pnpm --filter @eidp/web build      # tsc -b && vite build

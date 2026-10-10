@@ -1,8 +1,10 @@
 import type { RequestRecord } from '@eidp/contracts/requests'
 import { listRepositories } from '../../integrations/ado/index.ts'
-import { query } from '../../lib/db.ts'
+import { eq, sql } from 'drizzle-orm'
+import { db } from '../../lib/db.ts'
 import { ApiError } from '../../lib/errors.ts'
 import { same } from './rows.ts'
+import { requests } from './schema.ts'
 
 /** Steps every executor shares: finding what a first attempt made, and recording it. */
 
@@ -14,7 +16,12 @@ export async function existingRepository(request: RequestRecord) {
 }
 
 export function recordCreated(id: string, resultUrl: string) {
-  return query('update requests set result_url = $2 where id = $1', [id, resultUrl])
+  return db.update(requests).set({ resultUrl }).where(eq(requests.id, id))
+}
+
+/** The request done: what was made is at `resultUrl`. */
+export function recordCompleted(id: string, resultUrl: string) {
+  return db.update(requests).set({ status: 'completed', completedAt: sql`now()`, resultUrl, error: null }).where(eq(requests.id, id))
 }
 
 /** Says what already happened when a later step fails, so DevOps know a retry only has to grant. */
