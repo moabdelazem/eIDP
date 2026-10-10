@@ -5,6 +5,8 @@ import { query, transaction } from '../lib/db.ts'
 import { cloneOrUpdate, headCommit } from '../integrations/ado/index.ts'
 import { parseInventories, type InventorySystem } from '../integrations/inventories/parse.ts'
 import { ApiError } from '../lib/errors.ts'
+import { exclusive } from '../lib/locks.ts'
+import { log } from '../lib/log.ts'
 
 /**
  * Pulls the inventories repo and rebuilds the catalog from it.
@@ -21,14 +23,22 @@ let inFlight: Promise<SyncState> | null = null
 
 /**
  * Pulls inventories and rebuilds the catalog. A sync already running is joined
- * rather than started twice: the timer and a DevOps click can overlap, and two
- * fetches into the same checkout fight over git's lock.
+ * rather than started twice — in this process or any other (`lib/locks.ts`):
+ * the timer and a DevOps click can overlap, two fetches into one checkout
+ * fight over git's lock, and two rebuilds would only do the same work.
  */
 export function syncCatalog(): Promise<SyncState> {
-  inFlight ??= runSync().finally(() => {
+  inFlight ??= exclusive('catalog-sync', runSync, finished).finally(() => {
     inFlight = null
   })
   return inFlight
+}
+
+/** Another process's sync, once it is done: its state, or its failure. */
+async function finished(): Promise<SyncState> {
+  const state = await readSyncState()
+  if (!state.ok) throw new ApiError(502, 'catalog_sync_failed', state.error ?? 'The catalog sync failed.')
+  return state
 }
 
 async function runSync(): Promise<SyncState> {
@@ -48,7 +58,7 @@ async function runSync(): Promise<SyncState> {
     const commit = await headCommit(checkout)
     const { systems, warnings } = await parseInventories(checkout)
     if (warnings.length > 0) {
-      console.warn(`catalog sync: skipped ${warnings.length} unreadable file(s):\n  ${warnings.join('\n  ')}`)
+      log.warn('catalog sync skipped unreadable files', { count: warnings.length, files: warnings })
     }
 
     if (systems.length === 0) {

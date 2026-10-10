@@ -130,8 +130,10 @@ async function adoRequest<T>(
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(config.HTTP_TIMEOUT_SECONDS * 1000),
     })
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.name === 'TimeoutError') throw new ApiError(504, 'ado_timeout', 'Azure DevOps took too long to answer.')
     throw new ApiError(502, 'ado_unreachable', 'Cannot reach Azure DevOps.')
   }
 

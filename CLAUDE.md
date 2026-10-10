@@ -90,6 +90,7 @@ Each area's detail — what it does, why, and the traps it has hit — lives in
 | [`docs/auth.md`](docs/auth.md) | LDAP sign-in, AD errors, the test users |
 | [`docs/running.md`](docs/running.md) | `scripts/dev.sh`, the dev image |
 | [`docs/deploy.md`](docs/deploy.md) | the production images, the Helm chart (`deploy/helm/eidp`), the HTTPRoute |
+| [`docs/operations.md`](docs/operations.md) | logs, metrics, readiness, shutdown, scaling out, what is and isn't highly available |
 
 ## Rules that break things
 
@@ -98,6 +99,8 @@ The ones that have broken something before, or would quietly. Each doc says why.
 - **Config** comes from `lib/config.ts`, never `process.env`. Blank `.env` values are unset.
 - **A schema change is a new migration** in `lib/migrations/`; an applied file is frozen and editing it stops the boot. (`docs/platform.md`)
 - **Background work is `schedule()`** in `server.ts` (`lib/jobs.ts`), never a bare `setInterval`: the API may run as several processes. (`docs/platform.md`)
+- **Work a person can start that must happen once goes through `lib/locks.ts`** (`exclusive`, `tryWithLock`), not a module-level promise or `Set` alone — those hold in one replica only. (`docs/platform.md`)
+- **Log with `lib/log.ts`**, never `console` (the CLI scripts aside): one line per event, fields not prose, and the request id rides along. (`docs/operations.md`)
 - **The API's JSON shapes live in `packages/contracts`**, imported with `import type` only; a contract file holds no values and imports nothing outside the package. Routes that add a field say what they send with `satisfies`. (`docs/web.md`)
 - **Reads go through `useResource(key, …)`**; the same key is the same request, so name keys for what they fetch. (`docs/web.md`)
 - **Pages are `lazyPage`s, charts and the stage graph are lazy too** — a static import puts them back in everyone's bundle. (`docs/web.md`)

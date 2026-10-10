@@ -11,9 +11,26 @@ serviceAccount:
   name: ""
   annotations: {}
 
+# Spread each Deployment's pods across nodes and zones, so losing one does
+# not take the portal with it. Soft: a small cluster still schedules them all.
+# A component's own topologySpreadConstraints replace this.
+spreadPods: true
+
+# Prometheus metrics from the API (lib/metrics.ts) on a port of their own, which
+# the HTTPRoute never exposes.
+metrics:
+  enabled: true
+  port: 9464
+  # A ServiceMonitor for the Prometheus Operator.
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    labels: {}
+
 # ---------------------------------------------------------------------------
-# The API (apps/api). Runs migrations at boot under an advisory lock and its
-# background jobs through leases, so it is safe with several replicas.
+# The API (apps/api). Runs migrations at boot under an advisory lock, its
+# background jobs through leases, and work people start (a sync, an AI
+# answer) once across replicas through locks in Postgres — so it scales out.
 # ---------------------------------------------------------------------------
 api:
   image:
@@ -30,6 +47,10 @@ api:
     APPROVER_GROUP: DEVOPS
     SYNC_INTERVAL_MINUTES: "30"
     SESSION_TTL_HOURS: "8"
+    # Connections per replica: replicas (up to autoscaling.maxReplicas) × this
+    # must fit in Postgres' max_connections.
+    DB_POOL_MAX: "10"
+    LOG_LEVEL: info
     # LDAP_URL: ldaps://dc01.example.com:636
     # LDAP_BASE_DN: dc=example,dc=com
     # LDAP_BIND_DN: svc-eidp@example.com
@@ -87,6 +108,11 @@ api:
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { memory: 768Mi }
+
+  # On a rollout or a drain the API reports not-ready, waits for the Gateway
+  # to notice (SHUTDOWN_DELAY_SECONDS, 5), then gives open requests
+  # SHUTDOWN_GRACE_SECONDS (20) to finish. This must cover both.
+  terminationGracePeriodSeconds: 40
 
   podAnnotations: {}
   podLabels: {}
@@ -189,3 +215,5 @@ postgresql:
 networkPolicy:
   enabled: false
   gatewayNamespace: envoy-gateway-system
+  # Where Prometheus runs, allowed to the metrics port.
+  metricsNamespace: monitoring

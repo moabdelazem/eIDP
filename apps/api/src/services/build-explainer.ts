@@ -8,6 +8,7 @@ import type { BuildDetail } from '../integrations/jenkins/index.ts'
 import * as ollama from '../integrations/ollama/index.ts'
 import { query } from '../lib/db.ts'
 import { ApiError } from '../lib/errors.ts'
+import { exclusive } from '../lib/locks.ts'
 import type { Actor } from './requests.ts'
 
 /**
@@ -271,7 +272,8 @@ export async function keptFor(builds: { job: string; number: number }[]): Promis
 
 /**
  * Explains a failed or unstable build: the kept answer unless `fresh`, else
- * one asked of the model now. Two calls for the same build share one answer.
+ * one asked of the model now. Two calls for the same build share one answer —
+ * on any replica: the second waits for the first and reads what it kept.
  */
 export function explain(job: string, number: number, actor: Actor, { fresh = false } = {}): Promise<Explanation> {
   const key = `${job}#${number}`
@@ -282,7 +284,7 @@ export function explain(job: string, number: number, actor: Actor, { fresh = fal
       const kept = await cached(job, number)
       if (kept) return kept
     }
-    return ask(job, number, actor)
+    return exclusive(`explain:${jenkins.jenkinsConfig().url}|${key}`, () => ask(job, number, actor), () => cached(job, number))
   })().finally(() => inFlight.delete(key))
   inFlight.set(key, work)
   return work

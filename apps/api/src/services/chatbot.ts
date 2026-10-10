@@ -5,6 +5,7 @@ import * as ollama from '../integrations/ollama/index.ts'
 import type { Message } from '../integrations/ollama/index.ts'
 import { query } from '../lib/db.ts'
 import { ApiError } from '../lib/errors.ts'
+import { isLocked, tryWithLock } from '../lib/locks.ts'
 import * as activity from './activity.ts'
 import { runTool, toolsFor } from './chatbot-tools.ts'
 import type { Me } from './pipelines.ts'
@@ -34,8 +35,12 @@ How to answer:
 - Link what you mention with the "link" the tools give, as markdown: [name](/path).
 - Lead with the answer. Be brief and concrete: short paragraphs, short lists, a table when comparing several things. Answer in the language of the question.`
 
-/** One answer at a time per person: a model on a shared GPU is not a queue for one user's tabs. */
-const answering = new Set<string>()
+/**
+ * One answer at a time per person: a model on a shared GPU is not a queue for
+ * one user's tabs. Held in Postgres (`lib/locks.ts`), so two tabs on two
+ * replicas are still one person.
+ */
+const answering = (uid: string) => `chatbot:${uid}`
 
 const busy = () => new ApiError(409, 'chatbot_busy', 'The chatbot is still answering your last question. Wait for it, or stop it.')
 
@@ -44,7 +49,7 @@ const busy = () => new ApiError(409, 'chatbot_busy', 'The chatbot is still answe
  * refusal is an ordinary error response rather than an event mid-stream.
  */
 export async function assertCanAsk(conversationId: string | null, uid: string, regenerate = false): Promise<void> {
-  if (answering.has(uid)) throw busy()
+  if (await isLocked(answering(uid))) throw busy()
   if (conversationId) await own(conversationId, uid)
   else if (regenerate) throw new ApiError(400, 'invalid_request', 'Name the conversation whose last answer to write again.')
 }
@@ -107,10 +112,8 @@ export async function ask(
   if (!ai) throw new ApiError(503, 'ollama_not_configured', 'The portal’s AI is not configured: OLLAMA_URL is not set.')
   const question = text.trim()
   if (!question && !regenerate) throw new ApiError(400, 'invalid_request', 'Ask something.')
-  if (answering.has(me.uid)) throw busy()
-  answering.add(me.uid)
   const actor: Actor = { uid: me.uid, name: me.name }
-  try {
+  const run = await tryWithLock(answering(me.uid), async () => {
     let conversation: Conversation
     let fresh = false
     if (regenerate) {
@@ -184,9 +187,8 @@ export async function ask(
       const titled = await nameIt(conversation.id, question, answer).catch(() => null)
       if (titled) await emit({ type: 'title', conversation: titled })
     }
-  } finally {
-    answering.delete(me.uid)
-  }
+  })
+  if (!run.held) throw busy()
 }
 
 const Title = z.object({ title: z.string().trim().min(2).max(80) })

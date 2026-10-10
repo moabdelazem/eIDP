@@ -4,6 +4,7 @@ import { query } from '../../lib/db.ts'
 import { executeGrant } from './grant.ts'
 import { executeJiraProject } from './jira-project.ts'
 import { existingRepository, recordCreated, withContext } from './steps.ts'
+import { log } from '../../lib/log.ts'
 
 /**
  * A request left `approved` whose heartbeat stopped was interrupted — its
@@ -87,7 +88,7 @@ async function perform(request: RequestRecord): Promise<void> {
     )
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    console.error(`request ${request.id} failed:`, message)
+    log.error('request failed', { request: request.id, error: message })
     await query(`update requests set status = 'failed', error = $2 where id = $1`, [request.id, message])
   }
 }

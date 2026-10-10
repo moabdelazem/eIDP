@@ -2,6 +2,7 @@ import { createMiddleware } from 'hono/factory'
 import { jwt } from 'hono/jwt'
 import { config } from '../lib/config.ts'
 import { ApiError } from '../lib/errors.ts'
+import { addLogContext } from '../lib/log.ts'
 import { accessOf, can, canSomewhere, describe, type Access, type Permission } from '../services/rbac.ts'
 import type { SessionClaims } from '../services/session.ts'
 
@@ -25,6 +26,8 @@ const verifyToken = jwt({ secret: config.JWT_SECRET, alg: 'HS256' })
 export const requireAuth = createMiddleware<AppEnv>((c, next) =>
   verifyToken(c, async () => {
     const actor = c.get('jwtPayload').act
+    // Who, on every line this request logs; an admin viewing as someone is both.
+    addLogContext({ uid: c.get('jwtPayload').sub, ...(actor ? { actor: actor.sub } : {}) })
     if (actor) {
       if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
         throw new ApiError(

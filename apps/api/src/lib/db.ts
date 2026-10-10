@@ -4,17 +4,36 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { config } from './config.ts'
+import { instance } from './instance.ts'
+import { gauge } from './metrics.ts'
+import { errorFields, log } from './log.ts'
 
 /**
  * One pool for the process. Queries go through `query`; anything that must be
  * all-or-nothing goes through `transaction`.
+ *
+ * Bounded every way a database outage could hang the API: waiting for a
+ * connection, and a statement running away. Each connection names its
+ * process, so `pg_stat_activity` says which replica a query came from.
  */
-const pool = new pg.Pool({ connectionString: config.DATABASE_URL, max: 8 })
+const pool = new pg.Pool({
+  connectionString: config.DATABASE_URL,
+  max: config.DB_POOL_MAX,
+  connectionTimeoutMillis: 5_000,
+  statement_timeout: config.DB_STATEMENT_TIMEOUT_SECONDS * 1000 || undefined,
+  application_name: `eidp-api ${instance}`.slice(0, 63),
+})
+
+gauge('eidp_db_pool_connections', 'Postgres connections in this process’s pool, by state.', () => [
+  { labels: { state: 'total' }, value: pool.totalCount },
+  { labels: { state: 'idle' }, value: pool.idleCount },
+  { labels: { state: 'waiting' }, value: pool.waitingCount },
+])
 
 pool.on('error', (err) => {
   // An idle client dying is not fatal — the pool replaces it — but silence
   // here turns a database outage into a mystery.
-  console.error('postgres pool error', err)
+  log.error('postgres pool error', errorFields(err))
 })
 
 export function query<T extends pg.QueryResultRow>(text: string, values: unknown[] = []) {
@@ -55,10 +74,14 @@ const NAME = /^\d{4}_[\w-]+\.sql$/
 export async function migrate(dir = MIGRATIONS): Promise<string[]> {
   const client = await pool.connect()
   try {
+    // A migration may rewrite a large table; the pool's statement limit is for requests.
+    await client.query('set statement_timeout = 0')
     await client.query('select pg_advisory_lock(4201)')
     return await migrateWith(client, dir)
   } finally {
     await client.query('select pg_advisory_unlock(4201)').catch(() => {})
+    // Back to the pool's limit before another caller gets this connection.
+    await client.query('reset statement_timeout').catch(() => {})
     client.release()
   }
 }
@@ -95,6 +118,16 @@ export async function migrateWith(client: pg.ClientBase, dir: string): Promise<s
     applied.push(name)
   }
   return applied
+}
+
+/** Whether Postgres answers, within `ms` — what readiness asks. */
+export async function pingDb(ms = 2_000): Promise<boolean> {
+  try {
+    await Promise.race([pool.query('select 1'), new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms).unref())])
+    return true
+  } catch {
+    return false
+  }
 }
 
 export async function closeDb(): Promise<void> {

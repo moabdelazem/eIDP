@@ -76,3 +76,24 @@ capabilities:
 seccompProfile:
   type: RuntimeDefault
 {{- end }}
+
+{{/*
+Soft spread across nodes and zones, unless the component names its own.
+Usage: include "eidp.spread" (dict "root" . "component" "api" "own" $api.topologySpreadConstraints)
+*/}}
+{{- define "eidp.spread" -}}
+{{- if .own }}
+topologySpreadConstraints:
+  {{- toYaml .own | nindent 2 }}
+{{- else if .root.Values.spreadPods }}
+topologySpreadConstraints:
+  {{- range $key := list "kubernetes.io/hostname" "topology.kubernetes.io/zone" }}
+  - maxSkew: 1
+    topologyKey: {{ $key }}
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        {{- include "eidp.selectorLabels" (dict "root" $.root "component" $.component) | nindent 8 }}
+  {{- end }}
+{{- end }}
+{{- end }}

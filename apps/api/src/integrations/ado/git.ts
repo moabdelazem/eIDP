@@ -4,7 +4,10 @@ import { dirname } from 'node:path'
 import { promisify } from 'node:util'
 import { adoConfig, authHeader } from './client.ts'
 
-const run = promisify(execFile)
+const exec = promisify(execFile)
+/** A fetch that stalls is killed rather than holding the catalog lock (lib/locks.ts) for good. */
+const GIT_TIMEOUT_MS = 5 * 60_000
+const run = (file: string, args: string[], options: { env?: NodeJS.ProcessEnv } = {}) => exec(file, args, { ...options, timeout: GIT_TIMEOUT_MS })
 
 /**
  * Clones or updates a repository into `checkout`.

@@ -6,6 +6,7 @@ import * as jira from '../integrations/jira/index.ts'
 import { dnOf, groupsOf, profileOf } from '../integrations/ldap/index.ts'
 import * as ollama from '../integrations/ollama/index.ts'
 import { query } from '../lib/db.ts'
+import { exclusive } from '../lib/locks.ts'
 import { teamsOwning } from './rbac.ts'
 import type { RequestRecord } from './requests.ts'
 
@@ -215,11 +216,14 @@ async function words(r: RequestRecord, facts: Fact[], level: RiskLevel): Promise
 
 const inFlight = new Map<string, Promise<Assessment>>()
 
-/** Assesses a request now — the facts always, the words when Ollama is there — and keeps it. */
+/**
+ * Assesses a request now — the facts always, the words when Ollama is there —
+ * and keeps it. Once across replicas: a second caller waits and reads it.
+ */
 export function assess(r: RequestRecord): Promise<Assessment> {
   const running = inFlight.get(r.id)
   if (running) return running
-  const work = (async () => {
+  const work = exclusive(`risk:${r.id}`, async () => {
     const facts = await factsFor(r)
     const level = levelOf(facts)
     let said: { summary: string; reasonConcerns: string[]; model: string } | null = null
@@ -242,7 +246,7 @@ export function assess(r: RequestRecord): Promise<Assessment> {
       [r.id, level, JSON.stringify(facts), said?.summary ?? null, JSON.stringify(said?.reasonConcerns ?? []), said?.model ?? null, RISK_PROMPT_VERSION, error],
     )
     return toAssessment(rows[0]!)
-  })().finally(() => inFlight.delete(r.id))
+  }, async () => (await assessmentsOf([r.id])).get(r.id) ?? null).finally(() => inFlight.delete(r.id))
   inFlight.set(r.id, work)
   return work
 }

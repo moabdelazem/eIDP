@@ -32,6 +32,7 @@ spec:
         {{- end }}
     spec:
       serviceAccountName: {{ include "eidp.serviceAccountName" . }}
+      terminationGracePeriodSeconds: {{ $api.terminationGracePeriodSeconds }}
       automountServiceAccountToken: false
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -52,6 +53,11 @@ spec:
             - name: http
               containerPort: 3000
               protocol: TCP
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            {{- end }}
           # Later sources win: the ConfigMap, the generated JWT secret, then
           # the operator's Secret. Vault, read at boot, wins over all of them.
           envFrom:
@@ -73,6 +79,8 @@ spec:
               value: "3000"
             - name: INVENTORIES_CHECKOUT
               value: /var/lib/eidp/inventories
+            - name: METRICS_PORT
+              value: {{ ternary .Values.metrics.port 0 .Values.metrics.enabled | quote }}
             {{- with $api.vault.auth.existingSecret }}
             # Token or AppRole, whichever the Secret holds.
             - name: VAULT_TOKEN
@@ -108,9 +116,12 @@ spec:
             httpGet: { path: /health, port: http }
             periodSeconds: 5
             failureThreshold: 60
+          # Ready means Postgres answers and the pod is not shutting down; a
+          # replica that loses the database leaves the rotation, not the node.
           readinessProbe:
-            httpGet: { path: /health, port: http }
-            periodSeconds: 10
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: 5
+            failureThreshold: 2
           livenessProbe:
             httpGet: { path: /health, port: http }
             periodSeconds: 20
@@ -147,7 +158,4 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with $api.topologySpreadConstraints }}
-      topologySpreadConstraints:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+      {{- include "eidp.spread" (dict "root" . "component" "api" "own" $api.topologySpreadConstraints) | nindent 6 }}

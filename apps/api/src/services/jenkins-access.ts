@@ -3,12 +3,13 @@ export type { AccessState }
 import * as jenkins from '../integrations/jenkins/index.ts'
 import { EVERYONE_SID, type SidType } from '../integrations/jenkins/index.ts'
 import { query, transaction } from '../lib/db.ts'
+import { exclusive } from '../lib/locks.ts'
 
 let inFlight: Promise<AccessState> | null = null
 
-/** Reads the rules now. A call while one runs joins it. */
+/** Reads the rules now. A call while one runs joins it, in this process or any other. */
 export function syncJenkinsAccess(): Promise<AccessState> {
-  inFlight ??= run().finally(() => {
+  inFlight ??= exclusive('jenkins-access', run, accessState).finally(() => {
     inFlight = null
   })
   return inFlight

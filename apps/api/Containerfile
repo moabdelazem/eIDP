@@ -30,7 +30,8 @@ ENV NODE_ENV=production \
     INVENTORIES_CHECKOUT=/var/lib/eidp/inventories
 WORKDIR /app/apps/api
 USER node
-EXPOSE 3000
+# The API, and its Prometheus metrics (METRICS_PORT).
+EXPOSE 3000 9464
 # tini forwards SIGTERM so a rollout stops the process cleanly.
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "src/index.ts"]

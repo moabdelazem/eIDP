@@ -7,8 +7,33 @@ import { z } from 'zod'
  */
 export const schema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
+  /** Prometheus metrics on their own port, never routed by the Gateway. 0 turns them off. */
+  METRICS_PORT: z.coerce.number().int().min(0).default(9464),
+  /**
+   * `json` — one object per line, for a log collector — or `text`. Unset, JSON
+   * when NODE_ENV is production. Read by `lib/log.ts` before this is parsed;
+   * declared here so it is checked and Vault may set it.
+   */
+  LOG_FORMAT: z.enum(['json', 'text']).optional(),
+  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  /**
+   * On SIGTERM the API reports not-ready at once, keeps serving for this long
+   * while the Gateway stops sending it requests, then stops taking new ones…
+   */
+  SHUTDOWN_DELAY_SECONDS: z.coerce.number().min(0).default(5),
+  /** …and gives requests in flight (a chatbot answer streaming) this long to finish. Keep both inside the pod's grace period. */
+  SHUTDOWN_GRACE_SECONDS: z.coerce.number().min(0).default(20),
+  /** How long a call to Jenkins, Jira or Azure DevOps may take before it is given up on. */
+  HTTP_TIMEOUT_SECONDS: z.coerce.number().positive().default(30),
 
   DATABASE_URL: z.string().min(1).default('postgresql://eidp:eidp@localhost:5432/eidp'),
+  /**
+   * Connections per API process. Replicas × this must stay under Postgres'
+   * max_connections (100 by default), with room for anything else using it.
+   */
+  DB_POOL_MAX: z.coerce.number().int().positive().default(10),
+  /** A query running longer than this is cancelled by Postgres. Migrations are exempt. */
+  DB_STATEMENT_TIMEOUT_SECONDS: z.coerce.number().min(0).default(60),
   /** Sync on boot and then on this interval. 0 disables the timer. */
   SYNC_INTERVAL_MINUTES: z.coerce.number().min(0).default(30),
 

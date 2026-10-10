@@ -91,4 +91,7 @@ Gateway to attach to.
 | `httpRoute.*` | Gateway, hostnames, `/api` request timeout, and the streaming paths with none |
 | `database.external.existingSecret` | A Secret with `DATABASE_URL`, when it is not in Vault or `api.secrets` |
 | `postgresql.enabled` | The chart's own single Postgres, for dev and test only |
-| `networkPolicy.enabled` | Only the Gateway's namespace reaches the pods; only the API reaches Postgres |
+| `networkPolicy.enabled` | Only the Gateway's namespace reaches the pods (and `metricsNamespace` the metrics port); only the API reaches Postgres |
+| `spreadPods` | Spread each Deployment across nodes and zones (soft); a component's own `topologySpreadConstraints` replace it |
+| `metrics.*` | The API's Prometheus metrics port (9464), and a `ServiceMonitor` for the Prometheus Operator |
+| `api.terminationGracePeriodSeconds` | Room for the API's graceful shutdown: `SHUTDOWN_DELAY_SECONDS` + `SHUTDOWN_GRACE_SECONDS`, with margin |

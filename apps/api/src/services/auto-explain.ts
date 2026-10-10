@@ -6,6 +6,7 @@ import { ApiError } from '../lib/errors.ts'
 import { explain, PROMPT_VERSION } from './build-explainer.ts'
 import { IGNORE_HOLDS } from './jenkins.ts'
 import type { Actor } from './requests.ts'
+import { log } from '../lib/log.ts'
 
 /**
  * Failed builds explained as they happen, so the answer is waiting when
@@ -64,7 +65,7 @@ async function run(): Promise<{ explained: number; failed: number }> {
     } catch (err) {
       const code = err instanceof ApiError ? err.code : ''
       if (OLLAMA_DOWN.has(code)) {
-        console.warn(`auto-explain: stopping, Ollama is unavailable (${code})`)
+        log.warn('auto-explain stopping: Ollama is unavailable', { code })
         break
       }
       failed++

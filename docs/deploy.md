@@ -33,9 +33,12 @@ heartbeats so a pod restarting never fails another pod's work
 (`docs/platform.md`). Sessions are HS256 JWTs, so every pod needs the same
 `JWT_SECRET`: the chart generates one into `<release>-eidp-api-generated`
 and keeps it across upgrades (`lookup`) and uninstalls
-(`helm.sh/resource-policy: keep`) — a new one would sign everyone out. Still
-per pod, and fine at that: the directory-group cache, the Jenkins queue
-cache, kept log tails and the chatbot's one-answer-at-a-time.
+(`helm.sh/resource-policy: keep`) — a new one would sign everyone out. Work
+people start — a sync, an AI answer, one person's chatbot answer — is held
+once across pods by locks in Postgres. Still per pod, and fine at that: the
+directory-group cache, the Jenkins queue cache and kept log tails. Pods are
+spread across nodes and zones (`spreadPods`); readiness, shutdown, logs and
+metrics are `docs/operations.md`.
 
 **Secrets: Vault, then Secrets, then nothing in a ConfigMap.** The API reads
 Vault at boot and what it reads wins over its environment
