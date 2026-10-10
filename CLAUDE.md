@@ -326,6 +326,25 @@ state is reported through `/catalog`. Stale data is still served; only an empty
 catalog is an error, and then the message carries the reason the last attempt
 failed.
 
+**Background work is jobs** (`lib/jobs.ts`, registered in `server.ts`):
+catalog sync, Jenkins sync (with auto-explain after it), Jenkins access,
+Jenkins and activity retention, weekly digests and request recovery. The API
+may run as several processes. Each keeps a timer per job, but a run first
+claims its row in `job_runs` — one `update … where` nobody is running it and
+its last start is an interval old — so each job runs in one process per
+interval. A lease, not an advisory lock: a lock lives on a connection, and
+one held per running job would starve the pool the jobs query. A lease older
+than `staleMs` (three intervals, at least 30 minutes) belonged to a process
+that died and may be taken over. A run that throws is logged and recorded and
+never stops the timer. A restart within an interval does not re-run what ran
+before it — a catalog sync is not repeated because the API came back up;
+with `SYNC_INTERVAL_MINUTES=0` it is still built once at boot. `GET
+/health/jobs` lists every job with when it last started and finished and
+whether it worked — names and times only, the error stays in the log and the
+row — for a monitor to read. Tests: `lib/jobs.test.ts` races two owners for
+one lease. The per-process caches (directory groups, Jenkins, the catalog's
+owners) stay per process; each is a minute or less of staleness.
+
 **The schema is migrations** (`lib/migrations/NNNN_name.sql`, run by
 `migrate()` in `lib/db.ts` at boot, before anything else). Each file is
 applied once, in order, in its own transaction with its row in
@@ -379,9 +398,10 @@ The rules that matter, each tested in `routes/requests.test.ts`:
   two people cannot race into asking for the same repository. Access requests
   are excluded: several people asking for the same access is normal.
 - **Creation runs after the approve call returns.** A project can take a minute
-  in ADO. `recoverInterrupted()` at boot fails anything left `approved`, which
-  only a restart mid-creation can leave behind — see its `ponytail:` note
-  before running more than one API process.
+  in ADO. While it works, the process stamps `heartbeat_at` every 30 s;
+  `recoverInterrupted()` — at boot and every minute as a job — fails only
+  `approved` rows whose heartbeat went quiet (90 s), so a dead process's work
+  surfaces for retry and another live process's work is left alone.
 - **ADO project creation is asynchronous.** The POST returns a queued
   operation; `createProject` polls it to the end rather than reporting success
   for something the server might still fail to create.
@@ -743,7 +763,7 @@ query can carry searches — once per person and path per 30 s, and grouped
 into the sidebar's sections in the API (`sectionOf`). Never while viewing as
 someone: the shell skips it and the API refuses the POST anyway, so an
 admin's look around is never put down to the person they viewed as. Kept
-`ACTIVITY_RETENTION_DAYS` (90), pruned hourly from `server.ts`.
+`ACTIVITY_RETENTION_DAYS` (90), pruned by the hourly `activity-retention` job.
 
 The page: six headline counts against the window before (24h/7d/30d), and an
 amber callout when one name is refused five or more times — a lockout in the
@@ -771,8 +791,8 @@ read next time rather than skipped. Every table is keyed by `server`, so the
 tests' fake Jenkins never touches a real server's rows. Queue and agents are
 still asked live (15-second cache): only "now" matters for them.
 
-**History is let go after a window** (`services/jenkins-retention.ts`, hourly
-from `server.ts`, single-flight), because builds with their parameters are
+**History is let go after a window** (`services/jenkins-retention.ts`, the hourly
+`jenkins-retention` job, single-flight), because builds with their parameters are
 the fastest-growing thing the portal stores. The sync only *stores* builds
 inside `JENKINS_RETENTION_DAYS`; deleting is the retention job's alone, and it
 covers what the sync never did: builds on **every** server (a changed

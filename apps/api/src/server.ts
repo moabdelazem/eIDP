@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server'
 import { createApp } from './app.ts'
 import { config } from './lib/config.ts'
 import { migrate } from './lib/db.ts'
+import { schedule } from './lib/jobs.ts'
 import { syncCatalog } from './services/catalog.ts'
 import { syncJenkins } from './services/jenkins-sync.ts'
 import { syncJenkinsAccess } from './services/jenkins-access.ts'
@@ -20,83 +21,90 @@ if (interrupted > 0) console.warn(`${interrupted} request(s) were interrupted by
 serve({ fetch: createApp().fetch, port: config.PORT })
 console.log(`api on http://localhost:${config.PORT}`)
 
-/**
- * The catalog refreshes in the background. A failure here must never stop the
- * API from serving — a stale or empty map is reported through /catalog, not by
- * refusing to start.
+/*
+ * Background work, through lib/jobs.ts: each job runs in one process per
+ * interval however many API processes are up, a failure is logged and
+ * recorded but never stops the API, and /health/jobs says how each last went.
  */
-function refreshCatalog(reason: string): void {
-  if (!config.INVENTORIES_PROJECT) return
-  syncCatalog()
-    .then((state) => console.log(`catalog sync (${reason}) ok at ${state.commit?.slice(0, 8)}`))
-    .catch((err) => console.error(`catalog sync (${reason}) failed:`, err.message))
-}
 
-refreshCatalog('boot')
-if (config.SYNC_INTERVAL_MINUTES > 0) {
-  setInterval(() => refreshCatalog('timer'), config.SYNC_INTERVAL_MINUTES * 60_000).unref()
-}
+const MINUTE = 60_000
+const jenkinsOn = Boolean(config.JENKINS_URL && config.JENKINS_USER && config.JENKINS_TOKEN)
 
-/**
- * Jenkins build history, pulled in the background for the Jenkins page. Like
- * the catalog, a failure is reported on the page (`jenkins_sync`), never by
- * refusing to serve.
- */
-if (config.JENKINS_URL && config.JENKINS_USER && config.JENKINS_TOKEN && config.JENKINS_SYNC_SECONDS > 0) {
-  // Each sync is followed by explaining the failures it found (auto-explain.ts),
-  // one at a time; a slow model never holds up the next sync's timer.
-  const refreshJenkins = () =>
-    syncJenkins()
-      .then(() => explainNewFailures())
-      .then(({ explained, failed }) => explained + failed > 0 && console.log(`auto-explain: ${explained} explained, ${failed} could not be`))
-      .catch((err) => console.error('jenkins sync failed:', err instanceof Error ? err.message : err))
-  void refreshJenkins()
-  setInterval(refreshJenkins, config.JENKINS_SYNC_SECONDS * 1000).unref()
+/** The catalog. A stale or empty map is reported through /catalog, not by refusing to start. */
+schedule({
+  name: 'catalog-sync',
+  everyMs: config.SYNC_INTERVAL_MINUTES * MINUTE,
+  enabled: Boolean(config.INVENTORIES_PROJECT),
+  run: async () => `ok at ${(await syncCatalog()).commit?.slice(0, 8)}`,
+})
+// With the timer off (0) the map is still built once at boot, as it always was.
+if (config.INVENTORIES_PROJECT && config.SYNC_INTERVAL_MINUTES <= 0) {
+  syncCatalog().catch((err) => console.error('catalog sync (boot) failed:', err instanceof Error ? err.message : err))
 }
 
 /**
- * Who Jenkins lets see which job, for My pipelines. Slower to change than
- * builds and costlier to read (one call per item under matrix), so on its own
- * timer. A failed read keeps the previous rules and reports why.
+ * Jenkins build history, then the failures it found explained (auto-explain.ts),
+ * one at a time. Reported on the page (`jenkins_sync`) when it fails.
  */
-if (config.JENKINS_URL && config.JENKINS_USER && config.JENKINS_TOKEN && config.JENKINS_ACCESS_SYNC_MINUTES > 0) {
-  const refreshAccess = () =>
-    syncJenkinsAccess()
-      .then((state) => !state.ok && console.error('jenkins access read failed:', state.error))
-      .catch((err) => console.error('jenkins access read failed:', err instanceof Error ? err.message : err))
-  void refreshAccess()
-  setInterval(refreshAccess, config.JENKINS_ACCESS_SYNC_MINUTES * 60_000).unref()
-}
+schedule({
+  name: 'jenkins-sync',
+  everyMs: config.JENKINS_SYNC_SECONDS * 1000,
+  enabled: jenkinsOn,
+  run: async () => {
+    await syncJenkins()
+    const { explained, failed } = await explainNewFailures()
+    return explained + failed > 0 ? `auto-explain: ${explained} explained, ${failed} could not be` : null
+  },
+})
 
-/** Jenkins history past JENKINS_RETENTION_DAYS goes, once an hour — whether or not Jenkins is still configured. */
-{
-  const prune = () =>
-    pruneJenkins()
-      .then((p) => {
-        const gone = Object.entries(p).filter(([, n]) => n > 0)
-        if (gone.length) console.log(`jenkins retention: deleted ${gone.map(([what, n]) => `${n} ${what}`).join(', ')}`)
-      })
-      .catch((err) => console.error('jenkins retention failed:', err instanceof Error ? err.message : err))
-  void prune()
-  setInterval(prune, 3_600_000).unref()
-}
+/** Who Jenkins lets see which job. A failed read keeps the previous rules and says why. */
+schedule({
+  name: 'jenkins-access',
+  everyMs: config.JENKINS_ACCESS_SYNC_MINUTES * MINUTE,
+  enabled: jenkinsOn,
+  run: async () => {
+    const state = await syncJenkinsAccess()
+    if (!state.ok) throw new Error(state.error ?? 'the read failed')
+    return null
+  },
+})
 
-/** Platform activity older than ACTIVITY_RETENTION_DAYS goes, once an hour. */
-{
-  const prune = () => pruneActivity().catch((err) => console.error('activity prune failed:', err instanceof Error ? err.message : err))
-  void prune()
-  setInterval(prune, 3_600_000).unref()
-}
+/** Jenkins history past JENKINS_RETENTION_DAYS — whether or not Jenkins is still configured. */
+schedule({
+  name: 'jenkins-retention',
+  everyMs: 60 * MINUTE,
+  run: async () => {
+    const gone = Object.entries(await pruneJenkins()).filter(([, n]) => n > 0)
+    return gone.length ? `deleted ${gone.map(([what, n]) => `${n} ${what}`).join(', ')}` : null
+  },
+})
 
-/**
- * Last week's digest for every team, once the week is over. Looks every
- * DIGEST_CHECK_MINUTES, so a restart over the weekend still writes Monday's.
- */
-if (config.DIGEST_CHECK_MINUTES > 0) {
-  const write = () =>
-    generateDue()
-      .then(({ made, failed }) => made + failed > 0 && console.log(`weekly digests: ${made} written, ${failed} could not be`))
-      .catch((err) => console.error('weekly digests failed:', err instanceof Error ? err.message : err))
-  void write()
-  setInterval(write, config.DIGEST_CHECK_MINUTES * 60_000).unref()
-}
+/** Platform activity older than ACTIVITY_RETENTION_DAYS. */
+schedule({
+  name: 'activity-retention',
+  everyMs: 60 * MINUTE,
+  run: async () => {
+    const n = await pruneActivity()
+    return n ? `deleted ${n} old event(s)` : null
+  },
+})
+
+/** Last week's digest for every team, once the week is over; a restart over the weekend still writes Monday's. */
+schedule({
+  name: 'weekly-digests',
+  everyMs: config.DIGEST_CHECK_MINUTES * MINUTE,
+  run: async () => {
+    const { made, failed } = await generateDue()
+    return made + failed > 0 ? `${made} written, ${failed} could not be` : null
+  },
+})
+
+/** Requests whose creation stopped heartbeating — a process that died mid-way, noticed without a restart. */
+schedule({
+  name: 'request-recovery',
+  everyMs: MINUTE,
+  run: async () => {
+    const n = await recoverInterrupted()
+    return n ? `${n} interrupted request(s) marked failed for retry` : null
+  },
+})

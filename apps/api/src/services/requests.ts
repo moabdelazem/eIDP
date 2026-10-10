@@ -428,20 +428,38 @@ export async function retry(id: string, access: Access): Promise<RequestRecord> 
 }
 
 /**
- * Anything left `approved` when the process starts was interrupted mid-way —
- * a single process has nothing else in flight. Mark it failed so DEVOPS sees
- * it and can retry, rather than it waiting forever.
- *
- * ponytail: assumes one API process. With several, this would fail another
- * instance's live work; that needs a lease column and a heartbeat.
+ * A request left `approved` whose heartbeat stopped was interrupted — its
+ * process died or restarted mid-way. Mark it failed so DevOps sees it and can
+ * retry, rather than it waiting forever. Only those: another process's live
+ * creation keeps beating and is left alone. Run at boot and as a job, so a
+ * crash is noticed without waiting for a restart.
  */
 export async function recoverInterrupted(): Promise<number> {
   const { rowCount } = await query(
     `update requests set status = 'failed',
             error = 'The portal restarted before this finished. Retry to try again.'
-      where status = 'approved'`,
+      where status = 'approved' and (heartbeat_at is null or heartbeat_at < now() - make_interval(secs => $1))`,
+    [HEARTBEAT_STALE_MS / 1000],
   )
   return rowCount ?? 0
+}
+
+/** How often a creation in progress says so, and how long before silence means it stopped. */
+const HEARTBEAT_MS = 30_000
+const HEARTBEAT_STALE_MS = 3 * HEARTBEAT_MS
+
+/** Does the work while saying so, so recovery can tell live work from work a dead process left. */
+async function execute(request: RequestRecord): Promise<void> {
+  const beat = () => query('update requests set heartbeat_at = now() where id = $1', [request.id])
+  await beat().catch(() => {})
+  const timer = setInterval(() => void beat().catch(() => {}), HEARTBEAT_MS)
+  timer.unref()
+  try {
+    await perform(request)
+  } finally {
+    clearInterval(timer)
+    await query('update requests set heartbeat_at = null where id = $1', [request.id]).catch(() => {})
+  }
 }
 
 /**
@@ -453,7 +471,7 @@ export async function recoverInterrupted(): Promise<number> {
  * creation succeeds: if granting then fails, a retry sees it and only grants,
  * rather than trying to create something that now exists.
  */
-async function execute(request: RequestRecord): Promise<void> {
+async function perform(request: RequestRecord): Promise<void> {
   try {
     if (request.kind === 'create_jira_project') return await executeJiraProject(request)
     if (request.kind === 'grant_access') return await executeGrant(request)
