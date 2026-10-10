@@ -89,6 +89,7 @@ no build step for the services):
 |---|---|---|
 | `apps/api` (`@eidp/api`) | Hono API: auth, catalog, requests, RBAC, Jenkins, chatbot. Postgres for state. | 3000 |
 | `apps/web` (`@eidp/web`) | React 19 + Vite + Tailwind v4 + shadcn/ui. Proxies `/api` to the API. | 5173 |
+| `packages/contracts` (`@eidp/contracts`) | The JSON the API sends and the web reads, as types only — one definition for both. | — |
 
 It talks to:
 
@@ -103,8 +104,9 @@ It talks to:
 | HashiCorp Vault | The API's secrets, with `.env` behind it | Optional |
 
 Every optional integration is off until configured, and the portal says which
-setting is missing rather than failing. `CLAUDE.md` holds the design decisions
-and the traps behind them; read it before changing a part of the code.
+setting is missing rather than failing. `docs/` holds each area's design
+decisions and the traps behind them, and `CLAUDE.md` the rules that break
+things with an index into `docs/`; read the area's doc before changing it.
 
 ## Running it
 
