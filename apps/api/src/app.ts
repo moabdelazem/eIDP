@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
-import { logger } from 'hono/logger'
 import { onError } from './lib/errors.ts'
 import type { AppEnv } from './middleware/auth.ts'
+import { observe } from './middleware/observe.ts'
 import { authRoutes } from './routes/auth.ts'
 import { activityRoutes } from './routes/activity.ts'
 import { adoRoutes } from './routes/ado.ts'
@@ -22,7 +22,7 @@ import { healthRoutes } from './routes/health.ts'
 export function createApp() {
   const app = new Hono<AppEnv>()
 
-  app.use(logger())
+  app.use(observe)
   app.onError(onError)
 
   app.route('/health', healthRoutes)

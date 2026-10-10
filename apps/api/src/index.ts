@@ -5,13 +5,14 @@
  * `await`, and config would parse `.env` alone.
  */
 import { loadSecrets } from './integrations/vault/index.ts'
+import { log } from './lib/log.ts'
 
 const secrets = await loadSecrets()
 if (secrets.source === 'vault') {
-  console.log(`secrets: ${secrets.loaded.length} setting(s) from Vault (${secrets.paths.join(', ')}): ${secrets.loaded.join(', ') || 'none'}`)
-  if (secrets.ignored.length) console.warn(`secrets: ignored names the API does not read: ${secrets.ignored.join(', ')}`)
+  log.info('secrets read from Vault', { paths: secrets.paths, names: secrets.loaded })
+  if (secrets.ignored.length) log.warn('secrets: ignored names the API does not read', { names: secrets.ignored })
 } else if (secrets.source === 'env-fallback') {
-  console.warn(`secrets: ${secrets.error} Using .env.`)
+  log.warn('secrets: Vault could not be read; using .env', { error: secrets.error })
 }
 
 await import('./server.ts')

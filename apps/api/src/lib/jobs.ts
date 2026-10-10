@@ -1,5 +1,7 @@
-import { hostname } from 'node:os'
 import { query } from './db.ts'
+import { instance } from './instance.ts'
+import { errorFields, log, withLogContext } from './log.ts'
+import { jobDuration, jobRuns } from './metrics.ts'
 
 /**
  * Background jobs, safe with any number of API processes.
@@ -38,17 +40,28 @@ export type JobState = {
 }
 
 /** Who holds a lease, for the row and the log. */
-export const me = `${hostname()}:${process.pid}`
+export const me = instance
 
 const registered = new Map<string, Job>()
+const timers: NodeJS.Timeout[] = []
 
 /** Registers the job and starts its timer; the first run is due now, if no other process ran it within the interval. */
 export function schedule(job: Job): void {
   registered.set(job.name, job)
   if (job.enabled === false || job.everyMs <= 0) return
-  const tick = () => void runDue(job).catch((err) => console.error(`job ${job.name}: could not claim:`, err instanceof Error ? err.message : err))
+  const tick = () => void runDue(job).catch((err) => log.error('job could not be claimed', { job: job.name, ...errorFields(err) }))
   tick()
-  setInterval(tick, job.everyMs).unref()
+  timers.push(setInterval(tick, job.everyMs).unref())
+}
+
+/**
+ * On shutdown: no new runs here, and the leases of runs this process is still
+ * in let go, so another replica takes the job at its next tick instead of
+ * waiting out the stale limit.
+ */
+export async function stopJobs(): Promise<void> {
+  for (const timer of timers.splice(0)) clearInterval(timer)
+  await query('update job_runs set running_since = null where owner = $1', [me]).catch(() => {})
 }
 
 /**
@@ -73,18 +86,21 @@ export async function runDue(job: Job, owner = me): Promise<boolean> {
   let error: string | null = null
   let summary: string | null = null
   try {
-    summary = (await job.run()) ?? null
-    if (summary) console.log(`${job.name}: ${summary}`)
+    summary = (await withLogContext({ job: job.name }, job.run)) ?? null
+    if (summary) log.info(summary, { job: job.name })
   } catch (err) {
     ok = false
     error = err instanceof Error ? err.message : String(err)
-    console.error(`${job.name} failed:`, error)
+    log.error('job failed', { job: job.name, error })
   }
+  const seconds = (performance.now() - started) / 1000
+  jobRuns.inc({ job: job.name, ok: String(ok) })
+  jobDuration.observe({ job: job.name }, seconds)
   // Only our own lease: if it went stale and someone took over, theirs stands.
   await query(
     `update job_runs set running_since = null, last_finished = now(), ok = $3, error = $4, summary = $5, duration_ms = $6
       where name = $1 and owner = $2`,
-    [job.name, owner, ok, error, summary, Math.round(performance.now() - started)],
+    [job.name, owner, ok, error, summary, Math.round(seconds * 1000)],
   )
   return true
 }

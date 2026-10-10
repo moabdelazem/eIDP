@@ -7,6 +7,7 @@ import { ApiError } from '../lib/errors.ts'
 import { validate } from '../lib/validate.ts'
 import { accessFrom, requireAuth, requirePermission, type AppEnv } from '../middleware/auth.ts'
 import * as chatbot from '../services/chatbot.ts'
+import { errorFields, log } from '../lib/log.ts'
 
 const Ask = z
   .object({
@@ -81,7 +82,7 @@ export const chatbotRoutes = new Hono<AppEnv>()
         )
       } catch (err) {
         const text = err instanceof ApiError ? err.message : 'The chatbot could not answer. Try again.'
-        if (!(err instanceof ApiError)) console.error('chatbot failed', err)
+        if (!(err instanceof ApiError)) log.error('chatbot failed', errorFields(err, { stack: true }))
         await stream.writeSSE({ event: 'error', data: JSON.stringify({ type: 'error', message: text }) })
       }
     })

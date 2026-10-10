@@ -2,6 +2,7 @@ import type { Activity, Feed, FeedQuery, Group, Overview, Person, Window } from 
 export type { Activity, Group, Overview, Person, Window }
 import { config } from '../lib/config.ts'
 import { query } from '../lib/db.ts'
+import { errorFields, log } from '../lib/log.ts'
 
 /**
  * Platform activity: who uses the portal and what they do in it.
@@ -43,7 +44,7 @@ export async function record(event: { uid: string; name: string; kind: EventKind
       event.reason?.slice(0, 120) ?? null,
     ])
   } catch (err) {
-    console.error('activity: could not record', event.kind, err instanceof Error ? err.message : err)
+    log.error('activity could not be recorded', { kind: event.kind, ...errorFields(err) })
   }
 }
 

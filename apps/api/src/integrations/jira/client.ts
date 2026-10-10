@@ -75,8 +75,10 @@ async function jiraRequest<T>(
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(config.HTTP_TIMEOUT_SECONDS * 1000),
     })
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.name === 'TimeoutError') throw new ApiError(504, 'jira_timeout', 'Jira took too long to answer.')
     throw new ApiError(502, 'jira_unreachable', 'Cannot reach Jira.')
   }
 

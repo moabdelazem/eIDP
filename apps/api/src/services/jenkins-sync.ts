@@ -4,6 +4,9 @@ import * as jenkins from '../integrations/jenkins/index.ts'
 import type { HistoryBuild, JobHead } from '../integrations/jenkins/index.ts'
 import { config } from '../lib/config.ts'
 import { query, transaction } from '../lib/db.ts'
+import { ApiError } from '../lib/errors.ts'
+import { exclusive } from '../lib/locks.ts'
+import { log } from '../lib/log.ts'
 
 /** Builds read from a job Jenkins has never been synced for. */
 export const BACKFILL = 100
@@ -14,12 +17,22 @@ const CONCURRENCY = 6
 
 let inFlight: Promise<SyncState> | null = null
 
-/** Pulls what is new. A call while one runs joins it: the timer and a Refresh click can overlap. */
+/**
+ * Pulls what is new. A call while one runs joins it, in this process or any
+ * other (`lib/locks.ts`): the timer, a Refresh click and a rebuild can overlap.
+ */
 export function syncJenkins(): Promise<SyncState> {
-  inFlight ??= run().finally(() => {
+  inFlight ??= exclusive('jenkins-sync', run, finished).finally(() => {
     inFlight = null
   })
   return inFlight
+}
+
+/** Another process's sync, once it is done. */
+async function finished(): Promise<SyncState> {
+  const state = await syncState()
+  if (!state.ok) throw new ApiError(502, 'jenkins_sync_failed', state.error ?? 'The Jenkins sync failed.')
+  return state
 }
 
 async function run(): Promise<SyncState> {
@@ -42,7 +55,7 @@ async function run(): Promise<SyncState> {
         // A job deleted between the list and the read, or one Jenkins cannot
         // serialise: skip it and say so, rather than losing everything else.
         unreadable.push(job)
-        console.warn(`jenkins sync: could not read ${job}:`, err instanceof Error ? err.message : err)
+        log.warn('jenkins sync could not read a job', { job, error: err instanceof Error ? err.message : String(err) })
       }
     })
 

@@ -10,6 +10,7 @@ import { assertCanDecide, decidableBy, mayDecide } from './deciding.ts'
 import { execute } from './execute.ts'
 import type { Actor, AdoTarget, NewRequest } from './model.ts'
 import { type Row, find, same, toRecord } from './rows.ts'
+import { errorFields, log } from '../../lib/log.ts'
 
 /**
  * A request's life: filed, listed, decided, withdrawn, retried. Rows are never deleted — the row is the history.
@@ -95,7 +96,7 @@ async function submitGrant(input: AdoTarget & NewRequest, actor: Actor): Promise
  * because of it.
  */
 function filed(request: RequestRecord): RequestRecord {
-  void assess(request).catch((err) => console.error(`assessing request ${request.id} failed:`, err instanceof Error ? err.message : err))
+  void assess(request).catch((err) => log.error('assessing a request failed', { request: request.id, ...errorFields(err) }))
   return request
 }
 

@@ -16,7 +16,7 @@ spec:
     seccompProfile:
       type: RuntimeDefault
   containers:
-    # The API is up, its jobs answer (which needs Postgres), and the web app serves.
+    # The API is up and ready (Postgres answers), its jobs answer, and the web app serves.
     - name: check
       image: docker.io/curlimages/curl:8.11.1
       securityContext:
@@ -26,6 +26,7 @@ spec:
         - >-
           set -e;
           curl -fsS http://{{ include "eidp.api.fullname" . }}:3000/health;
+          curl -fsS http://{{ include "eidp.api.fullname" . }}:3000/health/ready;
           curl -fsS http://{{ include "eidp.api.fullname" . }}:3000/health/jobs > /dev/null;
           curl -fsS http://{{ include "eidp.web.fullname" . }}/healthz;
           curl -fsS http://{{ include "eidp.web.fullname" . }}/ | grep -q '<div id="root">'

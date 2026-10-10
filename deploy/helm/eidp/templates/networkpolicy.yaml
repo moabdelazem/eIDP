@@ -25,6 +25,14 @@ spec:
               app.kubernetes.io/component: test
       ports:
         - port: http
+    {{- if and (eq $component "api") $.Values.metrics.enabled }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $.Values.networkPolicy.metricsNamespace }}
+      ports:
+        - port: metrics
+    {{- end }}
 {{- end }}
 {{- if $.Values.postgresql.enabled }}
 ---

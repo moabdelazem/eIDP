@@ -30,8 +30,33 @@ with `SYNC_INTERVAL_MINUTES=0` it is still built once at boot. `GET
 /health/jobs` lists every job with when it last started and finished and
 whether it worked — names and times only, the error stays in the log and the
 row — for a monitor to read. Tests: `lib/jobs.test.ts` races two owners for
-one lease. The per-process caches (directory groups, Jenkins, the catalog's
-owners) stay per process; each is a minute or less of staleness.
+one lease. On shutdown a process gives back the leases it holds
+(`stopJobs`), so another picks the job up at its next tick. The per-process
+caches (directory groups, Jenkins' queue, kept log tails, the catalog's
+owners) stay per process: each is a minute or less of staleness, and a cache
+miss only costs a read.
+
+**Work people start is held once across processes** (`lib/locks.ts`, the
+`locks` table). A promise kept in a module variable joins a second call in
+the same process — and only there: behind a load balancer the timer, a
+click on one replica and a click on another are three syncs, two git fetches
+into one checkout, the same build explained twice on the shared GPU. So:
+
+- `exclusive(name, work, joined)` — the catalog sync, the Jenkins sync and
+  its access rules, a build's explanation, a weekly digest, a request's risk
+  assessment. One process does the work; a caller elsewhere waits for it to
+  finish and returns `joined()`, what it kept — or does the work itself when
+  nothing was kept. The in-process promise stays in front, so callers in one
+  process share one wait.
+- `tryWithLock(name, work)` — one person's chatbot answer: a second, from
+  another tab on another replica, is refused (`chatbot_busy`) rather than
+  queued.
+
+A lock is a lease like a job's, but short: held 30 s and renewed every 10 s
+while the work runs, so a process that dies lets go within half a minute;
+deleted when the work ends, throws or the process shuts down. Tests:
+`lib/locks.test.ts`. A module-level promise alone is for work that only a
+job starts — the job's lease already makes it one per cluster.
 
 **The schema is migrations** (`lib/migrations/NNNN_name.sql`, run by
 `migrate()` in `lib/db.ts` at boot, before anything else). Each file is
@@ -55,14 +80,17 @@ migration that drops them is one line when nobody wants them.
 the service account's token and rewrites the catalog. The map's **Refresh from
 inventories** button (`refresh-catalog-button.tsx`, also on the map's
 unavailable page) calls it and shows only to holders. `syncCatalog()` is
-single-flight — a call while one runs joins it — because the timer and a click
-can overlap, and two fetches into one checkout fight over git's lock.
+single-flight across processes — a call while one runs anywhere joins it —
+because the timer and a click can overlap, and two fetches into one checkout
+fight over git's lock. A git fetch that stalls is killed after five minutes
+rather than holding that lock.
 
 **Health is not the portal's.** System health — every dependency checked
 now, 90 days of uptime, our machines, alerts — was built here and taken out
 again: a separate health service will own it. Nothing in the portal asks its
 dependencies how they are on a timer, and there is no `/system` page,
 `system.health` permission or chatbot health tool. `/health` stays: it is the
-public liveness probe compose and the dev script wait on. Databases that ran
+public liveness probe compose and the dev script wait on; `/health/ready` is
+readiness (`docs/operations.md`). Databases that ran
 the old code keep its `health_*` tables; nothing reads them, and the new
 service may take them or they can be dropped.

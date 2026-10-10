@@ -49,7 +49,13 @@ export function apiUrl(base: string, path: string, query: Record<string, string 
   return url.toString()
 }
 
-async function send(method: 'GET' | 'POST', path: string, query?: Record<string, string | number>, form?: URLSearchParams): Promise<Response> {
+/** How long a call may take, headers and body: HTTP_TIMEOUT_SECONDS, longer for a whole log. */
+const timeoutMs = (factor = 1) => config.HTTP_TIMEOUT_SECONDS * 1000 * factor
+
+const timedOut = (err: unknown) => err instanceof Error && err.name === 'TimeoutError'
+const tooSlow = () => new ApiError(504, 'jenkins_timeout', 'Jenkins took too long to answer.')
+
+async function send(method: 'GET' | 'POST', path: string, query?: Record<string, string | number>, form?: URLSearchParams, timeout = timeoutMs()): Promise<Response> {
   const jenkins = jenkinsConfig()
   let res: Response
   try {
@@ -63,8 +69,10 @@ async function send(method: 'GET' | 'POST', path: string, query?: Record<string,
       // Several actions answer with a redirect to an HTML page; the redirect
       // itself is the success, and following it would fetch the page.
       redirect: 'manual',
+      signal: AbortSignal.timeout(timeout),
     })
-  } catch {
+  } catch (err) {
+    if (timedOut(err)) throw tooSlow()
     throw new ApiError(502, 'jenkins_unreachable', 'Cannot reach Jenkins.')
   }
   if (res.status >= 300 && res.status < 400) return res
@@ -79,7 +87,12 @@ export async function jenkinsGet<T>(path: string, query?: Record<string, string 
   if (!type.includes('json')) {
     throw new ApiError(502, 'jenkins_not_authenticated', 'Jenkins returned a page instead of data. Check JENKINS_USER and JENKINS_TOKEN.')
   }
-  return (await res.json()) as T
+  try {
+    return (await res.json()) as T
+  } catch (err) {
+    if (timedOut(err)) throw tooSlow()
+    throw err
+  }
 }
 
 /**
@@ -98,6 +111,9 @@ export async function jenkinsHead(path: string, maxBytes: number): Promise<strin
       chunks.push(Buffer.from(value))
       read += value.length
     }
+  } catch (err) {
+    if (timedOut(err)) throw tooSlow()
+    throw err
   } finally {
     await reader.cancel().catch(() => {})
   }
@@ -106,7 +122,12 @@ export async function jenkinsHead(path: string, maxBytes: number): Promise<strin
 
 /** A text resource whole — an item's `config.xml`. */
 export async function jenkinsText(path: string): Promise<string> {
-  return (await send('GET', path)).text()
+  try {
+    return await (await send('GET', path)).text()
+  } catch (err) {
+    if (timedOut(err)) throw tooSlow()
+    throw err
+  }
 }
 
 /** A POST that acts. Returns the response for the headers some actions answer with. */
@@ -125,17 +146,23 @@ export async function jenkinsTail(
   maxBytes: number,
   query?: Record<string, string | number>,
 ): Promise<{ text: string; truncated: boolean; headers: Headers }> {
-  const res = await send('GET', path, query)
+  // A log of hundreds of megabytes streams through: more time than one answer gets.
+  const res = await send('GET', path, query, undefined, timeoutMs(4))
   const chunks: Buffer[] = []
   let kept = 0
   let truncated = false
-  for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-    chunks.push(Buffer.from(chunk))
-    kept += chunk.length
-    while (kept - chunks[0]!.length >= maxBytes) {
-      kept -= chunks.shift()!.length
-      truncated = true
+  try {
+    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+      chunks.push(Buffer.from(chunk))
+      kept += chunk.length
+      while (kept - chunks[0]!.length >= maxBytes) {
+        kept -= chunks.shift()!.length
+        truncated = true
+      }
     }
+  } catch (err) {
+    if (timedOut(err)) throw tooSlow()
+    throw err
   }
   const { text, cut } = lastBytes(Buffer.concat(chunks), maxBytes)
   return { text, truncated: truncated || cut, headers: res.headers }

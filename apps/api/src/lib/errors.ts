@@ -1,6 +1,7 @@
 import type { ErrorHandler } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
+import { errorFields, log } from './log.ts'
 
 /** The one error shape the API returns, whatever threw. */
 export type ErrorBody = { error: { code: string; message: string } }
@@ -30,7 +31,7 @@ export const onError: ErrorHandler = (err, c) => {
   }
 
   // Unexpected: log it in full, tell the caller nothing about our internals.
-  console.error('unhandled error', err)
+  log.error('unhandled error', { ...errorFields(err, { stack: true }), method: c.req.method, path: c.req.path })
   return c.json<ErrorBody>(
     { error: { code: 'internal', message: 'Something went wrong on our side.' } },
     500,

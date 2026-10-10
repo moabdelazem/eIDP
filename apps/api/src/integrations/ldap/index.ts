@@ -4,6 +4,7 @@ import { ApiError } from '../../lib/errors.ts'
 import { bindAsService, first, userFilter, withClient } from './client.ts'
 import { readBindFailure } from './ad-errors.ts'
 import { identifyServer } from './identify.ts'
+import { log } from '../../lib/log.ts'
 
 export { dnOf, groupFilter, groupsOf, isApproverGroup } from './groups.ts'
 export { profileOf, type Profile } from './profile.ts'
@@ -86,13 +87,11 @@ export async function authenticate(uid: string, password: string): Promise<Direc
     if (searchEntries.length === 0) {
       // Not "wrong password" — the directory has no such account under this
       // base DN and filter. Worth saying out loud: it is usually config.
-      console.warn(
-        `ldap: no account matched ${userFilter(uid)} under ${config.LDAP_BASE_DN}`,
-      )
+      log.warn('ldap: no account matched', { filter: userFilter(uid), baseDn: config.LDAP_BASE_DN })
       return null
     }
     if (searchEntries.length > 1) {
-      console.warn(`ldap: ${searchEntries.length} accounts matched ${userFilter(uid)}`)
+      log.warn('ldap: several accounts matched', { count: searchEntries.length, filter: userFilter(uid) })
       return null
     }
 

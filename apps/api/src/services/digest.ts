@@ -6,6 +6,8 @@ import * as ollama from '../integrations/ollama/index.ts'
 import { config } from '../lib/config.ts'
 import { query } from '../lib/db.ts'
 import { ApiError } from '../lib/errors.ts'
+import { exclusive } from '../lib/locks.ts'
+import { log } from '../lib/log.ts'
 import { teamRuns, type TeamRun } from './pipelines.ts'
 import { can, type Access } from './rbac.ts'
 import type { RequestKind, RequestStatus } from './requests.ts'
@@ -345,12 +347,15 @@ export async function storedWeeks(team: string): Promise<string[]> {
 
 const inFlight = new Map<string, Promise<Digest>>()
 
-/** Counts a finished week, asks for its words when Ollama is there, and keeps it — replacing any before. */
+/**
+ * Counts a finished week, asks for its words when Ollama is there, and keeps it
+ * — replacing any before. Once across replicas: a second caller waits and reads it.
+ */
 export function generate(team: string, week: string): Promise<Digest> {
   const key = `${team.toLowerCase()}|${week}`
   const running = inFlight.get(key)
   if (running) return running
-  const work = (async () => {
+  const work = exclusive(`digest:${key}`, async () => {
     const facts = await factsFor(team, week)
     let said: { summary: string; highlights: string[]; model: string } | null = null
     let error: string | null = null
@@ -368,7 +373,7 @@ export function generate(team: string, week: string): Promise<Digest> {
       [team, week, JSON.stringify(facts), said?.summary ?? null, JSON.stringify(said?.highlights ?? []), said?.model ?? null, DIGEST_PROMPT_VERSION, error],
     )
     return (await stored(team, week))!
-  })().finally(() => inFlight.delete(key))
+  }, () => stored(team, week)).finally(() => inFlight.delete(key))
   inFlight.set(key, work)
   return work
 }
@@ -422,7 +427,7 @@ export async function generateDue(now = new Date()): Promise<{ made: number; fai
       made++
     } catch (err) {
       failed++
-      console.error(`weekly digest for ${team} failed:`, err instanceof Error ? err.message : err)
+      log.error('weekly digest failed', { team, week, error: err instanceof Error ? err.message : String(err) })
     }
   }
   return { made, failed }
