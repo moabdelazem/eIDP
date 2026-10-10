@@ -60,7 +60,7 @@ export function RolesTab({ catalogue, bindings, onRole }: { catalogue: Catalogue
         </table>
       </div>
       <p className="border-t px-4 py-2.5 text-xs text-muted-foreground">
-        Roles and their permissions are defined in code (<code>services/rbac.ts</code>); this page manages who holds them.
+        Roles and their permissions are defined in code (<code>modules/access/service.ts</code>); this page manages who holds them.
       </p>
     </div>
   )

@@ -3,17 +3,17 @@
 The agent, its tools and the rules that hold it, streaming, conversations, and how answers render. Moved out of CLAUDE.md, which keeps the rules that break things and points here.
 
 **The chatbot** (`/chatbot/:conversationId?`, `features/chatbot/`,
-`services/chatbot.ts`; it was "the assistant", and `/assistant` links redirect)
+`modules/chatbot/service.ts`; it was "the assistant", and `/assistant` links redirect)
 is an agent inside the portal with the same model, for everyone: `ai.chat` is a
 `member` permission. General engineering it answers from what the model knows;
 questions about *us* it answers through read-only tools in
-`services/chatbot-tools.ts` — applications, configuration, owners, your
+`modules/chatbot/tools.ts` — applications, configuration, owners, your
 requests and one request, what waits for your approval, Jenkins failures,
 builds and numbers, your pipelines, one build in detail (stages, the branch
 that broke, the stored explanation, the redacted end of its log), a team's
 week (`peek` — never a second model call mid-answer), and
 `whoami` (your groups, teams and every permission with the group or binding
-behind it). Five rules hold it, each tested in `routes/chatbot.test.ts`:
+behind it). Five rules hold it, each tested in `modules/chatbot/routes.test.ts`:
 
 - **It looks, never acts.** No tool creates, approves, runs or changes
   anything. For a request it **drafts**: `draft_request` returns the form's

@@ -1,4 +1,4 @@
-/** My pipelines: what `/pipelines` sends (apps/api services/pipelines.ts, jenkins-access.ts). */
+/** My pipelines: what `/pipelines` sends (apps/api modules/pipelines/service.ts, modules/jenkins/access.ts). */
 
 import type { Explanation, QueueItem, Result, Run, SyncState } from './jenkins.ts'
 

@@ -12,13 +12,15 @@
     "jira:fake": "node src/integrations/jira/fake-server.ts",
     "jenkins:fake": "node src/integrations/jenkins/fake-server.ts",
     "ollama:fake": "node src/integrations/ollama/fake-server.ts",
-    "rbac:import": "node --env-file-if-exists=../../.env src/with-secrets.ts src/services/rbac-import.ts",
-    "vault:fake": "node src/integrations/vault/fake-server.ts"
+    "rbac:import": "node --env-file-if-exists=../../.env src/with-secrets.ts src/modules/access/import.ts",
+    "vault:fake": "node src/integrations/vault/fake-server.ts",
+    "db:generate": "node scripts/db-generate.ts"
   },
   "dependencies": {
     "@eidp/contracts": "workspace:*",
     "@hono/node-server": "^1.13.8",
     "@hono/zod-validator": "^0.9.1",
+    "drizzle-orm": "^0.45.4",
     "hono": "^4.7.0",
     "ldapts": "^9.2.0",
     "pg": "^8.23.0",
@@ -28,6 +30,7 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11",
     "typescript": "^5.7.0"
   }
 }

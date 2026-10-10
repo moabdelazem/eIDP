@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { apiUrl, authHeader, errorDetail, jiraConfig } from './client.ts'
-import { jiraKeyProblem, jiraNameProblem } from '../../services/request-rules.ts'
+import { jiraKeyProblem, jiraNameProblem } from '../../modules/requests/index.ts'
 
 test('a personal access token is a Bearer token', () => {
   assert.equal(authHeader('tok'), 'Bearer tok')

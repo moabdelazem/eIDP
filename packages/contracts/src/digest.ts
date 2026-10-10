@@ -1,4 +1,4 @@
-/** Weekly digest: what `/digests` sends (apps/api services/digest.ts). */
+/** Weekly digest: what `/digests` sends (apps/api modules/digest/service.ts). */
 
 import type { Result } from './jenkins.ts'
 import type { RequestKind, RequestStatus } from './requests.ts'

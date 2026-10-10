@@ -3,8 +3,8 @@ import { jwt } from 'hono/jwt'
 import { config } from '../lib/config.ts'
 import { ApiError } from '../lib/errors.ts'
 import { addLogContext } from '../lib/log.ts'
-import { accessOf, can, canSomewhere, describe, type Access, type Permission } from '../services/rbac.ts'
-import type { SessionClaims } from '../services/session.ts'
+import { accessOf, can, canSomewhere, describe, type Access, type Permission } from '../modules/access/index.ts'
+import type { SessionClaims } from '../modules/auth/index.ts'
 
 /** The context every route sees. Extend `Variables` as middleware is added. */
 export type AppEnv = {
@@ -46,7 +46,7 @@ export const requireAuth = createMiddleware<AppEnv>((c, next) =>
 
 /**
  * Refuses unless the caller holds `permission`. Every guarded route declares
- * it, so `grep -rn requirePermission routes/` lists who may reach what.
+ * it, so `grep -rn requirePermission modules/` lists who may reach what.
  *
  * `scoped: true` lets through anyone who holds it *somewhere* — a team lead on
  * the approvals queue — and leaves the per-item decision to the service,

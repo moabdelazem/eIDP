@@ -1,4 +1,4 @@
-/** Requests: what `/requests` sends and takes (apps/api services/requests.ts, request-risk.ts). */
+/** Requests: what `/requests` sends and takes (apps/api modules/requests/service.ts, modules/requests/risk.ts). */
 
 export type RequestKind = 'create_repository' | 'create_project' | 'grant_access' | 'create_jira_project'
 export type AccessLevel = 'read' | 'contribute'

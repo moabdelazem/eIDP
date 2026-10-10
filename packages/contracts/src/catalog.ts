@@ -1,4 +1,4 @@
-/** The catalog: what `/catalog` sends (apps/api services/catalog.ts). One row per application per environment variant; the map folds them. */
+/** The catalog: what `/catalog` sends (apps/api modules/catalog/service.ts). One row per application per environment variant; the map folds them. */
 
 /** The last sync of the inventories repo, so the page can tell current from stale from never-built. */
 export type SyncState = {

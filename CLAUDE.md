@@ -8,28 +8,38 @@ See README.md for the product shape.
 
 pnpm workspace. `apps/*` and `packages/*`.
 
-- `apps/api` — Hono API (`@eidp/api`), layered by concern:
+- `apps/api` — Hono API (`@eidp/api`), a modular monolith: one process, one
+  database, split by business area into modules that only meet at their
+  front doors.
 
   | Folder | Holds | Rule |
   |---|---|---|
-  | `routes/` | HTTP shape: paths, validation, status codes | No business logic, no direct integration calls beyond one service |
-  | `services/` | Logic that spans integrations | Knows nothing about HTTP |
-  | `integrations/<name>/` | One outside system, one folder | `index.ts` is the only entry point others import |
+  | `modules/<name>/` | One area: `access`, `activity`, `auth`, `catalog`, `chatbot`, `digest`, `health`, `jenkins`, `pipelines`, `requests` | Other modules import its `index.ts` and nothing else |
+  | `modules/<name>/routes.ts` | HTTP shape: paths, validation, status codes | Mounted by `app.ts` alone; no business logic |
+  | `modules/<name>/service.ts` (and its parts) | The area's logic | Knows nothing about HTTP |
+  | `modules/<name>/jobs.ts` | The area's background jobs | Scheduled by `server.ts` from the index |
+  | `modules/<name>/schema.ts` | The area's tables, for Drizzle | Written by this module alone |
+  | `integrations/<name>/` | One outside system, one folder | `index.ts` is the only entry point others import; knows no module |
   | `middleware/` | Cross-cutting request handling | Owns `AppEnv`, the typed context |
-  | `lib/` | Config, errors, validation | No feature knowledge |
+  | `lib/` | Config, db, errors, jobs, locks, log, metrics | No feature knowledge; knows no module |
 
-  A service that outgrows one file becomes a folder of parts behind the same
-  entry module — `services/jenkins.ts` (shared, now, stats, search, actions)
-  and `services/requests.ts` (model, check, lifecycle, deciding, rows, and one
-  executor per kind: `execute.ts` runs the Azure DevOps creations and
-  dispatches `grant.ts` and `jira-project.ts`; their shared steps are
-  `steps.ts`). The entry re-exports exactly the public names, so importers
-  never change and helpers the parts share stay out of its surface.
+  `modules/boundaries.test.ts` fails the build when an import breaks these.
+  A module's `index.ts` exports exactly what other modules use — a name
+  nobody outside uses does not belong there, and what is not there is the
+  module's own to change. Shared vocabulary (`Actor`) lives in `lib/`, not
+  in whichever module had it first. A module that outgrows one service file
+  splits into parts in its folder — `jenkins` (shared, now, stats, search,
+  actions, sync, access, retention, explainer) and `requests` (model, check,
+  lifecycle, deciding, rows, and one executor per kind: `execute.ts` runs the
+  Azure DevOps creations and dispatches `grant.ts` and `jira-project.ts`;
+  their shared steps are `steps.ts`), with `service.ts` re-exporting the
+  names its routes use.
 
   `app.ts` builds the app without listening so tests drive it via
   `app.request()`; `server.ts` serves it, and `index.ts` loads secrets
-  (Vault, then `.env`) before importing it. Adding an integration means a new
-  folder under `integrations/` and a route module — nothing else moves.
+  (Vault, then `.env`) before importing it. Adding an area means a new
+  folder under `modules/` with its `index.ts`, mounted in `app.ts`; adding
+  an outside system, a folder under `integrations/`.
 - `packages/contracts` — `@eidp/contracts`, the JSON the API sends and the web
   reads, as types and nothing else. See *Talking to the API*.
 - `deploy/helm/eidp` — the Helm chart; each app's production image is its
@@ -56,7 +66,7 @@ pnpm workspace. `apps/*` and `packages/*`.
 - Node 24 — runs `.ts` directly via native type stripping. No tsx, no build
   step, no ts-node. `erasableSyntaxOnly` is on: no enums, no parameter
   properties, no namespaces.
-- Hono + `@hono/node-server`. Zod for env and request validation.
+- Hono + `@hono/node-server`. Drizzle ORM over `pg` for Postgres. Zod for env and request validation.
   `lib/config.ts` parses `process.env` once at boot, so a missing variable
   fails immediately with a readable message — read config from there, never
   `process.env` directly. Routes use `lib/validate.ts`, not `zValidator`, so
@@ -97,14 +107,15 @@ Each area's detail — what it does, why, and the traps it has hit — lives in
 The ones that have broken something before, or would quietly. Each doc says why.
 
 - **Config** comes from `lib/config.ts`, never `process.env`. Blank `.env` values are unset.
-- **A schema change is a new migration** in `lib/migrations/`; an applied file is frozen and editing it stops the boot. (`docs/platform.md`)
+- **A schema change is an edit to the module's `schema.ts` plus `pnpm --filter @eidp/api db:generate <name>`**, which writes the next migration into `lib/migrations/`; read it before committing. An applied file is frozen and editing it stops the boot; `lib/schema.test.ts` fails when the schema files and the migrations disagree. (`docs/platform.md`)
+- **Queries go through Drizzle** (`db` from `lib/db.ts`): the builder for rows, `sqlRows(sql\`…\`)` for SQL-shaped reads, arrays as `sql.param(list)`. A module writes only its own tables; it reads another's only through the tables that module's `index.ts` exports. (`docs/platform.md`)
 - **Background work is `schedule()`** in `server.ts` (`lib/jobs.ts`), never a bare `setInterval`: the API may run as several processes. (`docs/platform.md`)
 - **Work a person can start that must happen once goes through `lib/locks.ts`** (`exclusive`, `tryWithLock`), not a module-level promise or `Set` alone — those hold in one replica only. (`docs/platform.md`)
 - **Log with `lib/log.ts`**, never `console` (the CLI scripts aside): one line per event, fields not prose, and the request id rides along. (`docs/operations.md`)
 - **The API's JSON shapes live in `packages/contracts`**, imported with `import type` only; a contract file holds no values and imports nothing outside the package. Routes that add a field say what they send with `satisfies`. (`docs/web.md`)
 - **Reads go through `useResource(key, …)`**; the same key is the same request, so name keys for what they fetch. (`docs/web.md`)
 - **Pages are `lazyPage`s, charts and the stage graph are lazy too** — a static import puts them back in everyone's bundle. (`docs/web.md`)
-- **A guarded page is four edits**: `manageItems`, `<RequirePermission>`, `requirePermission`, and `DEVOPS_ONLY` in `routes/rbac.test.ts`. A new permission is the contract's `Permission` plus its `PERMISSIONS` entry. (`docs/access.md`)
+- **A guarded page is four edits**: `manageItems`, `<RequirePermission>`, `requirePermission`, and `DEVOPS_ONLY` in `modules/access/routes.test.ts`. A new permission is the contract's `Permission` plus its `PERMISSIONS` entry. (`docs/access.md`)
 - **Secrets never leave the parser or the integration** (`[hidden]`), and values are never logged — names only. (`docs/integrations.md`, `docs/jenkins.md`)
 - **Every colour is a token with a value in `:root` and `.dark`**; red only ever means "act on this"; meaning colours always come with an icon and a word. (`docs/design.md`)
 - **All motion sits inside `prefers-reduced-motion: no-preference`.** (`docs/web.md`)
@@ -119,6 +130,7 @@ pnpm dev                           # .env + containers + both apps
 pnpm test                          # all package tests
 pnpm --filter @eidp/api dev        # watch mode
 pnpm --filter @eidp/api typecheck  # tsc --noEmit
+pnpm --filter @eidp/api db:generate <name>  # schema.ts change → next migration
 pnpm --filter @eidp/api test       # needs openldap up
 pnpm --filter @eidp/web dev        # http://localhost:5173
 pnpm --filter @eidp/web build      # tsc -b && vite build

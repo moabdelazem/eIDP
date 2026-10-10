@@ -1,7 +1,9 @@
-import { query } from './db.ts'
+import { and, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm'
+import { db } from './db.ts'
 import { instance } from './instance.ts'
 import { errorFields, log, withLogContext } from './log.ts'
-import { jobDuration, jobRuns } from './metrics.ts'
+import { jobDuration, jobRuns as runsMetric } from './metrics.ts'
+import { jobRuns } from './schema.ts'
 
 /**
  * Background jobs, safe with any number of API processes.
@@ -61,7 +63,7 @@ export function schedule(job: Job): void {
  */
 export async function stopJobs(): Promise<void> {
   for (const timer of timers.splice(0)) clearInterval(timer)
-  await query('update job_runs set running_since = null where owner = $1', [me]).catch(() => {})
+  await db.update(jobRuns).set({ runningSince: null }).where(eq(jobRuns.owner, me)).catch(() => {})
 }
 
 /**
@@ -71,15 +73,20 @@ export async function stopJobs(): Promise<void> {
  */
 export async function runDue(job: Job, owner = me): Promise<boolean> {
   const staleMs = job.staleMs ?? Math.max(3 * job.everyMs, 30 * 60_000)
-  await query('insert into job_runs (name) values ($1) on conflict (name) do nothing', [job.name])
-  const { rowCount } = await query(
-    `update job_runs set running_since = now(), owner = $2, last_started = now()
-      where name = $1
-        and (running_since is null or running_since < now() - make_interval(secs => $4))
-        and (last_started is null or last_started <= now() - make_interval(secs => $3))`,
-    [job.name, owner, (job.everyMs * 0.9) / 1000, staleMs / 1000],
-  )
-  if (!rowCount) return false
+  const ago = (ms: number) => sql`now() - make_interval(secs => ${ms / 1000})`
+  await db.insert(jobRuns).values({ name: job.name }).onConflictDoNothing()
+  const claimed = await db
+    .update(jobRuns)
+    .set({ runningSince: sql`now()`, owner, lastStarted: sql`now()` })
+    .where(
+      and(
+        eq(jobRuns.name, job.name),
+        or(isNull(jobRuns.runningSince), lt(jobRuns.runningSince, ago(staleMs))),
+        or(isNull(jobRuns.lastStarted), lte(jobRuns.lastStarted, ago(job.everyMs * 0.9))),
+      ),
+    )
+    .returning({ name: jobRuns.name })
+  if (claimed.length === 0) return false
 
   const started = performance.now()
   let ok = true
@@ -94,14 +101,13 @@ export async function runDue(job: Job, owner = me): Promise<boolean> {
     log.error('job failed', { job: job.name, error })
   }
   const seconds = (performance.now() - started) / 1000
-  jobRuns.inc({ job: job.name, ok: String(ok) })
+  runsMetric.inc({ job: job.name, ok: String(ok) })
   jobDuration.observe({ job: job.name }, seconds)
   // Only our own lease: if it went stale and someone took over, theirs stands.
-  await query(
-    `update job_runs set running_since = null, last_finished = now(), ok = $3, error = $4, summary = $5, duration_ms = $6
-      where name = $1 and owner = $2`,
-    [job.name, owner, ok, error, summary, Math.round(seconds * 1000)],
-  )
+  await db
+    .update(jobRuns)
+    .set({ runningSince: null, lastFinished: sql`now()`, ok, error, summary, durationMs: Math.round(seconds * 1000) })
+    .where(and(eq(jobRuns.name, job.name), eq(jobRuns.owner, owner)))
   return true
 }
 
@@ -111,15 +117,12 @@ export async function runDue(job: Job, owner = me): Promise<boolean> {
  * the row, not on a public probe.
  */
 export async function jobStates(): Promise<JobState[]> {
-  const { rows } = await query<{ name: string; running_since: Date | null; last_started: Date | null; last_finished: Date | null; ok: boolean | null }>(
-    'select name, running_since, last_started, last_finished, ok from job_runs where name = any($1)',
-    [[...registered.keys()]],
-  )
+  const rows = await db.select().from(jobRuns).where(inArray(jobRuns.name, [...registered.keys()]))
   const byName = new Map(rows.map((r) => [r.name, r]))
   const iso = (d: Date | null | undefined) => d?.toISOString() ?? null
   return [...registered.values()].map((job) => {
     const r = byName.get(job.name)
     const enabled = job.enabled !== false && job.everyMs > 0
-    return { name: job.name, enabled, everyMs: job.everyMs, runningSince: iso(r?.running_since), lastStarted: iso(r?.last_started), lastFinished: iso(r?.last_finished), ok: r?.ok ?? null }
+    return { name: job.name, enabled, everyMs: job.everyMs, runningSince: iso(r?.runningSince), lastStarted: iso(r?.lastStarted), lastFinished: iso(r?.lastFinished), ok: r?.ok ?? null }
   })
 }

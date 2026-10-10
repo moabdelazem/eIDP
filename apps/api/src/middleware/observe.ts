@@ -29,7 +29,8 @@ export const observe = createMiddleware(async (c, next) => {
       const seconds = (performance.now() - started) / 1000
       const status = c.res.status
       // The pattern, not the path: `/jenkins/builds/:job/:number`, one series however many builds.
-      const matched = routePath(c, -1)
+      // The handler that answered, not the last that matched: `/requests/mine` also matches `/requests/:id`.
+      const matched = routePath(c)
       const route = status === 404 && (!matched || matched.endsWith('*')) ? 'unmatched' : matched || 'unmatched'
       httpRequests.inc({ method: c.req.method, route, status: String(status) })
       httpDuration.observe({ method: c.req.method, route }, seconds)

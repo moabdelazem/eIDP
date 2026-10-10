@@ -1,7 +1,7 @@
 /**
  * Reading a console log into lines that know what they are. Pure, so the
  * viewer only draws — and so the rules sit in one place: `ERROR` here and in
- * the API's `build-explainer.ts` must stay the same regex, or the model is
+ * the API's `modules/jenkins/explainer.ts` must stay the same regex, or the model is
  * shown different "errors" from the ones the page marks.
  */
 

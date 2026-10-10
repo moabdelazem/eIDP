@@ -2,7 +2,7 @@
 
 How the catalog is built and refreshed, how background work runs on several processes, how the schema changes, and where health went. Moved out of CLAUDE.md, which keeps the rules that break things and points here.
 
-`services/catalog.ts` owns it. `syncCatalog()` pulls the inventories checkout,
+`modules/catalog/service.ts` owns it. `syncCatalog()` pulls the inventories checkout,
 parses it and rebuilds the tables in one transaction — delete-then-insert,
 because the catalog is derived data and readers keep the previous contents
 until the commit lands. `catalog_sync` is a single row holding the outcome, so
@@ -71,10 +71,55 @@ migrations takes it as its first without losing a row; it is the only file
 that needs to be re-runnable. The old file's trap is gone with it: replaying
 a narrower `requests_kind_check` before the line that widened it once
 refused to boot over a Jira request. `lib/migrate.test.ts` applies the real
-migrations over rows of the newest kinds, and drives the runner's rules
-(order, once, rollback, frozen) on a scratch schema with scratch files.
-Databases that ran the health service still hold its `health_*` tables; a
-migration that drops them is one line when nobody wants them.
+migrations over rows of the newest kinds, builds an empty schema from
+nothing, and drives the runner's rules (order, once, rollback, frozen) on a
+scratch schema with scratch files. Databases that ran the health service
+still hold its `health_*` tables; a migration that drops them is one line
+when nobody wants them.
+
+One applied file has been corrected: `0001_baseline` created an index above
+the table it indexes, so a fresh database — a new environment, the chart's
+own Postgres — could not be made at all; databases that predated migrations
+already had the table and never noticed. The runner's `CORRECTED` list
+accepts the file's old checksum and records the new one. That is for a fix
+that changes nothing on a database that already ran the file, and only that.
+
+**The tables are Drizzle's** (`drizzle-orm`, over the same `pg` pool). Each
+module declares its own in `schema.ts` — `requests` and `request_assessments`
+in `modules/requests/schema.ts`, the jobs' and locks' in `lib/schema.ts` —
+and **writes only its own**. Another module may read them through the table
+objects the owner's `index.ts` exports (Platform activity reads requests,
+access and Jenkins audits; the digest reads requests and the catalog), so
+who depends on whose rows is in the imports, where the boundary test sees it.
+Queries take one of three forms:
+
+- the **query builder** for reading and writing rows — `db.select().from(…)`,
+  `insert … onConflictDoUpdate`, `db.transaction` — with rows typed from the
+  schema, camelCase, timestamps as Dates;
+- **`sqlRows(sql\`…\`)`** (`lib/db.ts`) for what reads better as SQL — a
+  union across modules' tables, percentiles, window functions, CTEs. Values
+  are always parameters, tables are the schema's objects, rows come back as
+  the driver types them (timestamps as Dates, names as written). An array
+  goes in as `sql.param(list)`: bare, Drizzle spreads it into `($1, $2, …)`,
+  which `= any(…)` does not take;
+- `db.execute(sql\`…\`)` for a statement whose rows nobody reads (its
+  `rowCount` is there). Not for reading: it returns timestamps as text.
+
+`query()` — plain SQL text — remains for the migration runner and for tests
+setting up rows. A unique violation reaches code as the error's `cause`;
+`isUniqueViolation(err)` reads both.
+
+**A schema change** is an edit to a `schema.ts`, then `pnpm --filter
+@eidp/api db:generate <name>`: drizzle-kit compares the schema files with its
+last snapshot (`apps/api/drizzle/meta`, committed) and writes the SQL for the
+difference, which the script moves into `lib/migrations` as the next
+`NNNN_name.sql` — the runner applies it, so drizzle-kit never touches a
+database. Read the file and say at its top why; a data change or anything
+drizzle-kit cannot express is written into it by hand, as before.
+`lib/schema.test.ts` builds one scratch schema from the migrations and one
+from the schema files and compares every column, index and constraint: a
+schema file changed without a migration, or a migration the schema files
+never heard of, fails the run.
 
 `POST /catalog/sync` needs `catalog.sync`: a sync clones from Azure DevOps with
 the service account's token and rewrites the catalog. The map's **Refresh from

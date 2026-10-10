@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { query } from './db.ts'
+import { and, eq, gte, lt, sql } from 'drizzle-orm'
+import { db } from './db.ts'
 import { ApiError } from './errors.ts'
 import { instance } from './instance.ts'
 import { log } from './log.ts'
+import { locks } from './schema.ts'
 
 /**
  * Locks that hold across every API process, kept in Postgres (`locks`).
@@ -21,18 +23,22 @@ import { log } from './log.ts'
 const LEASE_MS = 30_000
 const RENEW_MS = 10_000
 
-const seconds = (ms: number) => ms / 1000
+const leaseEnd = () => sql`now() + make_interval(secs => ${LEASE_MS / 1000})`
 
 /** Takes the lock if nobody holds it, or the holder's lease ran out. Returns the token that holds it. */
 async function acquire(name: string): Promise<string | null> {
   const token = `${instance}:${randomUUID()}`
-  const { rowCount } = await query(
-    `insert into locks (name, owner, expires_at) values ($1, $2, now() + make_interval(secs => $3))
-     on conflict (name) do update set owner = excluded.owner, acquired_at = now(), expires_at = excluded.expires_at
-      where locks.expires_at < now()`,
-    [name, token, seconds(LEASE_MS)],
-  )
-  return rowCount ? token : null
+  const taken = await db
+    .insert(locks)
+    .values({ name, owner: token, expiresAt: leaseEnd() })
+    .onConflictDoUpdate({
+      target: locks.name,
+      set: { owner: token, acquiredAt: sql`now()`, expiresAt: leaseEnd() },
+      // Only a lease that ran out is taken over.
+      setWhere: lt(locks.expiresAt, sql`now()`),
+    })
+    .returning({ name: locks.name })
+  return taken.length ? token : null
 }
 
 /** Runs `fn` holding `name`, renewing it while `fn` runs; `held: false` when another process has it. */
@@ -40,7 +46,7 @@ export async function tryWithLock<T>(name: string, fn: () => Promise<T>): Promis
   const token = await acquire(name)
   if (!token) return { held: false }
   const renew = setInterval(() => {
-    query('update locks set expires_at = now() + make_interval(secs => $3) where name = $1 and owner = $2', [name, token, seconds(LEASE_MS)]).catch(
+    db.update(locks).set({ expiresAt: leaseEnd() }).where(and(eq(locks.name, name), eq(locks.owner, token))).catch(
       (err: unknown) => log.warn('lock renewal failed', { lock: name, error: err instanceof Error ? err.message : String(err) }),
     )
   }, RENEW_MS)
@@ -50,19 +56,19 @@ export async function tryWithLock<T>(name: string, fn: () => Promise<T>): Promis
   } finally {
     clearInterval(renew)
     // Only our own row: if the lease ran out and someone took over, theirs stands.
-    await query('delete from locks where name = $1 and owner = $2', [name, token]).catch(() => {})
+    await db.delete(locks).where(and(eq(locks.name, name), eq(locks.owner, token))).catch(() => {})
   }
 }
 
 /** On shutdown, whatever this process still holds goes, so nobody waits out a lease for a process that is gone. */
 export async function releaseLocks(): Promise<void> {
-  await query('delete from locks where starts_with(owner, $1)', [`${instance}:`]).catch(() => {})
+  await db.delete(locks).where(sql`starts_with(${locks.owner}, ${`${instance}:`})`).catch(() => {})
 }
 
 /** Whether some process holds `name` now. */
 export async function isLocked(name: string): Promise<boolean> {
-  const { rowCount } = await query('select 1 from locks where name = $1 and expires_at >= now()', [name])
-  return Boolean(rowCount)
+  const held = await db.select({ name: locks.name }).from(locks).where(and(eq(locks.name, name), gte(locks.expiresAt, sql`now()`)))
+  return held.length > 0
 }
 
 /** Waits until nobody holds `name`, looking less often the longer it takes. */

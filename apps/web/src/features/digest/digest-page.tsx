@@ -19,7 +19,7 @@ import { useResource } from '@/lib/use-resource.ts'
 import { digestApi, type Digest, type DigestIndex, type RequestItem } from './api.ts'
 
 /**
- * A team's week (services/digest.ts): how its builds went against the week
+ * A team's week (modules/digest/service.ts): how its builds went against the week
  * before, the pipelines that broke and the requests for its projects —
  * counted by the portal — with the model's few lines on
  * top, labelled as its reading. The week in progress is counted live and has

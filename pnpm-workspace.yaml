@@ -1,3 +1,7 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+# Install scripts that may run. esbuild's (a drizzle-kit dependency) only
+# checks its platform binary, which ships as an optional dependency anyway.
+allowBuilds:
+  esbuild: false
