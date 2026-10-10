@@ -172,7 +172,7 @@ export function CheckMessage({ id, check }: { id: string; check: CheckState }) {
   )
 }
 
-/** Fewer words than this is flagged to the approver as a thin reason (services/request-risk.ts). */
+/** Fewer words than this is flagged to the approver as a thin reason (modules/requests/risk.ts). */
 const THIN_REASON = 6
 
 /** Why they need it — with a nudge, before sending, when it is short enough to be flagged to the approver. */

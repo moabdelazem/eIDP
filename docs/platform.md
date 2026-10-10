@@ -2,7 +2,7 @@
 
 How the catalog is built and refreshed, how background work runs on several processes, how the schema changes, and where health went. Moved out of CLAUDE.md, which keeps the rules that break things and points here.
 
-`services/catalog.ts` owns it. `syncCatalog()` pulls the inventories checkout,
+`modules/catalog/service.ts` owns it. `syncCatalog()` pulls the inventories checkout,
 parses it and rebuilds the tables in one transaction — delete-then-insert,
 because the catalog is derived data and readers keep the previous contents
 until the commit lands. `catalog_sync` is a single row holding the outcome, so

@@ -87,7 +87,7 @@ no build step for the services):
 
 | App | What | Port |
 |---|---|---|
-| `apps/api` (`@eidp/api`) | Hono API: auth, catalog, requests, RBAC, Jenkins, chatbot. Postgres for state. | 3000 |
+| `apps/api` (`@eidp/api`) | Hono API, a modular monolith — one module per area (auth, catalog, requests, access, Jenkins, pipelines, chatbot, digest, activity) behind its own `index.ts`. Postgres for state. | 3000 |
 | `apps/web` (`@eidp/web`) | React 19 + Vite + Tailwind v4 + shadcn/ui. Proxies `/api` to the API. | 5173 |
 | `packages/contracts` (`@eidp/contracts`) | The JSON the API sends and the web reads, as types only — one definition for both. | — |
 

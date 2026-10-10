@@ -11,17 +11,17 @@ Jira project are different things. A type with `kind: null` is listed as
 "Soon" and disabled, and gets no route.
 
 Adding a type: its registry entry, its form, and its API `kind` with an
-executor file in `services/requests/` and its branch in `execute.ts` — then
+executor file in `modules/requests/` and its branch in `execute.ts` — then
 flip `kind` from null. The sidebar
 uses a dropdown rather than one item per type (shadcn's sidebar-06 pattern):
 types will outgrow a flat list, and a dropdown is the only thing that still
 works in the collapsed icon rail.
 
-`services/requests.ts` owns the lifecycle: pending → approved → completed or
+`modules/requests/service.ts` owns the lifecycle: pending → approved → completed or
 failed, or pending → rejected or cancelled. Rows are never deleted; the row is
 the history.
 
-The rules that matter, each tested in `routes/requests.test.ts`:
+The rules that matter, each tested in `modules/requests/routes.test.ts`:
 
 - **Only someone who may decide it decides**: `requests.decide` for anything,
   or `requests.decide_access` within its scope for an access request — see
@@ -90,7 +90,7 @@ retry just grants again — both operations are idempotent. The form is its own
 page (`grant-access-page.tsx`); the badge says Granting/Granted, not
 Creating/Created.
 
-**Every request is assessed for its approver** (`services/request-risk.ts`),
+**Every request is assessed for its approver** (`modules/requests/risk.ts`),
 in the background the moment it is filed, and shown only to people who may
 decide it — on the approval card, in the approve dialog when it is not low,
 and in full on the request page ("Before you approve", with Assess again).
@@ -113,7 +113,7 @@ a header naming the kind and provider, the form as a card of numbered
 sections (where, what, who, why), labels above and persistent help below,
 `(optional)` on the optional fields rather than marks on required ones, each
 live check answered under its own field (`CheckMessage`), a reason that warns
-before it reads as thin (`ReasonField`, the same six words `request-risk.ts`
+before it reads as thin (`ReasonField`, the same six words `modules/requests/risk.ts`
 flags), and an action bar — Cancel then the primary, last — that names the
 first thing still missing instead of a silently disabled button. Beside it a
 sticky `ReviewPanel`: what is asked for, a readiness checklist with progress,
@@ -123,7 +123,7 @@ four-stage tracker (`stagesOf`); deciders get a decision card at the top, and
 Withdraw sits in the header.
 
 `check()` is what the form calls as someone types and what `submit()` runs, so
-the two can never disagree. Name rules are in `request-rules.ts`, from the ADO
+the two can never disagree. Name rules are in `modules/requests/rules.ts`, from the ADO
 Server naming restrictions.
 
 `integrations/ado/fake-server.ts` stands in for ADO Server in tests and local

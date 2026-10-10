@@ -2,7 +2,7 @@
 
 Permissions, roles and bindings; viewing as someone; the Access page; and the three layers that enforce it. Moved out of CLAUDE.md, which keeps the rules that break things and points here.
 
-`services/rbac.ts` is the whole model, in three layers:
+`modules/access/service.ts` is the whole model, in three layers:
 
 | Layer | What | Where |
 |---|---|---|
@@ -92,12 +92,12 @@ Three layers enforce it, and only the last one is security:
    service, which reads the caller's access through `accessFrom(c)`.
 
 A validly signed token claiming `approver` for someone without the permission
-gets 403 everywhere, which `routes/rbac.test.ts` checks.
+gets 403 everywhere, which `modules/access/routes.test.ts` checks.
 
 **Adding a guarded page means four edits, or it leaks:** the item in
 `manageItems` with its permission, its route inside a matching
 `<RequirePermission>`, `requirePermission` on its API endpoints, and those
-endpoints in the `DEVOPS_ONLY` list in `routes/rbac.test.ts`. A new capability
+endpoints in the `DEVOPS_ONLY` list in `modules/access/routes.test.ts`. A new capability
 is a new member of `Permission` in `packages/contracts/src/rbac.ts` and its
 entry in `PERMISSIONS` — which is `satisfies Record<Permission, string>`, so
 one without the other does not compile — added to the roles that should hold it.

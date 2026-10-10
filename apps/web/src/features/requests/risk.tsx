@@ -8,7 +8,7 @@ import { requestsApi, type Assessment } from './api.ts'
 import { since } from './status.tsx'
 
 /**
- * What an approver should weigh, from services/request-risk.ts: facts the
+ * What an approver should weigh, from modules/requests/risk.ts: facts the
  * portal checked, the level they add up to, and the model's one line.
  *
  * The level wears the meaning colours: green for nothing to weigh, amber for

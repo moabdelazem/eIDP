@@ -1,4 +1,4 @@
-/** Signing in and who you are: what `/auth` sends (apps/api routes/auth.ts, integrations/ldap/profile.ts). */
+/** Signing in and who you are: what `/auth` sends (apps/api modules/auth/routes.ts, integrations/ldap/profile.ts). */
 
 import type { Permission, ScopeType } from './rbac.ts'
 

@@ -1,6 +1,6 @@
-/** Jenkins: what `/jenkins` sends (apps/api services/jenkins.ts, jenkins-sync.ts, build-explainer.ts, integrations/jenkins). A build still going is `running`. */
+/** Jenkins: what `/jenkins` sends (apps/api modules/jenkins/service.ts, modules/jenkins/sync.ts, modules/jenkins/explainer.ts, integrations/jenkins). A build still going is `running`. */
 
-/** From the API's services/jenkins.ts. A build still going is `running`. */
+/** From the API's modules/jenkins/service.ts. A build still going is `running`. */
 export type Result = 'success' | 'failure' | 'unstable' | 'aborted' | 'not_built' | 'running'
 
 export type Parameter = { name: string; value: string | null; hidden: boolean }
@@ -149,7 +149,7 @@ export type RunDetail = Run & {
 
 export type Category = 'test_failure' | 'compilation' | 'dependency' | 'infrastructure' | 'configuration' | 'permission' | 'timeout' | 'flaky' | 'unknown'
 
-/** A model's explanation of a failed build, from services/build-explainer.ts. */
+/** A model's explanation of a failed build, from modules/jenkins/explainer.ts. */
 export type Explanation = {
   summary: string
   cause: string

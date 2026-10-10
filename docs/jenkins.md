@@ -12,7 +12,7 @@ bind to anyone else. Every action goes to Jenkins as the service account, so
 `jenkins_audit` records who asked, refused attempts included; the Activity tab
 reads it, and the tests delete only rows they made (`id > ` the max before).
 
-**My pipelines** (`/pipelines`, `features/pipelines/`, `services/pipelines.ts`)
+**My pipelines** (`/pipelines`, `features/pipelines/`, `modules/pipelines/service.ts`)
 is the same Jenkins for everyone else, a browse item behind `pipelines.view`
 (a `member` permission) — and it lists **runs**, not jobs, because a job is
 often shared: one build job and one deploy job for every project. A run is:
@@ -54,7 +54,7 @@ users and groups) or matrix grants in each folder's and job's `config.xml`
 an item stops inheriting). Only Job/Read counts; global roles are left out.
 Grants to `authenticated`/`anonymous` are kept as `authenticated`: they name
 no team, but they are how a shared job is readable by everyone.
-`services/jenkins-access.ts` keeps them in `jenkins_job_access` every
+`modules/jenkins/access.ts` keeps them in `jenkins_job_access` every
 `JENKINS_ACCESS_SYNC_MINUTES` (15); a failed read keeps the last rules. Once
 rules exist, a team's run shows only if Jenkins lets the person read its job —
 the portal reads with a service account that sees everything, and must not
@@ -80,7 +80,7 @@ build page (`BuildPage`, one of `features/jenkins`' public pieces with
 `ActionDialog`, `result.tsx` and the types): `GET /jenkins/run` answers a run
 that is not yours with 404, and returns `canOperate` so the page never guesses.
 Links into the Jenkins page's search show only to `jenkins.view`. The tests are
-`routes/pipelines.test.ts`; they put their own systems in the catalog under
+`modules/pipelines/routes.test.ts`; they put their own systems in the catalog under
 lock 4202.
 
 **Ignoring a failure** (`jenkins_ignored`, `POST /jenkins/ignore` and
@@ -105,7 +105,7 @@ charts are top eight plus "Other", from the API. `RankedBars` and
 
 **History is the portal's own copy.** A day or a week of builds, searchable by
 parameter, cannot be swept from Jenkins on every look, so
-`services/jenkins-sync.ts` keeps `jenkins_builds` (with parameters, causes and
+`modules/jenkins/sync.ts` keeps `jenkins_builds` (with parameters, causes and
 agent) and `jenkins_jobs` in step, every `JENKINS_SYNC_SECONDS` (60) and on
 Refresh, single-flight. A sync is one light call for the job list (each job's
 last build number) plus one call per job that built since, or had a build
@@ -118,7 +118,7 @@ read next time rather than skipped. Every table is keyed by `server`, so the
 tests' fake Jenkins never touches a real server's rows. Queue and agents are
 still asked live (15-second cache): only "now" matters for them.
 
-**History is let go after a window** (`services/jenkins-retention.ts`, the hourly
+**History is let go after a window** (`modules/jenkins/retention.ts`, the hourly
 `jenkins-retention` job, single-flight), because builds with their parameters are
 the fastest-growing thing the portal stores. The sync only *stores* builds
 inside `JENKINS_RETENTION_DAYS`; deleting is the retention job's alone, and it
@@ -134,7 +134,7 @@ passing build, so pruning the pass first would quietly ignore the job again.
 Every reader goes through `IGNORE_HOLDS`, so a released row is never shown.
 `WEEKS_BACK` follows the window (four weeks at 30 days). What a run
 deleted is logged, when it deleted anything. Tests:
-`routes/jenkins-retention.test.ts`, on servers named for the run, under lock
+`modules/jenkins/retention.test.ts`, on servers named for the run, under lock
 4202 (the digest tests write builds near the edge of the window).
 
 Secrets never reach the table: parameter values under secret-like names, and
@@ -231,8 +231,8 @@ pinned heading takes an opaque selected fill (`color-mix`), never a
 translucent one, or lines show through it.
 
 **"What went wrong"** on a failed or unstable build (`explain-panel.tsx`,
-`services/build-explainer.ts`) is made **automatically** for each job's latest
-failure (`services/auto-explain.ts`), after the Jenkins sync that finds it, so
+`modules/jenkins/explainer.ts`) is made **automatically** for each job's latest
+failure (`modules/jenkins/auto-explain.ts`), after the Jenkins sync that finds it, so
 the answer is usually waiting when someone opens the build; anything else
 (an older failure, one the run could not do) is a click. The automatic run is
 kept small because every answer is shared GPU time: only each job's *latest*
@@ -257,12 +257,12 @@ gets the facts (failed stage, parameters, commits, agent) and an *excerpt* of
 the log, numbered as the build page numbers it: each error line with six
 before and three after, every stage heading, and the last 30 lines — or the
 last 120 when nothing reads as an error. "Error line" is the same regex on both
-sides (`ERROR` in `build-explainer.ts` and `components/log-viewer/parse.ts`); change them
+sides (`ERROR` in `modules/jenkins/explainer.ts` and `components/log-viewer/parse.ts`); change them
 together. Over budget, the first error and the end are kept, then errors from
 the last backwards: the first is usually the cause, the last what stopped it.
 
 Three rules keep the answer honest, each tested in
-`routes/jenkins-explain.test.ts`: `redact` removes URL credentials,
+`modules/jenkins/explain-routes.test.ts`: `redact` removes URL credentials,
 authorization headers, secret-named `key=value` and `--flag value`, private
 keys and token shapes before the model sees anything; a cited line must be one
 the model was shown, or it is dropped; and the cited text is the log's own, not

@@ -1,11 +1,11 @@
-/** The chatbot: what `/chatbot` sends, and the events its answer streams (apps/api services/chatbot.ts). */
+/** The chatbot: what `/chatbot` sends, and the events its answer streams (apps/api modules/chatbot/service.ts). */
 
 /**
  * The portal's chatbot: Qwen on our own Ollama, as an agent inside the
  * portal. General engineering it answers from what the model knows; anything
  * about us — systems, owners, configuration, requests, approvals, builds,
  * pipelines, a team's week, what you may do — from the
- * portal's data, through read-only tools (`chatbot-tools.ts`) offered only as
+ * portal's data, through read-only tools (`modules/chatbot/tools.ts`) offered only as
  * far as the person asking may see. It never acts: for a request it hands
  * over the form filled in, and the person submits it.
  *

@@ -17,7 +17,7 @@ import { CATEGORY, jenkinsApi, type Explanation, type Result } from './api.ts'
  * thinks happened — each claim tied to log lines you can jump to.
  *
  * Each job's latest failure is explained automatically after the sync that
- * finds it (services/auto-explain.ts), so the answer is usually waiting; while
+ * finds it (modules/jenkins/auto-explain.ts), so the answer is usually waiting; while
  * it is on its way the panel says so and looks again. Anything else — an
  * older failure, one the automatic run could not do — is a click. Once made,
  * an answer is kept for everyone. It says it is generated, by which model, for whom and when,

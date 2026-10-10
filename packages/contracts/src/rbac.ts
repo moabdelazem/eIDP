@@ -1,4 +1,4 @@
-/** Who may do what: what `/rbac` and the profile send (apps/api services/rbac.ts). */
+/** Who may do what: what `/rbac` and the profile send (apps/api modules/access/service.ts). */
 
 /** One thing the portal can do. The API's `PERMISSIONS` describes each, and must name exactly these. */
 export type Permission =

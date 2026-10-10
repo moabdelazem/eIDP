@@ -1,4 +1,4 @@
-/** Platform activity: what `/activity` sends (apps/api services/activity.ts). */
+/** Platform activity: what `/activity` sends (apps/api modules/activity/service.ts). */
 
 export type Window = '24h' | '7d' | '30d'
 

@@ -12,7 +12,7 @@
     "jira:fake": "node src/integrations/jira/fake-server.ts",
     "jenkins:fake": "node src/integrations/jenkins/fake-server.ts",
     "ollama:fake": "node src/integrations/ollama/fake-server.ts",
-    "rbac:import": "node --env-file-if-exists=../../.env src/with-secrets.ts src/services/rbac-import.ts",
+    "rbac:import": "node --env-file-if-exists=../../.env src/with-secrets.ts src/modules/access/import.ts",
     "vault:fake": "node src/integrations/vault/fake-server.ts"
   },
   "dependencies": {
