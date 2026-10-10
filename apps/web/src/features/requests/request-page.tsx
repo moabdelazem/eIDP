@@ -24,16 +24,12 @@ export function RequestPage() {
   const { requestId = '' } = useParams()
   const { session } = useSession()
   const [pollMs, setPollMs] = useState<number | null>(3000)
-  const request = useResource(
-    async () => {
+  const request = useResource(['requests', 'get', requestId], async () => {
       const found = await requestsApi.get(requestId)
       // Watch it while it is moving; stop once it has settled.
       setPollMs(isInFlight(found.status) ? 3000 : null)
       return found
-    },
-    [requestId],
-    { pollMs },
-  )
+    }, { pollMs })
   usePageTitle(request.data ? (request.data.repository ?? request.data.project) : 'Request')
 
   if (request.error && !request.data) {

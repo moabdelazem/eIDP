@@ -36,7 +36,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   const { session } = useSession()
   // Refreshed every few minutes: being added to DEVOPS should show up without
   // signing out and back in.
-  const profile = useResource(() => api<Profile>('/auth/profile'), [session?.uid], {
+  const profile = useResource(['auth', 'profile', session?.uid], () => api<Profile>('/auth/profile'), {
     pollMs: 5 * 60_000,
   })
 

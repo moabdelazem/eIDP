@@ -29,7 +29,7 @@ import { digestApi, type Digest, type DigestIndex, type RequestItem } from './ap
  * link lands on one digest. Without a week it opens on the last finished one.
  */
 export function DigestPage() {
-  const index = useResource(() => digestApi.index(), [])
+  const index = useResource(['digest', 'index'], () => digestApi.index())
   const [params, setParams] = useSearchParams()
 
   if (index.error && !index.data) return <div className={PAGE}><p className="text-sm text-destructive">{index.error}</p></div>
@@ -71,7 +71,7 @@ function NoTeam() {
 }
 
 function TeamWeek({ index, team, week, go }: { index: DigestIndex; team: string; week: string; go: (next: { team?: string; week?: string }) => void }) {
-  const digest = useResource(() => digestApi.digest(team, week), [team, week])
+  const digest = useResource(['digest', 'digest', team, week], () => digestApi.digest(team, week))
   const [busy, setBusy] = useState(false)
   usePageTitle(`${team} · week of ${short(week)} — Weekly digest`)
 

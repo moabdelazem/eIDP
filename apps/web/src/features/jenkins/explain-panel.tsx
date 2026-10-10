@@ -42,7 +42,7 @@ export function ExplainPanel({
   const allowed = can('ai.chat') && (result === 'failure' || result === 'unstable')
   // While an explanation is on its way without anyone asking, look again every few seconds.
   const [waiting, setWaiting] = useState(false)
-  const kept = useResource(() => (allowed ? jenkinsApi.explanation(job, number) : Promise.resolve(null)), [allowed, job, number], {
+  const kept = useResource(['jenkins', 'explanation', allowed, job, number], () => (allowed ? jenkinsApi.explanation(job, number) : Promise.resolve(null)), {
     pollMs: waiting ? 5_000 : null,
   })
   const queued = !kept.data?.explanation && kept.data?.auto.state === 'queued'

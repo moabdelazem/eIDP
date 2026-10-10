@@ -1,63 +1,40 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback } from 'react'
+import { keepPreviousData, useQuery, type QueryKey } from '@tanstack/react-query'
 import { ApiError } from './api-client.ts'
 
 export type Resource<T> = {
   data: T | undefined
   error: string | null
+  /** Nothing to show yet for this key — the first load, or a new key while the last one's data stands in. */
   loading: boolean
   reload: () => void
 }
 
 /**
- * Loads something and keeps it fresh. `pollMs` refetches on an interval while
- * the component is mounted and the tab is visible; `null` stops polling, which
- * is how a page watching an in-flight request stops once it settles.
+ * Loads something and keeps it fresh, through the shared cache
+ * (`lib/query-client.ts`). `key` names what is fetched — the same key in two
+ * components is one request and one answer — and carries everything the
+ * fetch depends on, so a new value is a new fetch.
  *
- * ponytail: no cache shared between components, no deduplication. When two
- * screens start fetching the same thing, that is the moment for TanStack Query.
+ * `pollMs` refetches on an interval while the tab is visible; `null` stops
+ * polling, which is how a page watching an in-flight request stops once it
+ * settles. While a new key loads, the previous key's data stays on screen
+ * (`loading` says so), as a table keeps its rows while the next page comes.
  */
-export function useResource<T>(
-  fetcher: () => Promise<T>,
-  deps: unknown[],
-  { pollMs = null as number | null } = {},
-): Resource<T> {
-  const [data, setData] = useState<T>()
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const generation = useRef(0)
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const load = useCallback(fetcher, deps)
-
-  const run = useCallback(() => {
-    const mine = ++generation.current
-    load()
-      .then((value) => {
-        if (mine !== generation.current) return // a newer load has started
-        setData(value)
-        setError(null)
-      })
-      .catch((err: unknown) => {
-        if (mine !== generation.current) return
-        setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.')
-      })
-      .finally(() => {
-        if (mine === generation.current) setLoading(false)
-      })
-  }, [load])
-
-  useEffect(() => {
-    setLoading(true)
-    run()
-  }, [run])
-
-  useEffect(() => {
-    if (pollMs === null) return
-    const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') run()
-    }, pollMs)
-    return () => clearInterval(timer)
-  }, [run, pollMs])
-
-  return { data, error, loading, reload: run }
+export function useResource<T>(key: QueryKey, fetcher: () => Promise<T>, { pollMs = null as number | null } = {}): Resource<T> {
+  const query = useQuery({
+    queryKey: key,
+    queryFn: fetcher,
+    refetchInterval: pollMs ?? false,
+    placeholderData: keepPreviousData,
+  })
+  const { refetch } = query
+  // Stable, so a context or memo that hands it on does not change every render.
+  const reload = useCallback(() => void refetch(), [refetch])
+  return {
+    data: query.data,
+    error: query.error ? (query.error instanceof ApiError ? query.error.message : 'Something went wrong. Try again.') : null,
+    loading: query.isPending || query.isPlaceholderData,
+    reload,
+  }
 }

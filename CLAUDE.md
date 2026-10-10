@@ -1142,6 +1142,20 @@ compile. Not Hono's `hc<AppType>`: `app.ts` mounts routes as statements, so
 `AppType` carries no routes, and the web would type-check the API's Node code.
 A contract file imports nothing from outside the package and holds no values.
 
+**Reads go through one cache** (`@tanstack/react-query`, `lib/query-client.ts`).
+`useResource(key, fetcher, { pollMs })` is the only way a component loads
+data: the key names what is fetched and carries everything it depends on,
+so the same key in two components is one request and one answer — the
+sidebar's approvals badge, the Overview and the Approvals page share
+`['requests', 'pool']`, and a reload in one refreshes all. A fetch that is
+skipped under a condition uses its own `'none'` key, so the real answer
+stays shareable. While a new key loads, the last one's data stays on screen
+(`loading` says so). Five seconds fresh; a 4xx or this API's own 503 is an
+answer and never retried, an unreachable portal or a proxy's 502/504 is
+tried once. Every change of session empties the cache (`tokenStore.onChange`),
+so one person's data never shows for the next. Writes still call the API
+and then `reload`.
+
 `lib/api-client.ts` is the only thing that calls `fetch`. It attaches the
 session token, and turns a failure into an `ApiError` carrying the message the
 API wrote — the UI shows that message rather than inventing its own wording for

@@ -29,10 +29,10 @@ const RECENT_SHOWN = 8
  */
 export function ApprovalsPage() {
   const { session } = useSession()
-  const pool = useResource(() => requestsApi.pool(), [], { pollMs: 10_000 })
+  const pool = useResource(['requests', 'pool'], () => requestsApi.pool(), { pollMs: 10_000 })
   // Everything decidable, for the tiles and the History tab. Slower to change
   // than the queue, so polled less often.
-  const history = useResource(() => requestsApi.history(), [], { pollMs: 30_000 })
+  const history = useResource(['requests', 'history'], () => requestsApi.history(), { pollMs: 30_000 })
   const [params, setParams] = useSearchParams()
   const tab = params.get('tab') === 'history' ? 'history' : 'queue'
   const [status, setStatus] = useState<RequestStatus | 'all'>('all')

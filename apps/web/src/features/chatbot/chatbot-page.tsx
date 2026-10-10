@@ -28,7 +28,7 @@ export function ChatbotPage() {
   const { conversationId = null } = useParams()
   const navigate = useNavigate()
   const { session } = useSession()
-  const home = useResource(() => chatbotApi.home(), [])
+  const home = useResource(['chatbot', 'home'], () => chatbotApi.home())
   const [forgetting, setForgetting] = useState<Conversation | null>(null)
   const [titles, setTitles] = useState<Record<string, string>>({})
 

@@ -42,10 +42,10 @@ export function AccessPage() {
     setParams(p)
   }
 
-  const catalogue = useResource(() => rbacApi.catalogue(), [])
-  const bindings = useResource(() => rbacApi.bindings(), [])
-  const audit = useResource(() => rbacApi.audit(), [])
-  const suggestions = useResource(() => rbacApi.suggestions(), [])
+  const catalogue = useResource(['rbac', 'catalogue'], () => rbacApi.catalogue())
+  const bindings = useResource(['rbac', 'bindings'], () => rbacApi.bindings())
+  const audit = useResource(['rbac', 'audit'], () => rbacApi.audit())
+  const suggestions = useResource(['rbac', 'suggestions'], () => rbacApi.suggestions())
   const reload = () => {
     bindings.reload()
     audit.reload()

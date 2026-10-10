@@ -25,7 +25,7 @@ const RankedBars = lazy(() => import('./charts.tsx').then((m) => ({ default: m.R
  * in one hue unless the series is the point (results), never two y-axes.
  */
 export function Dashboard({ window, version, onJob }: { window: Window; version: number; onJob: (job: string) => void }) {
-  const stats = useResource(() => jenkinsApi.stats(window), [window, version], { pollMs: 60_000 })
+  const stats = useResource(['jenkins', 'stats', window, version], () => jenkinsApi.stats(window), { pollMs: 60_000 })
 
   if (stats.error && !stats.data) return <p className="text-sm text-destructive">{stats.error}</p>
   if (!stats.data) {

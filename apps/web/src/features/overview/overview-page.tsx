@@ -44,8 +44,9 @@ function Overview() {
   // already only what they may decide.
   const decider = canSomewhere('requests.decide_access')
   const syncs = can('catalog.sync')
-  const mine = useResource(() => requestsApi.mine(), [], { pollMs: 30_000 })
-  const pool = useResource(() => (decider ? requestsApi.pool() : Promise.resolve(null)), [decider], {
+  const mine = useResource(['requests', 'mine'], () => requestsApi.mine(), { pollMs: 30_000 })
+  // The sidebar's and the Approvals page's answer when you decide; nothing to ask for otherwise.
+  const pool = useResource(decider ? ['requests', 'pool'] : ['requests', 'pool', 'none'], () => (decider ? requestsApi.pool() : Promise.resolve(null)), {
     pollMs: 30_000,
   })
 

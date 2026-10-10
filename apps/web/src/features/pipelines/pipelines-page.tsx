@@ -57,7 +57,7 @@ export function PipelinesPage() {
 
   const [watching, setWatching] = useState(false)
   // While something runs or waits, look again every 15 seconds; otherwise only on Refresh.
-  const mine = useResource(() => pipelinesApi.mine(window), [window], { pollMs: watching ? 15_000 : null })
+  const mine = useResource(['pipelines', 'mine', window], () => pipelinesApi.mine(window), { pollMs: watching ? 15_000 : null })
   const data = mine.data
   const busy = !!data && (data.runs.some((r) => r.result === 'running') || data.queue.length > 0)
   if (busy !== watching) setWatching(busy)

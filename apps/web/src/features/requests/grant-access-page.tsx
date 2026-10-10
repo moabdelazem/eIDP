@@ -38,7 +38,7 @@ export function GrantAccessPage() {
   usePageTitle(title)
   const navigate = useNavigate()
   const { session } = useSession()
-  const collections = useResource(() => requestsApi.collections(), [])
+  const collections = useResource(['requests', 'collections'], () => requestsApi.collections())
 
   // A link may carry the form filled in — the chatbot's drafts do.
   const [params] = useSearchParams()
@@ -54,10 +54,7 @@ export function GrantAccessPage() {
     if (!collection && collections.data) setCollection(collections.data.defaultCollection)
   }, [collections.data, collection])
 
-  const projects = useResource(
-    () => (collection ? requestsApi.projects(collection) : Promise.resolve([])),
-    [collection],
-  )
+  const projects = useResource(collection ? ['requests', 'projects', collection] : ['requests', 'projects', 'none'], () => (collection ? requestsApi.projects(collection) : Promise.resolve([])))
 
   // A prefilled project — a link's or the chatbot's — takes the spelling ADO uses.
   useEffect(() => {

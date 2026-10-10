@@ -30,7 +30,7 @@ export function NavManage() {
 
 function ManageGroup({ items }: { items: typeof manageItems }) {
   const { pathname } = useLocation()
-  const pool = useResource(() => requestsApi.pool(), [], { pollMs: 30_000 })
+  const pool = useResource(['requests', 'pool'], () => requestsApi.pool(), { pollMs: 30_000 })
   const waiting = pool.data?.open.filter((r) => r.status === 'pending').length ?? 0
 
   return (

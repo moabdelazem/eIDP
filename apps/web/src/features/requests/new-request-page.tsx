@@ -51,7 +51,7 @@ export function NewRequestPage({ kind }: { kind: CreationKind }) {
   const copy = { ...COPY[kind], title: REQUEST_TYPES.find((type) => type.kind === kind)!.title }
   usePageTitle(copy.title)
   const navigate = useNavigate()
-  const collections = useResource(() => requestsApi.collections(), [])
+  const collections = useResource(['requests', 'collections'], () => requestsApi.collections())
 
   // A link may carry the form filled in — the chatbot's drafts do.
   const [params] = useSearchParams()
@@ -70,10 +70,7 @@ export function NewRequestPage({ kind }: { kind: CreationKind }) {
     if (!collection && collections.data) setCollection(collections.data.defaultCollection)
   }, [collections.data, collection])
 
-  const projects = useResource(
-    () => (collection && kind === 'create_repository' ? requestsApi.projects(collection) : Promise.resolve([])),
-    [collection, kind],
-  )
+  const projects = useResource(collection && kind === 'create_repository' ? ['requests', 'projects', collection] : ['requests', 'projects', 'none'], () => (collection && kind === 'create_repository' ? requestsApi.projects(collection) : Promise.resolve([])))
 
   // A prefilled project — a link's or the chatbot's — takes the spelling ADO uses.
   useEffect(() => {

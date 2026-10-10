@@ -1,5 +1,5 @@
-import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { ApiError } from '@/lib/api-client.ts'
+import { createContext, use, useMemo, type ReactNode } from 'react'
+import { useResource } from '@/lib/use-resource.ts'
 import type { System } from './catalog.ts'
 import { fetchCatalog, type SyncState } from './api.ts'
 
@@ -14,44 +14,24 @@ type CatalogValue = {
 
 const CatalogContext = createContext<CatalogValue | null>(null)
 
-/** Loads the catalog once for everything under it — map, detail and breadcrumbs. */
+/**
+ * Loads the catalog once for everything under it — map, detail and
+ * breadcrumbs — through the shared cache (`['catalog']`), so anything else
+ * that asks for it reads the same answer. A reload keeps the map on screen
+ * while the new one comes.
+ */
 export function CatalogProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<Omit<CatalogValue, 'reload'>>({
-    status: 'loading',
-    systems: [],
-    sync: null,
-    error: null,
-  })
-
-  const load = useCallback(() => {
-    let cancelled = false
-    setState((current) => ({ ...current, status: 'loading', error: null }))
-
-    fetchCatalog()
-      .then(({ systems, sync }) => {
-        if (!cancelled) setState({ status: 'ready', systems, sync, error: null })
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return
-        setState({
-          status: 'error',
-          systems: [],
-          sync: null,
-          error:
-            err instanceof ApiError
-              ? err.message
-              : 'Something went wrong while loading the projects map.',
-        })
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  useEffect(load, [load])
-
-  const value = useMemo(() => ({ ...state, reload: load }), [state, load])
+  const catalog = useResource(['catalog'], fetchCatalog)
+  const value = useMemo<CatalogValue>(
+    () => ({
+      status: catalog.data ? 'ready' : catalog.error ? 'error' : 'loading',
+      systems: catalog.data?.systems ?? [],
+      sync: catalog.data?.sync ?? null,
+      error: catalog.data ? null : catalog.error,
+      reload: catalog.reload,
+    }),
+    [catalog.data, catalog.error, catalog.reload],
+  )
   return <CatalogContext value={value}>{children}</CatalogContext>
 }
 

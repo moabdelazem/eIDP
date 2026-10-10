@@ -10,6 +10,8 @@ function read(key: string): string | null {
   }
 }
 
+const listeners = new Set<() => void>()
+
 function write(key: string, value: string | null): void {
   try {
     if (value === null) localStorage.removeItem(key)
@@ -17,6 +19,7 @@ function write(key: string, value: string | null): void {
   } catch {
     /* the session just won't survive a reload */
   }
+  if (key === KEY) for (const listener of listeners) listener()
 }
 
 /**
@@ -24,6 +27,11 @@ function write(key: string, value: string | null): void {
  * the API client can read it without importing a feature.
  */
 export const tokenStore = {
+  /** Called whenever the session changes hands — signing in or out, viewing as someone, a dead session. */
+  onChange(listener: () => void): () => void {
+    listeners.add(listener)
+    return () => listeners.delete(listener)
+  },
   get(): string | null {
     return read(KEY)
   },

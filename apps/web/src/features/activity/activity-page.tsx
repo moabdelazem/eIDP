@@ -65,7 +65,7 @@ export function ActivityPage() {
     )
   const showPerson = (uid: string) => set({ tab: 'feed', who: uid, group: null, q: null })
 
-  const overview = useResource(() => activityApi.overview(window), [window])
+  const overview = useResource(['activity', 'overview', window], () => activityApi.overview(window))
   const [stamp, setStamp] = useState(0)
   const refresh = () => {
     overview.reload()
@@ -425,7 +425,7 @@ function Line({ run: { item, times }, onPerson }: { run: Run; onPerson: (uid: st
 // ---- people -----------------------------------------------------------------------------
 
 function PeopleTab({ window, onPerson, retentionDays }: { window: ActivityWindow; onPerson: (uid: string) => void; retentionDays: number | null }) {
-  const people = useResource(() => activityApi.people(window), [window])
+  const people = useResource(['activity', 'people', window], () => activityApi.people(window))
   const [q, setQ] = useState('')
   if (people.error && !people.data) return <p className="text-sm text-destructive">{people.error}</p>
   if (!people.data) {
