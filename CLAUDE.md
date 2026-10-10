@@ -18,6 +18,14 @@ pnpm workspace. `apps/*` and `packages/*`.
   | `middleware/` | Cross-cutting request handling | Owns `AppEnv`, the typed context |
   | `lib/` | Config, errors, validation | No feature knowledge |
 
+  A service that outgrows one file becomes a folder of parts behind the same
+  entry module — `services/jenkins.ts` (shared, now, stats, search, actions)
+  and `services/requests.ts` (model, check, lifecycle, deciding, rows, and one
+  executor per kind: `execute.ts` runs the Azure DevOps creations and
+  dispatches `grant.ts` and `jira-project.ts`; their shared steps are
+  `steps.ts`). The entry re-exports exactly the public names, so importers
+  never change and helpers the parts share stay out of its surface.
+
   `app.ts` builds the app without listening so tests drive it via
   `app.request()`; `server.ts` serves it, and `index.ts` loads secrets
   (Vault, then `.env`) before importing it. Adding an integration means a new
@@ -383,7 +391,8 @@ Jira project are different things. A type with `kind: null` is listed as
 "Soon" and disabled, and gets no route.
 
 Adding a type: its registry entry, its form, and its API `kind` with an
-executor in `services/requests.ts` — then flip `kind` from null. The sidebar
+executor file in `services/requests/` and its branch in `execute.ts` — then
+flip `kind` from null. The sidebar
 uses a dropdown rather than one item per type (shadcn's sidebar-06 pattern):
 types will outgrow a flat list, and a dropdown is the only thing that still
 works in the collapsed icon rail.
