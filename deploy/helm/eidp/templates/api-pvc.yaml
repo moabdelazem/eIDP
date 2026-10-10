@@ -1,0 +1,19 @@
+{{- with .Values.api.inventories.persistence }}
+{{- if and .enabled (not .existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "eidp.api.fullname" $ }}-inventories
+  labels:
+    {{- include "eidp.labels" (dict "root" $ "component" "api") | nindent 4 }}
+spec:
+  # Every replica mounts it; the catalog sync is single-flight and runs in one at a time.
+  accessModes: ["ReadWriteMany"]
+  {{- with .storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .size }}
+{{- end }}
+{{- end }}

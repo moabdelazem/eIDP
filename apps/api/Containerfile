@@ -1,0 +1,36 @@
+# The API, for production. Node 24 runs the TypeScript source as it is (type
+# stripping), so there is no build step: production dependencies, the source,
+# and git — the catalog sync shells out to it to clone the inventories repo.
+# Build from the repository root: podman build -f apps/api/Containerfile .
+
+FROM docker.io/library/node:24-alpine AS deps
+RUN corepack enable
+WORKDIR /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api/package.json apps/api/
+COPY packages/contracts/package.json packages/contracts/
+# Only the API and what it depends on, without TypeScript and the type packages.
+RUN pnpm install --frozen-lockfile --prod --filter @eidp/api...
+
+FROM docker.io/library/node:24-alpine
+RUN apk add --no-cache git tini
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
+COPY apps/api/package.json apps/api/
+COPY apps/api/src apps/api/src
+# @eidp/contracts is imported with `import type` only, which Node erases, so
+# the package is never loaded; its link is left dangling on purpose.
+
+# HOME for git, which reads its config from there; the root filesystem may be
+# read-only. The checkout lives on a volume the chart mounts.
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOME=/tmp \
+    INVENTORIES_CHECKOUT=/var/lib/eidp/inventories
+WORKDIR /app/apps/api
+USER node
+EXPOSE 3000
+# tini forwards SIGTERM so a rollout stops the process cleanly.
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["node", "src/index.ts"]

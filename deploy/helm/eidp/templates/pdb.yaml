@@ -1,0 +1,17 @@
+{{- range $component := list "api" "web" }}
+{{- $values := index $.Values $component }}
+{{- if $values.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "eidp.fullname" $ | trunc 59 | trimSuffix "-" }}-{{ $component }}
+  labels:
+    {{- include "eidp.labels" (dict "root" $ "component" $component) | nindent 4 }}
+spec:
+  minAvailable: {{ $values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "eidp.selectorLabels" (dict "root" $ "component" $component) | nindent 6 }}
+{{- end }}
+{{- end }}

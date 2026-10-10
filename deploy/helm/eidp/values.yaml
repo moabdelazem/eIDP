@@ -1,0 +1,191 @@
+# e-IDP. Every setting the API reads is documented in .env.example at the
+# repository root; this file says where each one comes from in the cluster.
+
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# ---------------------------------------------------------------------------
+# The API (apps/api). Runs migrations at boot under an advisory lock and its
+# background jobs through leases, so it is safe with several replicas.
+# ---------------------------------------------------------------------------
+api:
+  image:
+    repository: ghcr.io/moabdelazem/eidp-api
+    tag: ""            # defaults to the chart's appVersion
+    pullPolicy: IfNotPresent
+
+  replicaCount: 2
+
+  # Settings that are not secret, as plain environment variables (a ConfigMap).
+  # Anything listed in .env.example may go here; secrets belong in Vault or
+  # in `secrets.existingSecret`, never here.
+  config:
+    APPROVER_GROUP: DEVOPS
+    SYNC_INTERVAL_MINUTES: "30"
+    SESSION_TTL_HOURS: "8"
+    # LDAP_URL: ldaps://dc01.example.com:636
+    # LDAP_BASE_DN: dc=example,dc=com
+    # LDAP_BIND_DN: svc-eidp@example.com
+    # LDAP_USER_FILTER: (&(objectCategory=person)(objectClass=user)(sAMAccountName={username}))
+    # ADO_BASE_URL: https://ado.example.com/DefaultCollection
+    # INVENTORIES_PROJECT: Platform
+    # JIRA_BASE_URL: https://jira.example.com
+    # JENKINS_URL: https://jenkins.example.com
+    # JENKINS_USER: svc-eidp
+    # OLLAMA_URL: http://ollama.ai.svc.cluster.local:11434
+
+  # Secrets, in the order the API reads them: Vault first — what it reads
+  # there wins — then these Kubernetes Secrets as the fallback, the
+  # cluster's `.env`. A key in a later Secret wins over the same key in an
+  # earlier one.
+  secrets:
+    # An existing Secret whose keys are setting names (LDAP_BIND_PASSWORD,
+    # ADO_PAT, JIRA_TOKEN, JENKINS_TOKEN, JWT_SECRET, DATABASE_URL, …), all
+    # passed to the API as environment variables.
+    existingSecret: ""
+    # JWT_SECRET signs sessions; every replica needs the same one. Generated
+    # once and kept across upgrades, unless Vault or existingSecret has one.
+    generateJwtSecret: true
+
+  # HashiCorp Vault, read at boot (integrations/vault). Off without `addr`.
+  vault:
+    addr: ""                 # https://vault.example.com:8200
+    secretPaths: ""          # comma-separated, the later winning: eidp/api,eidp/shared
+    kvMount: secret
+    kvVersion: "2"
+    namespace: ""
+    # Refuse to start when Vault cannot be read, instead of falling back.
+    required: false
+    timeoutSeconds: 5
+    # Token auth, or AppRole (its token is revoked after the read). Both come
+    # from a Secret: name it and the keys that hold them.
+    auth:
+      existingSecret: ""
+      tokenKey: VAULT_TOKEN
+      roleIdKey: VAULT_ROLE_ID
+      secretIdKey: VAULT_SECRET_ID
+      approlePath: approle
+
+  # The inventories working copy the catalog sync clones into. An emptyDir
+  # is cloned again after a restart; a PVC keeps it. Every replica mounts the
+  # same claim, so it must be ReadWriteMany — the sync job runs in one replica
+  # at a time (lib/jobs.ts), so they never fetch into it at once.
+  inventories:
+    persistence:
+      enabled: false
+      size: 2Gi
+      storageClass: ""
+      existingClaim: ""
+
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 768Mi }
+
+  podAnnotations: {}
+  podLabels: {}
+  extraEnv: []
+  extraEnvFrom: []
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+
+# ---------------------------------------------------------------------------
+# The web app (apps/web): the built UI, served by nginx.
+# ---------------------------------------------------------------------------
+web:
+  image:
+    repository: ghcr.io/moabdelazem/eidp-web
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 128Mi }
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+# ---------------------------------------------------------------------------
+# The way in: a Gateway API HTTPRoute, attached to a Gateway Envoy Gateway
+# runs. /api goes to the API with the prefix taken off (the API's routes
+# are at its root, as the dev server's proxy does it); the rest is the web app.
+# ---------------------------------------------------------------------------
+httpRoute:
+  enabled: true
+  annotations: {}
+  parentRefs:
+    - name: eg
+      namespace: envoy-gateway-system
+      sectionName: https
+  hostnames:
+    - portal.example.com
+  # Envoy's default route timeout is 15s, shorter than some API calls.
+  timeouts:
+    api: 60s
+    # The chatbot's answer streams as server-sent events for as long as the
+    # model takes; "0s" turns the request timeout off for it.
+    streaming: 0s
+  streamingPaths:
+    - /api/chatbot/ask
+
+# ---------------------------------------------------------------------------
+# The database. External by default: the API's DATABASE_URL then comes from
+# Vault, from api.secrets.existingSecret, or from `external.existingSecret`.
+# ---------------------------------------------------------------------------
+database:
+  external:
+    # A Secret holding the connection string, if not in Vault or the API's secret.
+    existingSecret: ""
+    urlKey: DATABASE_URL
+
+# A small Postgres of the chart's own, for dev and test clusters. Not for
+# production: one replica, no backups, no tuning.
+postgresql:
+  enabled: false
+  image:
+    repository: docker.io/library/postgres
+    tag: 17-alpine
+    pullPolicy: IfNotPresent
+  database: eidp
+  username: eidp
+  # Generated once and kept across upgrades unless given (or an existing Secret is named).
+  password: ""
+  existingSecret: ""
+  passwordKey: password
+  persistence:
+    size: 8Gi
+    storageClass: ""
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+# Only the Gateway's namespace may reach the web app and the API, and only
+# the API may reach the chart's Postgres. Off by default: name the Gateway's
+# namespace before turning it on.
+networkPolicy:
+  enabled: false
+  gatewayNamespace: envoy-gateway-system

@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "eidp.api.fullname" . }}
+  labels:
+    {{- include "eidp.labels" (dict "root" . "component" "api") | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.api.config }}
+  {{ $key }}: {{ $value | toString | quote }}
+  {{- end }}
+  {{- with .Values.api.vault }}
+  {{- if .addr }}
+  VAULT_ADDR: {{ .addr | quote }}
+  VAULT_SECRET_PATHS: {{ .secretPaths | quote }}
+  VAULT_KV_MOUNT: {{ .kvMount | quote }}
+  VAULT_KV_VERSION: {{ .kvVersion | toString | quote }}
+  VAULT_REQUIRED: {{ .required | toString | quote }}
+  VAULT_TIMEOUT_SECONDS: {{ .timeoutSeconds | toString | quote }}
+  VAULT_APPROLE_PATH: {{ .auth.approlePath | quote }}
+  {{- with .namespace }}
+  VAULT_NAMESPACE: {{ . | quote }}
+  {{- end }}
+  {{- end }}
+  {{- end }}
