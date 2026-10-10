@@ -1,27 +1,30 @@
 import { Navigate, Route, Routes, useParams } from 'react-router'
-import { ActivityPage } from '@/features/activity/activity-page.tsx'
 import { LoginPage } from '@/features/auth/login-page.tsx'
-import { ProfilePage } from '@/features/auth/profile-page.tsx'
 import { OverviewPage } from '@/features/overview/overview-page.tsx'
-import { ProjectMapPage } from '@/features/projects/map-page.tsx'
-import { ProjectPage } from '@/features/projects/project-page.tsx'
-import { ApprovalsPage } from '@/features/requests/approvals-page.tsx'
 import { isAvailable, REQUEST_TYPES } from '@/features/requests/kinds.ts'
-import { MyRequestsPage } from '@/features/requests/my-requests-page.tsx'
-import { NewRequestPage } from '@/features/requests/new-request-page.tsx'
-import { GrantAccessPage } from '@/features/requests/grant-access-page.tsx'
-import { JiraProjectPage } from '@/features/requests/jira-project-page.tsx'
-import { RequestPage } from '@/features/requests/request-page.tsx'
 import { AppShell } from './app-shell.tsx'
 import { NotFoundPage } from './not-found-page.tsx'
 import { RequirePermission } from './require-permission.tsx'
-import { AccessPage } from '@/features/admin/access-page.tsx'
-import { JenkinsPage } from '@/features/jenkins/jenkins-page.tsx'
-import { ChatbotPage } from '@/features/chatbot/chatbot-page.tsx'
-import { BuildPage } from '@/features/jenkins/build-page.tsx'
-import { PipelinesPage } from '@/features/pipelines/pipelines-page.tsx'
-import { DigestPage } from '@/features/digest/digest-page.tsx'
 import { RequireSession } from './require-session.tsx'
+import { lazyPage } from './lazy-page.ts'
+
+// Every page but the landing one and sign-in is its own chunk, fetched when first opened.
+const ActivityPage = lazyPage(() => import('@/features/activity/activity-page.tsx'), 'ActivityPage')
+const ProfilePage = lazyPage(() => import('@/features/auth/profile-page.tsx'), 'ProfilePage')
+const ProjectMapPage = lazyPage(() => import('@/features/projects/map-page.tsx'), 'ProjectMapPage')
+const ProjectPage = lazyPage(() => import('@/features/projects/project-page.tsx'), 'ProjectPage')
+const ApprovalsPage = lazyPage(() => import('@/features/requests/approvals-page.tsx'), 'ApprovalsPage')
+const MyRequestsPage = lazyPage(() => import('@/features/requests/my-requests-page.tsx'), 'MyRequestsPage')
+const NewRequestPage = lazyPage(() => import('@/features/requests/new-request-page.tsx'), 'NewRequestPage')
+const GrantAccessPage = lazyPage(() => import('@/features/requests/grant-access-page.tsx'), 'GrantAccessPage')
+const JiraProjectPage = lazyPage(() => import('@/features/requests/jira-project-page.tsx'), 'JiraProjectPage')
+const RequestPage = lazyPage(() => import('@/features/requests/request-page.tsx'), 'RequestPage')
+const AccessPage = lazyPage(() => import('@/features/admin/access-page.tsx'), 'AccessPage')
+const JenkinsPage = lazyPage(() => import('@/features/jenkins/jenkins-page.tsx'), 'JenkinsPage')
+const ChatbotPage = lazyPage(() => import('@/features/chatbot/chatbot-page.tsx'), 'ChatbotPage')
+const BuildPage = lazyPage(() => import('@/features/jenkins/build-page.tsx'), 'BuildPage')
+const PipelinesPage = lazyPage(() => import('@/features/pipelines/pipelines-page.tsx'), 'PipelinesPage')
+const DigestPage = lazyPage(() => import('@/features/digest/digest-page.tsx'), 'DigestPage')
 
 export function AppRoutes() {
   return (

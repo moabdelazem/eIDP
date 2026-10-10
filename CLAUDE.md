@@ -39,7 +39,14 @@ pnpm workspace. `apps/*` and `packages/*`.
   | `lib/` | `api-client`, `token-store` | No React, no feature knowledge |
 
   Routes live in `app/routes.tsx`; `RequireSession` guards everything behind it
-  and remembers where you were headed. `app/nav.ts` is the single source for
+  and remembers where you were headed. Every page but the Overview and
+  sign-in is `lazyPage(() => import(…), 'Name')` (`app/lazy-page.ts`): its own
+  chunk, fetched when first opened, under one `Suspense` in `AppShell` that
+  shows a page skeleton. That took the main bundle from 914 KB to 403 KB. A
+  tab left open across a deploy asks for chunks that no longer exist, so a
+  failed load reloads once onto the new build (`eidp.chunk-reload` in
+  sessionStorage) and only a second failure in a row is an error. A new page
+  is added the same way — a static import puts it back in everyone's bundle. `app/nav.ts` is the single source for
   sidebar items, split by what they do: `browseItems` for destinations,
   `requestItems` for things people ask for. An item's `owns` prefixes keep its
   section lit on detail pages.

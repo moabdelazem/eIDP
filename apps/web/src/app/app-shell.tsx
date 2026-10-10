@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { Outlet, useLocation } from 'react-router'
 import { AppSidebar } from '@/components/sidebar/app-sidebar.tsx'
 import { CommandPalette } from '@/components/command-palette.tsx'
@@ -9,6 +10,7 @@ import { Separator } from '@/components/ui/separator'
 import { ViewingAsBanner } from './viewing-as-banner.tsx'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { PageVisits } from './page-visits.tsx'
+import { HeaderSkeleton, Loading, RowsSkeleton } from '@/components/skeletons.tsx'
 
 export function AppShell() {
   const { pathname } = useLocation()
@@ -32,7 +34,10 @@ export function AppShell() {
                 page, rather than replaying it on every keystroke. A div, not a
                 main: SidebarInset is already the page's one <main>. */}
             <div key={pathname} className="page-enter p-8">
-              <Outlet />
+              {/* A page's own chunk is fetched the first time it opens (app/lazy-page.ts). */}
+              <Suspense fallback={<PageLoading />}>
+                <Outlet />
+              </Suspense>
             </div>
           </SidebarInset>
           <ChatbotDock />
@@ -40,5 +45,16 @@ export function AppShell() {
         </CatalogProvider>
       </ProfileProvider>
     </SidebarProvider>
+  )
+}
+
+function PageLoading() {
+  return (
+    <Loading>
+      <HeaderSkeleton />
+      <div className="mt-8">
+        <RowsSkeleton rows={4} />
+      </div>
+    </Loading>
   )
 }
