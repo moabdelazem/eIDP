@@ -1,46 +1,12 @@
 import { createContext, use, useMemo, type ReactNode } from 'react'
 import { api } from '@/lib/api-client.ts'
 import { useResource } from '@/lib/use-resource.ts'
+import type { Profile } from '@eidp/contracts/auth'
+import type { Permission } from '@eidp/contracts/rbac'
+// One list for both apps: a permission added to the API's PERMISSIONS and not here no longer compiles.
+export type { Profile } from '@eidp/contracts/auth'
+export type { Permission, ScopeType } from '@eidp/contracts/rbac'
 import { useSession } from './session-context.tsx'
-
-export type Profile = {
-  uid: string
-  name: string
-  mail: string
-  title: string | null
-  department: string | null
-  division: string | null
-  company: string | null
-  office: string | null
-  manager: string | null
-  groups: string[]
-  approverGroup: string
-  isApprover: boolean
-  groupLookup: string
-  access: {
-    /** Every role you hold, and the group or grant it comes through. */
-    roles: { role: string; label: string; via: string; scopeType: ScopeType; scope: string | null; expiresAt: string | null }[]
-    grants: { permission: Permission; scopeType: ScopeType; scope: string | null }[]
-  }
-}
-
-/** Mirrors `PERMISSIONS` in the API's services/rbac.ts. */
-export type Permission =
-  | 'catalog.view'
-  | 'catalog.sync'
-  | 'requests.create'
-  | 'requests.decide'
-  | 'requests.decide_access'
-  | 'rbac.manage'
-  | 'rbac.view_as'
-  | 'jenkins.view'
-  | 'jenkins.operate'
-  | 'pipelines.view'
-  | 'ai.use'
-  | 'ai.chat'
-  | 'activity.view'
-  | 'digests.all'
-export type ScopeType = 'global' | 'team' | 'project'
 
 type ProfileValue = {
   profile: Profile | undefined

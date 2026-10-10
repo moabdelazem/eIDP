@@ -168,6 +168,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@eidp/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@hono/node-server':
         specifier: ^1.13.8
         version: 1.19.17(hono@4.13.9)
@@ -202,6 +205,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@eidp/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.1(@types/node@24.19.0)(jiti@2.7.0)(yaml@2.9.1))
@@ -299,6 +305,12 @@ importers:
       vite:
         specifier: ^8.3.0
         version: 8.3.1(@types/node@24.19.0)(jiti@2.7.0)(yaml@2.9.1)
+
+  packages/contracts:
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
 
 packages:
 

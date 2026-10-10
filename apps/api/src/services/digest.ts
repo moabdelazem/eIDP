@@ -1,3 +1,5 @@
+import type { BuildFacts, Digest, DigestFacts, FailingPipeline, RequestItem, Totals } from '@eidp/contracts/digest'
+export type { BuildFacts, Digest, DigestFacts, FailingPipeline, RequestItem, Totals }
 import { z } from 'zod'
 import type { Result } from '../integrations/jenkins/index.ts'
 import * as ollama from '../integrations/ollama/index.ts'
@@ -36,31 +38,6 @@ export const WEEKS_BACK = Math.max(1, Math.min(4, Math.floor(config.JENKINS_RETE
 
 const DAY = 86_400_000
 
-type Totals = { builds: number; passed: number; failed: number; unstable: number; aborted: number; successRate: number | null }
-
-export type FailingPipeline = {
-  job: string
-  applications: string[]
-  failures: number
-  builds: number
-  last: { number: number; result: Result; at: string }
-  /** Its last finished build of the week failed or was unstable. */
-  broken: boolean
-}
-
-export type BuildFacts = {
-  current: Totals
-  previous: Totals
-  /** Distinct pipelines — a job, or a job per project on a shared one. */
-  pipelines: number
-  failing: FailingPipeline[]
-  /** From a pipeline's first failure to its next pass, for those fixed within the week. */
-  fixes: { count: number; medianMs: number | null; longestMs: number | null }
-  busiest: { application: string; builds: number }[]
-}
-
-export type RequestItem = { id: string; kind: RequestKind; status: RequestStatus; target: string; by: string; at: string; error: string | null }
-
 export type RequestFacts = {
   filed: number
   byKind: Partial<Record<RequestKind, number>>
@@ -69,32 +46,6 @@ export type RequestFacts = {
   failed: RequestItem[]
   /** Still pending when the digest was made. */
   waiting: RequestItem[]
-}
-
-export type DigestFacts = {
-  team: string
-  week: string
-  /** The Monday after: the week is [week, ends). */
-  ends: string
-  projects: string[]
-  /** Null with `buildsError` when Jenkins could not be counted. */
-  builds: BuildFacts | null
-  buildsError: string | null
-  requests: RequestFacts
-}
-
-export type Digest = {
-  team: string
-  week: string
-  /** The week in progress: counted now, no summary. */
-  live: boolean
-  facts: DigestFacts
-  summary: string | null
-  highlights: string[]
-  model: string | null
-  /** Why there is no summary, when the model was asked and failed. */
-  error: string | null
-  createdAt: string
 }
 
 // ---- weeks and teams ----------------------------------------------------------

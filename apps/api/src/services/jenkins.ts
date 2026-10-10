@@ -1,3 +1,5 @@
+import type { AuditEntry, Category, Failure, ParameterFacet, RunDetail, Ignore, IgnoreFor, Overview, Recovery, Run, Stats, Totals, Window } from '@eidp/contracts/jenkins'
+export type { AuditEntry, Failure, Ignore, IgnoreFor, Overview, Recovery, Run, Stats, Totals, Window }
 import * as jenkins from '../integrations/jenkins/index.ts'
 import type { Agent, BuildDetail, Parameter, QueueItem, Result } from '../integrations/jenkins/index.ts'
 import { ollamaConfig } from '../integrations/ollama/index.ts'
@@ -18,40 +20,6 @@ import type { Actor } from './requests.ts'
  * `jenkins_audit` records who actually asked, refusals included.
  */
 
-/** A build as history holds it. */
-export type Run = {
-  job: string
-  number: number
-  result: Result
-  startedAt: string
-  durationMs: number
-  url: string
-  builtOn: string | null
-  causes: string[]
-  parameters: Parameter[]
-}
-
-/** A job whose latest finished build did not pass. */
-export type Failure = {
-  job: string
-  url: string
-  last: Run
-  /** Finished builds in a row that did not pass, counting back from `last`. */
-  streak: number
-  /** No pass is in the stored history, so the streak may be longer. */
-  streakAtLeast: boolean
-  since: string
-  lastSuccess: string | null
-  running: boolean
-  inQueue: boolean
-  /** The model's one-line account of the latest failure, when there is one and the reader may see it. */
-  explanation: { summary: string; category: string } | null
-  /** Set aside on purpose: who, why, and until when. Ignored failures are not "failing now". */
-  ignored: Ignore | null
-}
-
-export type Ignore = { reason: string; by: string; byName: string; at: string; untilPass: boolean; expiresAt: string | null }
-
 /**
  * Whether the ignore row `i` still holds: until the job passes after the build
  * it was ignored at, or until it expires. SQL, so every reader agrees.
@@ -60,86 +28,7 @@ export const IGNORE_HOLDS = `((i.until_pass and not exists (
     select 1 from jenkins_builds p where p.server = i.server and p.job = i.job and p.number > i.from_number and p.result = 'success'))
   or (not i.until_pass and (i.expires_at is null or i.expires_at > now())))`
 
-export type Overview = {
-  url: string
-  sync: SyncState
-  counts: { jobs: number; failing: number; ignored: number; running: number; queued: number; agentsOffline: number }
-  /** Failing and not ignored — what needs someone. */
-  failures: Failure[]
-  /** Failing, but set aside on purpose. */
-  ignored: Failure[]
-  queue: QueueItem[]
-  agents: Agent[]
-}
-
 export const WINDOWS = { '24h': { hours: 24, bucket: 1 }, '7d': { hours: 168, bucket: 6 } } as const
-export type Window = keyof typeof WINDOWS
-
-/** The figures for one window. `successRate` is over builds that finished passing or broken — an abort is neither. */
-export type Totals = {
-  builds: number
-  success: number
-  failure: number
-  unstable: number
-  aborted: number
-  successRate: number | null
-  p50Ms: number | null
-  p95Ms: number | null
-  jobs: number
-}
-
-export type Stats = {
-  window: Window
-  from: string
-  to: string
-  current: Totals
-  /** The window before, the same length — what the deltas compare against. */
-  previous: Totals
-  running: number
-  /**
-   * Builds per bucket by result, oldest first: hourly over 24h, six-hourly
-   * over 7 days — with the typical and slow-tail time of those that finished.
-   */
-  timeline: {
-    at: string
-    success: number
-    failure: number
-    unstable: number
-    aborted: number
-    successRate: number | null
-    p50Ms: number | null
-    p95Ms: number | null
-  }[]
-  /** Jobs with the most broken builds in the window, and whether each is being ignored now. */
-  topFailing: { job: string; builds: number; broken: number; rate: number; lastBroken: string; ignored: boolean }[]
-  /** From a job breaking to its next pass, for fixes made in the window and in the one before. */
-  recovery: { current: Recovery; previous: Recovery }
-  /** Builds per agent, busiest first — top eight, the rest as one "Other". */
-  agents: { agent: string; builds: number; broken: number; busyMs: number }[]
-  /** What started builds, by who or what — top eight, the rest as "Other". */
-  triggers: { trigger: string; builds: number }[]
-  /** Why failed builds failed, by the model's category — its reading, not a fact. Empty without explanations. */
-  categories: { category: string; builds: number }[]
-  /** Jobs whose typical build takes longest in the window. */
-  slowest: { job: string; builds: number; p50Ms: number; p95Ms: number }[]
-}
-
-export type Recovery = { fixes: number; medianMs: number | null; longestMs: number | null }
-
-export type AuditEntry = {
-  id: number
-  at: string
-  actor: string
-  actorName: string
-  action: 'rebuild' | 'stop' | 'cancel' | 'ignore' | 'unignore'
-  /** The reason given, for an ignore. */
-  note: string | null
-  job: string
-  build: number | null
-  queueId: number | null
-  ok: boolean
-  error: string | null
-}
 
 const server = () => jenkins.jenkinsConfig().url
 
@@ -219,7 +108,7 @@ export async function overview({ fresh = false, withExplanations = false } = {})
 async function failingNow(url: string, withExplanations: boolean): Promise<Failure[]> {
   // Explanations for the current prompt and model only — a stale one is not served as current.
   const ai = withExplanations ? ollamaConfig() : null
-  const { rows } = await query<RunRow & { streak: string; since: Date; last_success: Date | null; job_url: string; in_queue: boolean; running: boolean; explanation: { summary: string; category: string } | null; ignored: Ignore | null }>(
+  const { rows } = await query<RunRow & { streak: string; since: Date; last_success: Date | null; job_url: string; in_queue: boolean; running: boolean; explanation: { summary: string; category: Category } | null; ignored: Ignore | null }>(
     `with latest as (
        select distinct on (b.job) b.*
          from jenkins_builds b
@@ -351,7 +240,7 @@ export async function stats(window: Window): Promise<Stats> {
         group by 1 order by count(*) desc, 1`,
       [url, from, to],
     ),
-    query<{ category: string; builds: string }>(
+    query<{ category: Category; builds: string }>(
       `select e.category, count(*) as builds
          from (select distinct on (x.job, x.number) x.job, x.number, x.explanation->>'category' as category
                  from build_explanations x where x.server = $1
@@ -549,7 +438,7 @@ export async function runs(filter: RunFilter): Promise<{ total: number; runs: Ru
 }
 
 /** The page's parameter filter: the most used parameter names in the window, each with its commonest values. */
-export async function parameters(window: Window): Promise<{ name: string; builds: number; values: { value: string; builds: number }[] }[]> {
+export async function parameters(window: Window): Promise<ParameterFacet[]> {
   const { rows } = await query<{ name: string; builds: string; values: { value: string; builds: number }[] }>(
     `with p as (
        select e->>'name' as name, e->>'value' as value
@@ -575,7 +464,7 @@ function escapeLike(text: string): string {
 // ---- one build ---------------------------------------------------------------
 
 /** A build in full, live from Jenkins, with the end of its log. */
-export async function run(job: string, number: number): Promise<BuildDetail & { log: string; logTruncated: boolean; logUrl: string }> {
+export async function run(job: string, number: number): Promise<Omit<RunDetail, 'canOperate'>> {
   const [detail, log] = await Promise.all([jenkins.buildDetail(job, number), jenkins.logTail(job, number)])
   // Without Stage View, the log says where it ran — or history already found it.
   const builtOn =
@@ -654,7 +543,6 @@ async function audited<T>(
 
 /** How long an ignore holds: until the job passes again, a number of days, or until someone stops it. */
 export const IGNORE_FOR = { pass: null, '1d': 1, '7d': 7, '30d': 30, always: null } as const
-export type IgnoreFor = keyof typeof IGNORE_FOR
 
 /**
  * Sets a failing job aside: it leaves "failing now", its count and the

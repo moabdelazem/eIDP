@@ -1,24 +1,8 @@
+import type { AccessState } from '@eidp/contracts/pipelines'
+export type { AccessState }
 import * as jenkins from '../integrations/jenkins/index.ts'
 import { EVERYONE_SID, type SidType } from '../integrations/jenkins/index.ts'
 import { query, transaction } from '../lib/db.ts'
-
-/**
- * Keeps `jenkins_job_access` — who Jenkins lets read each job — in step with
- * Jenkins' own authorization, every `JENKINS_ACCESS_SYNC_MINUTES`.
- *
- * A read that fails leaves the previous rules in place and says why: a
- * Jenkins briefly unreachable must not widen or empty what people see.
- * Rules are replaced whole in one transaction, so a reader never sees half.
- */
-
-export type AccessState = {
-  readAt: string | null
-  source: 'role-strategy' | 'matrix' | 'none' | null
-  grants: number
-  ok: boolean
-  error: string | null
-  warnings: string[]
-}
 
 let inFlight: Promise<AccessState> | null = null
 

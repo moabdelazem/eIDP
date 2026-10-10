@@ -1,25 +1,10 @@
+import type { DirectoryProfile } from '@eidp/contracts/auth'
 import { config } from '../../lib/config.ts'
 import { bindAsService, first, userFilter, withClient } from './client.ts'
 import { groupFilter, groupsOf, isApproverGroup } from './groups.ts'
 
 /** A person as the directory describes them, read fresh. */
-export type Profile = {
-  uid: string
-  name: string
-  mail: string
-  title: string | null
-  department: string | null
-  /** AD has no single "team" field; division is the usual home for it. */
-  division: string | null
-  company: string | null
-  office: string | null
-  manager: string | null
-  groups: string[]
-  approverGroup: string
-  isApprover: boolean
-  /** How groups were looked up — shown when someone expected to approve and can't. */
-  groupLookup: string
-}
+export type Profile = DirectoryProfile
 
 const ATTRIBUTES = [
   'displayName',

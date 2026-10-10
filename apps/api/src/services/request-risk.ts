@@ -1,3 +1,5 @@
+import type { Assessment, Fact, RiskLevel } from '@eidp/contracts/requests'
+export type { Assessment, Fact, RiskLevel }
 import { z } from 'zod'
 import * as ado from '../integrations/ado/index.ts'
 import * as jira from '../integrations/jira/index.ts'
@@ -29,21 +31,7 @@ import type { RequestRecord } from './requests.ts'
 
 export const RISK_PROMPT_VERSION = 1
 
-export type Fact = { level: 'caution' | 'info'; text: string }
-export type RiskLevel = 'low' | 'medium' | 'high'
 
-export type Assessment = {
-  level: RiskLevel
-  facts: Fact[]
-  /** The model's one line, or null when it was not asked or did not answer. */
-  summary: string | null
-  /** The model's reading of the reason given — at most two notes. */
-  reasonConcerns: string[]
-  model: string | null
-  /** Why there is no summary, when the model was asked and failed. */
-  error: string | null
-  createdAt: string
-}
 
 /** Access to this many people at once is worth a second look. */
 const MANY_GRANTEES = 10

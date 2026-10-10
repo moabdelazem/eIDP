@@ -1,3 +1,4 @@
+import type { Home } from '@eidp/contracts/chatbot'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { z } from 'zod'
@@ -32,7 +33,7 @@ export const chatbotRoutes = new Hono<AppEnv>()
     return c.json({
       ai: { configured: ai !== null, model: ai?.model ?? null },
       conversations: await chatbot.listConversations(c.get('jwtPayload').sub),
-    })
+    } satisfies Home)
   })
 
   .get('/conversations/:id', async (c) => c.json(await chatbot.readConversation(c.req.param('id'), c.get('jwtPayload').sub)))

@@ -1,3 +1,4 @@
+import type { RunDetail } from '@eidp/contracts/jenkins'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { validate } from '../lib/validate.ts'
@@ -55,7 +56,7 @@ export const jenkinsRoutes = new Hono<AppEnv>()
   .get('/run', validate('query', BuildRef), async (c) => {
     const { job, number } = c.req.valid('query')
     const { operate } = await pipelines.demandView(await accessFrom(c), me(c), job, number)
-    return c.json({ ...(await jenkins.run(job, number)), canOperate: operate })
+    return c.json({ ...(await jenkins.run(job, number)), canOperate: operate } satisfies RunDetail)
   })
 
   // "What went wrong?" — the kept explanation, and whether the AI is there to

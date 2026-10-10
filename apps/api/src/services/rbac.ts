@@ -1,3 +1,5 @@
+import type { AuditEntry, Binding, Explanation, Grant, NewBinding, Permission, ScopeType, SubjectType, Suggestions } from '@eidp/contracts/rbac'
+export type { AuditEntry, Binding, Grant, NewBinding, Permission, ScopeType, SubjectType }
 import { dnOf, groupsOf } from '../integrations/ldap/index.ts'
 import { config } from '../lib/config.ts'
 import { query } from '../lib/db.ts'
@@ -32,9 +34,7 @@ export const PERMISSIONS = {
   'digests.all': 'Read every team’s weekly digest, not only your own teams’, and write one again',
   'ai.chat': 'Chat with the portal’s chatbot, which looks up only what you may already see',
   'activity.view': 'See who uses the portal and what they do in it — sign-ins, pages, requests, actions and AI use',
-} as const
-
-export type Permission = keyof typeof PERMISSIONS
+} as const satisfies Record<Permission, string>
 
 export const ROLES = {
   member: {
@@ -70,26 +70,6 @@ export const ROLES = {
 } satisfies Record<string, { label: string; description: string; permissions: Permission[] }>
 
 export type Role = keyof typeof ROLES
-export type ScopeType = 'global' | 'team' | 'project'
-export type SubjectType = 'group' | 'user'
-
-export type Binding = {
-  id: string
-  subjectType: SubjectType
-  subject: string
-  role: string
-  scopeType: ScopeType
-  scope: string | null
-  reason: string | null
-  expiresAt: string | null
-  createdBy: string
-  createdAt: string
-  /** Defined in code, shown for completeness, and cannot be removed. */
-  builtIn: boolean
-}
-
-/** A permission someone holds, and how far it reaches. */
-export type Grant = { permission: Permission; scopeType: ScopeType; scope: string | null; via: string }
 
 export type Access = {
   uid: string
@@ -205,16 +185,6 @@ export async function teamsOwning(project: string): Promise<string[]> {
 
 // ---- managing bindings -------------------------------------------------------
 
-export type NewBinding = {
-  subjectType: SubjectType
-  subject: string
-  role: string
-  scopeType: ScopeType
-  scope?: string | null
-  reason?: string | null
-  expiresAt?: string | null
-}
-
 export async function listBindings(): Promise<Binding[]> {
   const { rows } = await query<BindingRow>('select * from rbac_bindings order by role, subject_type, lower(subject)')
   return [...builtInBindings(), ...rows.map(toBinding)]
@@ -309,7 +279,7 @@ export async function updateBinding(id: string, change: { reason?: string | null
  * catalog knows (for a scope), and the groups the portal has heard of — the
  * catalog's teams, the groups already bound, and the admin group.
  */
-export async function suggestions(): Promise<{ teams: string[]; projects: string[]; groups: string[] }> {
+export async function suggestions(): Promise<Suggestions> {
   const [teams, projects, bound] = await Promise.all([
     query<{ v: string }>(`select distinct t.value as v from catalog_systems s, jsonb_each_text(s.teams) t where t.value <> '' order by 1`),
     query<{ v: string }>('select distinct project_name as v from catalog_systems order by 1'),
@@ -326,11 +296,6 @@ export async function suggestions(): Promise<{ teams: string[]; projects: string
     groups: uniq([config.APPROVER_GROUP, ...teamNames, ...bound.rows.map((r) => r.v)]),
   }
 }
-
-export type AuditEntry =
-  | { id: string; at: string; actor: string; action: 'grant' | 'revoke'; binding: Binding; previous: null; target: null }
-  | { id: string; at: string; actor: string; action: 'update'; binding: Binding; previous: Binding; target: null }
-  | { id: string; at: string; actor: string; action: 'assume'; binding: null; previous: null; target: string }
 
 export async function listAudit(limit = 500): Promise<AuditEntry[]> {
   const { rows } = await query<{ id: string; at: Date; actor: string; action: AuditEntry['action']; binding: Binding | null; previous: Binding | null; target: string | null }>(
@@ -354,7 +319,7 @@ export async function auditAssume(actor: string, target: string): Promise<void> 
  * approve?". Includes the groups the directory returned, because a missing
  * group is the usual reason for a missing grant.
  */
-export async function explain(uid: string) {
+export async function explain(uid: string): Promise<Explanation> {
   if (!(await dnOf(uid))) throw new ApiError(404, 'user_not_found', `The directory has no account called ${uid}.`)
   groupCache.delete(uid.toLowerCase()) // an explanation should never be a minute stale
   const access = await accessOf(uid)

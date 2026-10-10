@@ -22,6 +22,8 @@ pnpm workspace. `apps/*` and `packages/*`.
   `app.request()`; `server.ts` serves it, and `index.ts` loads secrets
   (Vault, then `.env`) before importing it. Adding an integration means a new
   folder under `integrations/` and a route module — nothing else moves.
+- `packages/contracts` — `@eidp/contracts`, the JSON the API sends and the web
+  reads, as types and nothing else. See *Talking to the API*.
 - `apps/web` — Vite + React UI (`@eidp/web`), organized by feature. Dev server
   proxies `/api` to the API on :3000.
 
@@ -617,8 +619,9 @@ gets 403 everywhere, which `routes/rbac.test.ts` checks.
 `manageItems` with its permission, its route inside a matching
 `<RequirePermission>`, `requirePermission` on its API endpoints, and those
 endpoints in the `DEVOPS_ONLY` list in `routes/rbac.test.ts`. A new capability
-is a new entry in `PERMISSIONS` (and in `Permission` in
-`features/auth/profile-context.tsx`), added to the roles that should hold it.
+is a new member of `Permission` in `packages/contracts/src/rbac.ts` and its
+entry in `PERMISSIONS` — which is `satisfies Record<Permission, string>`, so
+one without the other does not compile — added to the roles that should hold it.
 `grep -rn requirePermission apps/api/src/routes` lists the whole guarded
 surface.
 
@@ -1109,6 +1112,26 @@ can overlap, and two fetches into one checkout fight over git's lock.
   rows per keystroke. DevOps pages are listed only to DevOps.
 
 ## Talking to the API
+
+**The shapes are shared, not copied.** `packages/contracts/src/<area>.ts`
+(requests, jenkins, pipelines, digest, activity, rbac, auth, chatbot, catalog)
+holds the types of what each endpoint sends and takes. The API's services
+declare their return types with them and re-export them under the names they
+always had; routes that add a field (`canDecide`, a digest's `weeks`) say what
+they send with `satisfies` (`RunDetail`, `DigestView`, `Profile`, `Catalogue`,
+`Home`, `CatalogResponse`); the web's `features/*/api.ts` re-export them, with
+local aliases where the web's name differs (`PortalRequest`, `MyRun`). Both
+import them with `import type`, which Node's type stripping and Vite erase, so
+the package is never loaded at run time and needs no build — but the dev image
+copies its `package.json`, because the lockfile names it. Moving the copies
+here found drift both ways: the web's pipeline queue items and application
+configuration had lost fields, the API typed an explanation's category as any
+string, and the web read `weeks` off a regenerated digest that has none.
+`CATEGORIES`, `RUN_WINDOWS`, `WINDOWS`, `GROUPS` and `PERMISSIONS` are checked
+against the contract's unions, so a value added on one side alone fails to
+compile. Not Hono's `hc<AppType>`: `app.ts` mounts routes as statements, so
+`AppType` carries no routes, and the web would type-check the API's Node code.
+A contract file imports nothing from outside the package and holds no values.
 
 `lib/api-client.ts` is the only thing that calls `fetch`. It attaches the
 session token, and turns a failure into an `ApiError` carrying the message the

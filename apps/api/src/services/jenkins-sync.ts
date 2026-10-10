@@ -1,30 +1,9 @@
+import type { SyncState } from '@eidp/contracts/jenkins'
+export type { SyncState }
 import * as jenkins from '../integrations/jenkins/index.ts'
 import type { HistoryBuild, JobHead } from '../integrations/jenkins/index.ts'
 import { config } from '../lib/config.ts'
 import { query, transaction } from '../lib/db.ts'
-
-/**
- * Keeps `jenkins_builds` in step with Jenkins, so the Jenkins page can answer
- * "what happened in the last day, or week" and search builds by parameter
- * from Postgres instead of sweeping Jenkins on every look.
- *
- * Each sync costs one light call for the job list (just each job's last build
- * number) plus one call per job that has built since the last sync or had a
- * build still running. Steady state is a handful of calls a minute; only the
- * first sync reads every job, up to `BACKFILL` builds each.
- *
- * Secrets never reach the table: parameter values under secret-like names and
- * password parameters are already `[hidden]` when the integration returns them.
- */
-
-export type SyncState = {
-  startedAt: string | null
-  finishedAt: string | null
-  ok: boolean
-  error: string | null
-  builds: number
-  jobsRead: number
-}
 
 /** Builds read from a job Jenkins has never been synced for. */
 export const BACKFILL = 100

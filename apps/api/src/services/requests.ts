@@ -1,3 +1,6 @@
+import type { AccessLevel, Check, RequestKind, RequestRecord, RequestStatus, Target as RequestBody } from '@eidp/contracts/requests'
+export type { AccessLevel, Check, RequestKind, RequestRecord, RequestStatus }
+
 import type { DatabaseError } from 'pg'
 import {
   addToProjectGroup,
@@ -20,45 +23,11 @@ import { ApiError } from '../lib/errors.ts'
 import { jiraKeyProblem, jiraNameProblem, nameProblem } from './request-rules.ts'
 import { assess, assessmentsOf, type Assessment } from './request-risk.ts'
 
-export type RequestKind = 'create_repository' | 'create_project' | 'grant_access' | 'create_jira_project'
-export type AccessLevel = 'read' | 'contribute'
-
 /** Enough for a team; a larger grant is a group's job, not a list of names. */
 const MAX_GRANTEES = 20
-export type RequestStatus = 'pending' | 'approved' | 'rejected' | 'completed' | 'failed' | 'cancelled'
 
 export type Actor = { uid: string; name: string }
 
-export type RequestRecord = {
-  id: string
-  kind: RequestKind
-  status: RequestStatus
-  /** The ADO collection; null for Jira, which has none. */
-  collection: string | null
-  project: string
-  /** create_jira_project only: the key every issue will carry, like PAY. */
-  projectKey: string | null
-  repository: string | null
-  description: string | null
-  justification: string
-  /** The directory group granted access with the requester; null on older rows. */
-  teamGroup: string | null
-  /** grant_access only: the accounts to be granted, and at what level. */
-  grantees: string[] | null
-  accessLevel: AccessLevel | null
-  requestedBy: string
-  requestedByName: string
-  requestedAt: string
-  decidedBy: string | null
-  decidedByName: string | null
-  decidedAt: string | null
-  decisionNote: string | null
-  completedAt: string | null
-  resultUrl: string | null
-  error: string | null
-  /** For people who may decide it: what to weigh before approving. Absent for everyone else. */
-  assessment?: Assessment | null
-}
 
 /** What is being asked for in Azure DevOps. */
 export type AdoTarget = {
@@ -82,13 +51,15 @@ export type JiraTarget = {
 
 export type Target = AdoTarget | JiraTarget
 
+/** The web sends a contract Target; this stops compiling if one is ever something check() and submit() do not accept. */
+export const asTarget = (body: RequestBody): Target => body
+
 export type NewRequest = Target & {
   justification: string
   /** Creations only. */
   teamGroup?: string
 }
 
-export type Check = { ok: true } | { ok: false; reason: string }
 
 /**
  * Whether a request could be filed as it stands: the name is one ADO accepts,

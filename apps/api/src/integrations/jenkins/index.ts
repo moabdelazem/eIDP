@@ -1,11 +1,10 @@
+import type { Agent, Parameter, QueueItem, Result, Stage } from '@eidp/contracts/jenkins'
+export type { Agent, Parameter, QueueItem, Result, Stage }
 import { ApiError } from '../../lib/errors.ts'
 import { fullNameFromUrl, jenkinsConfig, jenkinsGet, jenkinsHead, jenkinsPost, jenkinsTail, jobPath } from './client.ts'
 
 export { jenkinsConfig } from './client.ts'
 export { EVERYONE_SID, readAccess, parseMatrix, type AccessRules, type JobGrant, type SidType } from './access.ts'
-
-/** A build's outcome, with a build still going as `running` rather than Jenkins' null. */
-export type Result = 'success' | 'failure' | 'unstable' | 'aborted' | 'not_built' | 'running'
 
 export type Build = {
   job: string
@@ -18,32 +17,6 @@ export type Build = {
 
 /** A job as the sweep sees it: enough to tell whether it has built since last time. */
 export type JobHead = { fullName: string; url: string; buildable: boolean; inQueue: boolean; lastNumber: number | null }
-
-export type QueueItem = {
-  id: number
-  job: string | null
-  name: string
-  url: string | null
-  since: string
-  why: string | null
-  stuck: boolean
-  blocked: boolean
-  /** What it will run with — a shared job's say which project it is for. Secrets hidden. */
-  parameters: Parameter[]
-  causes: string[]
-}
-
-export type Agent = {
-  name: string
-  offline: boolean
-  /** Taken offline on purpose, rather than lost. */
-  temporarilyOffline: boolean
-  reason: string | null
-  executors: number
-  busy: number
-}
-
-export type Parameter = { name: string; value: string | null; hidden: boolean }
 
 /** A build as history keeps it: what ran, where, why, and with what. Secrets already hidden. */
 export type HistoryBuild = Build & {
@@ -59,13 +32,6 @@ export type HistoryBuild = Build & {
 }
 
 export type Change = { commit: string | null; message: string; author: string | null }
-
-/**
- * A pipeline stage. `branches` are the parallel branches it ran, each a
- * stage of its own (and may have its own) — only the Pipeline Graph View
- * plugin says; Stage View lists stages flat, so there they are always empty.
- */
-export type Stage = { name: string; result: Result; startedAt: string | null; durationMs: number; agent: string | null; branches: Stage[] }
 
 /** Where a build's stages came from: Pipeline Graph View (with parallel branches), Stage View (flat), or nowhere. */
 export type StagesSource = 'graph' | 'stage-view' | null

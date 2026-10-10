@@ -1,67 +1,16 @@
 import { api } from '@/lib/api-client.ts'
-import type { Result } from '@/features/jenkins/api.ts'
-import type { RequestKind, RequestStatus } from '@/features/requests/api.ts'
 
-/** Mirrors the API's services/digest.ts. */
+// The JSON's shapes are the API's, from @eidp/contracts — one definition, so the two cannot drift.
+import type { Digest as Stored, DigestIndex, DigestView } from '@eidp/contracts/digest'
+export type { BuildFacts, DigestFacts, DigestIndex, FailingPipeline, RequestItem, Totals } from '@eidp/contracts/digest'
 
-type Totals = { builds: number; passed: number; failed: number; unstable: number; aborted: number; successRate: number | null }
-
-export type FailingPipeline = {
-  job: string
-  applications: string[]
-  failures: number
-  builds: number
-  last: { number: number; result: Result; at: string }
-  broken: boolean
-}
-
-export type BuildFacts = {
-  current: Totals
-  previous: Totals
-  pipelines: number
-  failing: FailingPipeline[]
-  fixes: { count: number; medianMs: number | null; longestMs: number | null }
-  busiest: { application: string; builds: number }[]
-}
-
-export type RequestItem = { id: string; kind: RequestKind; status: RequestStatus; target: string; by: string; at: string; error: string | null }
-
-export type DigestFacts = {
-  team: string
-  week: string
-  ends: string
-  projects: string[]
-  builds: BuildFacts | null
-  buildsError: string | null
-  requests: {
-    filed: number
-    byKind: Partial<Record<RequestKind, number>>
-    completed: number
-    rejected: number
-    failed: RequestItem[]
-    waiting: RequestItem[]
-  }
-}
-
-export type Digest = {
-  team: string
-  week: string
-  live: boolean
-  facts: DigestFacts
-  summary: string | null
-  highlights: string[]
-  model: string | null
-  error: string | null
-  createdAt: string
-  /** Weeks on offer for this team, newest first. */
-  weeks: string[]
-}
-
-export type DigestIndex = { teams: string[]; mine: string[]; weeks: string[]; current: string; canRegenerate: boolean }
+/** A digest as the page reads it: with the weeks on offer. */
+export type Digest = DigestView
 
 export const digestApi = {
   index: () => api<DigestIndex>('/digests'),
-  digest: (team: string, week: string) => api<Digest>(`/digests/${encodeURIComponent(team)}?week=${week}`),
+  digest: (team: string, week: string) => api<DigestView>(`/digests/${encodeURIComponent(team)}?week=${week}`),
+  /** The week written again — without the weeks on offer, which have not changed. */
   regenerate: (team: string, week: string) =>
-    api<Digest>(`/digests/${encodeURIComponent(team)}/regenerate`, { method: 'POST', body: JSON.stringify({ week }) }),
+    api<Stored>(`/digests/${encodeURIComponent(team)}/regenerate`, { method: 'POST', body: JSON.stringify({ week }) }),
 }
