@@ -1,7 +1,7 @@
 import { serve } from '@hono/node-server'
 import { createApp } from './app.ts'
 import { config } from './lib/config.ts'
-import { ensureSchema } from './lib/db.ts'
+import { migrate } from './lib/db.ts'
 import { syncCatalog } from './services/catalog.ts'
 import { syncJenkins } from './services/jenkins-sync.ts'
 import { syncJenkinsAccess } from './services/jenkins-access.ts'
@@ -11,7 +11,8 @@ import { generateDue } from './services/digest.ts'
 import { explainNewFailures } from './services/auto-explain.ts'
 import { recoverInterrupted } from './services/requests.ts'
 
-await ensureSchema()
+const applied = await migrate()
+if (applied.length) console.log(`database: applied ${applied.join(', ')}`)
 
 const interrupted = await recoverInterrupted()
 if (interrupted > 0) console.warn(`${interrupted} request(s) were interrupted by a restart; marked failed for retry`)

@@ -26,7 +26,7 @@ process.env.OLLAMA_URL = `http://localhost:${o.port}`
 process.env.OLLAMA_MODEL = 'qwen2.5'
 
 const { createApp } = await import('../app.ts')
-const { closeDb, ensureSchema, query } = await import('../lib/db.ts')
+const { closeDb, migrate, query } = await import('../lib/db.ts')
 const { syncJenkins } = await import('../services/jenkins-sync.ts')
 const { explainNewFailures } = await import('../services/auto-explain.ts')
 const app = createApp()
@@ -37,7 +37,7 @@ const TABLES = ['build_explanations', 'build_explain_attempts', 'jenkins_builds'
 const forget = () => Promise.all(TABLES.map((t) => query(`delete from ${t} where server = $1`, [url])))
 
 before(async () => {
-  await ensureSchema()
+  await migrate()
   await forget()
   await syncJenkins()
   const res = await app.request('/auth/login', {

@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
 import { createApp } from '../app.ts'
-import { closeDb, ensureSchema, query } from '../lib/db.ts'
+import { closeDb, migrate, query } from '../lib/db.ts'
 import { cleanPath, sectionOf } from '../services/activity.ts'
 
 const app = createApp()
@@ -38,7 +38,7 @@ async function json<T = Record<string, any>>(res: Response): Promise<T> {
 const maxId = async (table: string) => Number((await query<{ max: string | null }>(`select max(id) from ${table}`)).rows[0]?.max ?? 0)
 
 before(async () => {
-  await ensureSchema()
+  await migrate()
   ;[eventFloor, jenkinsFloor, auditFloor] = await Promise.all([maxId('activity_events'), maxId('jenkins_audit'), maxId('rbac_audit')])
   for (const who of ['alice', 'bob']) tokens[who] = ((await json(await login(who, `${who}pw`))) as { token: string }).token
 })

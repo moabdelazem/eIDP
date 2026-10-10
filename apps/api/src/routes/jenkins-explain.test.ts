@@ -28,7 +28,7 @@ process.env.OLLAMA_MODEL = 'qwen2.5'
 process.env.OLLAMA_NUM_CTX = '8192'
 
 const { createApp } = await import('../app.ts')
-const { closeDb, ensureSchema, query } = await import('../lib/db.ts')
+const { closeDb, migrate, query } = await import('../lib/db.ts')
 const app = createApp()
 const tokens: Record<string, string> = {}
 
@@ -36,7 +36,7 @@ const tokens: Record<string, string> = {}
 const forget = () => query('delete from build_explanations where server = $1', [url])
 
 before(async () => {
-  await ensureSchema()
+  await migrate()
   await forget()
   for (const who of ['alice', 'bob', 'carol']) {
     const res = await app.request('/auth/login', {

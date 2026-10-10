@@ -99,9 +99,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(0)
   }
 
-  const { ensureSchema, closeDb } = await import('../lib/db.ts')
+  const { migrate, closeDb } = await import('../lib/db.ts')
   const { addBinding } = await import('./rbac.ts')
-  await ensureSchema()
+  await migrate()
   let added = 0
   for (const binding of plan.add) {
     try {

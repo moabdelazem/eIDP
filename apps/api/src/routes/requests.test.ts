@@ -33,13 +33,13 @@ process.env.OLLAMA_URL = `http://localhost:${(ollamaServer.address() as AddressI
 process.env.OLLAMA_MODEL = 'qwen2.5'
 
 const { createApp } = await import('../app.ts')
-const { closeDb, ensureSchema, query } = await import('../lib/db.ts')
+const { closeDb, migrate, query } = await import('../lib/db.ts')
 const app = createApp()
 
 const tokens: Record<string, string> = {}
 
 before(async () => {
-  await ensureSchema()
+  await migrate()
   await query('delete from requests')
   for (const who of ['alice', 'bob', 'carol']) {
     const res = await app.request('/auth/login', {

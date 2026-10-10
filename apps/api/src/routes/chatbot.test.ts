@@ -30,7 +30,7 @@ process.env.JENKINS_TOKEN = 'fake'
 
 const { createApp } = await import('../app.ts')
 const { config } = await import('../lib/config.ts')
-const { closeDb, ensureSchema, query } = await import('../lib/db.ts')
+const { closeDb, migrate, query } = await import('../lib/db.ts')
 const { syncJenkins } = await import('../services/jenkins-sync.ts')
 const app = createApp()
 const tokens: Record<string, string> = {}
@@ -44,7 +44,7 @@ const lock = new pg.Client({ connectionString: config.DATABASE_URL })
 const SYSTEM = 'ZZAssist'
 
 before(async () => {
-  await ensureSchema()
+  await migrate()
   await lock.connect()
   await lock.query('select pg_advisory_lock(4202)')
   await query('delete from catalog_systems where dir = $1', [SYSTEM])

@@ -1,3 +1,12 @@
+-- 0001 — the schema as it stood when migrations began.
+--
+-- It was the old re-runnable schema.sql, so it is written to apply over a
+-- database that already has some or all of it: that is how a database made
+-- before migrations takes this as its first one without losing a row. Like
+-- every migration once applied, it is frozen — a change to the schema is a
+-- new numbered file, never an edit here (the runner refuses to boot when an
+-- applied file's checksum changes).
+
 -- Re-runnable. The catalog is derived data: it is rebuilt from the
 -- inventories repo on every sync, so nothing here is authored by hand.
 

@@ -19,7 +19,7 @@ process.env.JENKINS_USER = 'eidp'
 process.env.JENKINS_TOKEN = 'fake'
 
 const { createApp } = await import('../app.ts')
-const { closeDb, ensureSchema, query } = await import('../lib/db.ts')
+const { closeDb, migrate, query } = await import('../lib/db.ts')
 const app = createApp()
 const tokens: Record<string, string> = {}
 /** Audit rows before these tests; only rows after it are theirs to delete. */
@@ -31,7 +31,7 @@ const forget = () =>
   Promise.all(['jenkins_builds', 'jenkins_jobs', 'jenkins_sync', 'jenkins_ignored'].map((table) => query(`delete from ${table} where server = $1`, [url])))
 
 before(async () => {
-  await ensureSchema()
+  await migrate()
   await forget()
   auditFloor = Number((await query<{ max: string | null }>('select max(id) from jenkins_audit')).rows[0]?.max ?? 0)
   for (const who of ['alice', 'bob']) {

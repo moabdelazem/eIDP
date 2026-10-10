@@ -1,4 +1,6 @@
-import { readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { readdir, readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { config } from './config.ts'
@@ -34,24 +36,65 @@ export async function transaction<T>(fn: (client: pg.PoolClient) => Promise<T>):
   }
 }
 
+/** Migrations live beside this file, `NNNN_name.sql`, applied in order. */
+const MIGRATIONS = fileURLToPath(new URL('./migrations/', import.meta.url))
+const NAME = /^\d{4}_[\w-]+\.sql$/
+
 /**
- * Applies schema.sql, which is written to be re-runnable.
+ * Brings the database up to date: every migration not yet applied, in order,
+ * each in its own transaction with its row in `schema_migrations`, so a
+ * migration that fails leaves nothing half-done and is tried again next boot.
  *
- * ponytail: no migration tool. Once a column has to change shape rather than
- * appear, this needs real migrations — the file cannot express that.
+ * Serialised across processes by advisory lock 4201 — two API processes, or
+ * the test files running in parallel, must not apply the same file twice.
+ * An applied migration is frozen: if its file changes, boot stops and says
+ * which, because the database no longer matches what the file claims.
+ *
+ * Returns the names it applied.
  */
-export async function ensureSchema(): Promise<void> {
-  const sql = await readFile(fileURLToPath(new URL('./schema.sql', import.meta.url)), 'utf8')
-  // Serialised across processes: the test files run in parallel, and two
-  // concurrent `create table if not exists` can still collide in the catalog.
+export async function migrate(dir = MIGRATIONS): Promise<string[]> {
   const client = await pool.connect()
   try {
     await client.query('select pg_advisory_lock(4201)')
-    await client.query(sql)
+    return await migrateWith(client, dir)
   } finally {
     await client.query('select pg_advisory_unlock(4201)').catch(() => {})
     client.release()
   }
+}
+
+/** The work of `migrate` on a client the caller owns — a test points one at a scratch schema. */
+export async function migrateWith(client: pg.ClientBase, dir: string): Promise<string[]> {
+  await client.query(`create table if not exists schema_migrations (
+    name       text primary key,
+    checksum   text not null,
+    applied_at timestamptz not null default now()
+  )`)
+  const done = new Map(
+    (await client.query<{ name: string; checksum: string }>('select name, checksum from schema_migrations')).rows.map((r) => [r.name, r.checksum]),
+  )
+  const files = (await readdir(dir)).filter((f) => NAME.test(f)).sort()
+  const applied: string[] = []
+  for (const name of files) {
+    const sql = await readFile(join(dir, name), 'utf8')
+    const checksum = createHash('sha256').update(sql).digest('hex')
+    const was = done.get(name)
+    if (was !== undefined) {
+      if (was !== checksum) throw new Error(`Migration ${name} was changed after it was applied. Put the change in a new migration and restore ${name} as it was.`)
+      continue
+    }
+    try {
+      await client.query('begin')
+      await client.query(sql)
+      await client.query('insert into schema_migrations (name, checksum) values ($1, $2)', [name, checksum])
+      await client.query('commit')
+    } catch (err) {
+      await client.query('rollback').catch(() => {})
+      throw new Error(`Migration ${name} failed: ${err instanceof Error ? err.message : err}`)
+    }
+    applied.push(name)
+  }
+  return applied
 }
 
 export async function closeDb(): Promise<void> {

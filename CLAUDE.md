@@ -326,14 +326,23 @@ state is reported through `/catalog`. Stale data is still served; only an empty
 catalog is an error, and then the message carries the reason the last attempt
 failed.
 
-`lib/schema.sql` is applied at startup and is written to be re-runnable — top
-to bottom, every time, over whatever rows exist. So a check constraint is set
-**once, in its final form**: an older, narrower copy earlier in the file
-(`requests_kind_check` without the Jira kind) refused to boot the moment a
-Jira request existed, even though a later line widened it again.
-`lib/schema.test.ts` applies it over rows of the newest kinds. There
-is no migration tool — see the `ponytail:` note in `lib/db.ts` for when that
-stops being enough.
+**The schema is migrations** (`lib/migrations/NNNN_name.sql`, run by
+`migrate()` in `lib/db.ts` at boot, before anything else). Each file is
+applied once, in order, in its own transaction with its row in
+`schema_migrations` (name and checksum), under advisory lock 4201 so two
+processes — or the test files — never apply one twice. A failing migration
+leaves nothing behind and is tried again next boot. **An applied file is
+frozen**: change it and boot stops naming it, because the database no longer
+matches what the file says — a schema change is always a new file. `0001_baseline`
+is the old re-runnable `schema.sql`, which is why a database made before
+migrations takes it as its first without losing a row; it is the only file
+that needs to be re-runnable. The old file's trap is gone with it: replaying
+a narrower `requests_kind_check` before the line that widened it once
+refused to boot over a Jira request. `lib/migrate.test.ts` applies the real
+migrations over rows of the newest kinds, and drives the runner's rules
+(order, once, rollback, frozen) on a scratch schema with scratch files.
+Databases that ran the health service still hold its `health_*` tables; a
+migration that drops them is one line when nobody wants them.
 
 ## Requests
 

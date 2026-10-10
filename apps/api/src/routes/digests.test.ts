@@ -28,7 +28,7 @@ process.env.OLLAMA_URL = await start(ollama.app)
 process.env.OLLAMA_MODEL = 'qwen2.5'
 
 const { createApp } = await import('../app.ts')
-const { closeDb, ensureSchema, query } = await import('../lib/db.ts')
+const { closeDb, migrate, query } = await import('../lib/db.ts')
 const { config } = await import('../lib/config.ts')
 const { forgetApplications } = await import('../services/pipelines.ts')
 const { syncJenkinsAccess } = await import('../services/jenkins-access.ts')
@@ -73,7 +73,7 @@ async function request(fields: { project: string; repository: string; status: st
 }
 
 before(async () => {
-  await ensureSchema()
+  await migrate()
   await catalogLock.connect()
   await catalogLock.query('select pg_advisory_lock(4202)')
   await forget()
