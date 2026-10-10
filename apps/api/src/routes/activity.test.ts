@@ -90,7 +90,13 @@ test('a page opened is kept as its path alone, once per half minute, in its part
 
   const bob = (await json<any[]>(await call(tokens.alice!, 'GET', '/activity/people?window=24h'))).find((p) => p.uid === 'bob')
   assert.ok(bob.visits >= 1)
-  assert.equal(bob.topSection, 'My pipelines')
+  // bob's top section is whatever he opened most today — the dev database may
+  // hold his real visits too — so it is worked out from the same rows.
+  const { rows: top } = await query<{ section: string }>(
+    `select section from activity_events where uid = 'bob' and kind = 'visit' and at > now() - interval '24 hours'
+      group by section order by count(*) desc, section limit 1`,
+  )
+  assert.equal(bob.topSection, top[0]!.section)
 })
 
 test('what an admin looks at while viewing as someone is never put down to them', async () => {
