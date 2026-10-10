@@ -2,7 +2,7 @@ import { api, ApiError } from '@/lib/api-client.ts'
 import { tokenStore } from '@/lib/token-store.ts'
 import { decode, type Session } from './session.ts'
 
-type LoginResponse = { token: string; expiresAt: number }
+import type { LoginResponse } from '@eidp/contracts/auth'
 
 /** Exchanges directory credentials for a session. Throws ApiError on failure. */
 export async function login(username: string, password: string): Promise<Session> {

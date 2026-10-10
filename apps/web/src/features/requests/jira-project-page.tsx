@@ -27,7 +27,7 @@ export function JiraProjectPage() {
   const title = REQUEST_TYPES.find((type) => type.kind === 'create_jira_project')!.title
   usePageTitle(title)
   const navigate = useNavigate()
-  const server = useResource(() => requestsApi.jira(), [])
+  const server = useResource(['requests', 'jira'], () => requestsApi.jira())
 
   // A link may carry the form filled in — the chatbot's drafts do.
   const [params] = useSearchParams()

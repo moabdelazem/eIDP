@@ -1,62 +1,11 @@
 import { api } from '@/lib/api-client.ts'
 
-export type RequestKind = 'create_repository' | 'create_project' | 'grant_access' | 'create_jira_project'
-export type AccessLevel = 'read' | 'contribute'
-export type RequestStatus = 'pending' | 'approved' | 'rejected' | 'completed' | 'failed' | 'cancelled'
+// The JSON's shapes are the API's, from @eidp/contracts — one definition, so the two cannot drift.
+import type { Assessment, Check, RequestStatus, RequestView, Target } from '@eidp/contracts/requests'
+export type { AccessLevel, Assessment, Check, RequestKind, RequestStatus, Target } from '@eidp/contracts/requests'
 
-export type PortalRequest = {
-  id: string
-  kind: RequestKind
-  status: RequestStatus
-  /** The Azure DevOps collection; null for Jira, which has none. */
-  collection: string | null
-  project: string
-  /** Jira projects only: the key every issue carries, like PAY. */
-  projectKey: string | null
-  repository: string | null
-  description: string | null
-  justification: string
-  /** The requester's directory group, granted access with them. Null on older requests. */
-  teamGroup: string | null
-  /** grant_access only: who is to be granted, and at what level. */
-  grantees: string[] | null
-  accessLevel: AccessLevel | null
-  requestedBy: string
-  requestedByName: string
-  requestedAt: string
-  decidedBy: string | null
-  decidedByName: string | null
-  decidedAt: string | null
-  decisionNote: string | null
-  completedAt: string | null
-  resultUrl: string | null
-  error: string | null
-  /** On a single request only: whether the viewer may decide it. */
-  canDecide?: boolean
-  /** For people who may decide it: what to weigh before approving. Absent for everyone else. */
-  assessment?: Assessment | null
-}
-
-/** Mirrors services/request-risk.ts. The level comes from the facts; the model adds only words. */
-export type Assessment = {
-  level: 'low' | 'medium' | 'high'
-  facts: { level: 'caution' | 'info'; text: string }[]
-  summary: string | null
-  reasonConcerns: string[]
-  model: string | null
-  error: string | null
-  createdAt: string
-}
-
-export type Target =
-  | { kind: 'create_repository'; collection: string; project: string; repository: string }
-  | { kind: 'create_project'; collection: string; project: string; description?: string }
-  /** Always Contribute on the whole project; neither is the requester's choice. */
-  | { kind: 'grant_access'; collection: string; project: string; grantees: string[] }
-  /** `project` is the Jira project's name; `projectKey` its key. */
-  | { kind: 'create_jira_project'; project: string; projectKey: string; description?: string }
-
-export type Check = { ok: true } | { ok: false; reason: string }
+/** A request as the web holds it: the record, and on a single one whether the viewer may decide it. */
+export type PortalRequest = RequestView
 
 export const requestsApi = {
   collections: () =>

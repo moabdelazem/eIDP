@@ -1,48 +1,10 @@
+import type { ApplicationDetail, CatalogApplication, CatalogSystem, SyncState } from '@eidp/contracts/catalog'
+export type { ApplicationDetail, CatalogApplication, CatalogSystem, SyncState }
 import { config } from '../lib/config.ts'
 import { query, transaction } from '../lib/db.ts'
 import { cloneOrUpdate, headCommit } from '../integrations/ado/index.ts'
 import { parseInventories, type InventorySystem } from '../integrations/inventories/parse.ts'
 import { ApiError } from '../lib/errors.ts'
-
-export type SyncState = {
-  startedAt: string | null
-  finishedAt: string | null
-  commit: string | null
-  ok: boolean
-  error: string | null
-  /** Files the last sync skipped because they could not be read. */
-  warnings: string[]
-}
-
-/** One application in one environment, with its full merged configuration. */
-export type ApplicationDetail = CatalogApplication & {
-  /** Every group_vars file of the app merged as Ansible merges them; secrets hidden. */
-  descriptor: Record<string, unknown>
-}
-
-export type CatalogApplication = {
-  id: string
-  name: string
-  group: string
-  environment: string | null
-  repository: string | null
-  buildTechnology: string | null
-  deployTechnology: string | null
-  deployPlatform: string | null
-  appType: string | null
-  microservice: boolean | null
-  technologies: string[]
-}
-
-export type CatalogSystem = {
-  id: string
-  projectName: string
-  company: string | null
-  teams: Record<string, string>
-  approvers: string[]
-  managers: string[]
-  applications: CatalogApplication[]
-}
 
 /**
  * Pulls the inventories repo and rebuilds the catalog from it.

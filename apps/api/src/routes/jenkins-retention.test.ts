@@ -20,7 +20,7 @@ process.env.JENKINS_RETENTION_DAYS = '30'
 process.env.JENKINS_AUDIT_RETENTION_DAYS = '365'
 
 const { config } = await import('../lib/config.ts')
-const { closeDb, ensureSchema, query } = await import('../lib/db.ts')
+const { closeDb, migrate, query } = await import('../lib/db.ts')
 const { pruneJenkins } = await import('../services/jenkins-retention.ts')
 
 const lock = new pg.Client({ connectionString: config.DATABASE_URL })
@@ -54,7 +54,7 @@ const buildExists = (server: string, job: string, number: number) =>
   has('select 1 from jenkins_builds where server = $1 and job = $2 and number = $3', [server, job, number])
 
 before(async () => {
-  await ensureSchema()
+  await migrate()
   await lock.connect()
   await lock.query('select pg_advisory_lock(4202)')
   await forget()

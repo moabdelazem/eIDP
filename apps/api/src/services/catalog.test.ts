@@ -6,14 +6,14 @@ import { fileURLToPath } from 'node:url'
 import { parseInventories } from '../integrations/inventories/parse.ts'
 import pg from 'pg'
 import { config } from '../lib/config.ts'
-import { closeDb, ensureSchema, query } from '../lib/db.ts'
+import { closeDb, migrate, query } from '../lib/db.ts'
 import { readCatalog, syncCatalog, writeCatalog } from './catalog.ts'
 
 const fixtures = fileURLToPath(
   new URL('../integrations/inventories/__fixtures__/repo', import.meta.url),
 )
 
-await ensureSchema()
+await migrate()
 // The catalog is one set of tables, and this file replaces it wholesale. The
 // chatbot's tests read it too, from their own process, so both hold this
 // lock while they use it (routes/chatbot.test.ts).

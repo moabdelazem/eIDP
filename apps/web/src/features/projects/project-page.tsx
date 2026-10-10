@@ -22,10 +22,7 @@ export function ProjectPage() {
   usePageTitle(found?.app.name ?? 'Application')
   // The full configuration is fetched per page rather than shipped with the
   // whole catalog: 1100 descriptors on every map load would be waste.
-  const config = useResource(
-    () => (found ? fetchApplication(found.system.id, found.app.name) : Promise.resolve([])),
-    [found?.system.id, found?.app.name],
-  )
+  const config = useResource(['catalog', 'application', found?.system.id, found?.app.name], () => (found ? fetchApplication(found.system.id, found.app.name) : Promise.resolve([])))
 
   if (status === 'error') return <CatalogUnavailable error={error!} onRetry={reload} />
   if (status === 'loading') {

@@ -69,11 +69,7 @@ export function Runs({
     setOffset(0)
   }
 
-  const page = useResource(
-    () => jenkinsApi.runs({ window, q, result: result === 'all' ? undefined : result, limit: PAGE_SIZE, offset }),
-    [window, q, result, offset, version],
-    { pollMs: 30_000 },
-  )
+  const page = useResource(['jenkins', 'runs', window, q, result, offset, version], () => jenkinsApi.runs({ window, q, result: result === 'all' ? undefined : result, limit: PAGE_SIZE, offset }), { pollMs: 30_000 })
   const terms = q.toLowerCase().split(/\s+/).filter(Boolean)
   const addTerm = (term: string) => {
     if (terms.includes(term.toLowerCase())) return
@@ -281,7 +277,7 @@ export function ParameterChips({ parameters, terms, onPick }: { parameters: Para
  */
 function ParameterPicker({ window, onPick }: { window: Window; onPick: (term: string) => void }) {
   const [open, setOpen] = useState(false)
-  const facets = useResource(() => (open ? jenkinsApi.parameters(window) : Promise.resolve(null)), [open, window])
+  const facets = useResource(['jenkins', 'parameters', open, window], () => (open ? jenkinsApi.parameters(window) : Promise.resolve(null)))
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>

@@ -16,6 +16,7 @@
     "vault:fake": "node src/integrations/vault/fake-server.ts"
   },
   "dependencies": {
+    "@eidp/contracts": "workspace:*",
     "@hono/node-server": "^1.13.8",
     "@hono/zod-validator": "^0.9.1",
     "hono": "^4.7.0",

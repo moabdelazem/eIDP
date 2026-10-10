@@ -1,11 +1,10 @@
+import type { Agent, Parameter, QueueItem, Result, Stage } from '@eidp/contracts/jenkins'
+export type { Agent, Parameter, QueueItem, Result, Stage }
 import { ApiError } from '../../lib/errors.ts'
-import { fullNameFromUrl, jenkinsConfig, jenkinsGet, jenkinsHead, jenkinsPost, jenkinsTail, jobPath } from './client.ts'
+import { fullNameFromUrl, jenkinsConfig, jenkinsGet, jenkinsHead, jenkinsPost, jenkinsTail, jobPath, lastBytes } from './client.ts'
 
 export { jenkinsConfig } from './client.ts'
 export { EVERYONE_SID, readAccess, parseMatrix, type AccessRules, type JobGrant, type SidType } from './access.ts'
-
-/** A build's outcome, with a build still going as `running` rather than Jenkins' null. */
-export type Result = 'success' | 'failure' | 'unstable' | 'aborted' | 'not_built' | 'running'
 
 export type Build = {
   job: string
@@ -18,32 +17,6 @@ export type Build = {
 
 /** A job as the sweep sees it: enough to tell whether it has built since last time. */
 export type JobHead = { fullName: string; url: string; buildable: boolean; inQueue: boolean; lastNumber: number | null }
-
-export type QueueItem = {
-  id: number
-  job: string | null
-  name: string
-  url: string | null
-  since: string
-  why: string | null
-  stuck: boolean
-  blocked: boolean
-  /** What it will run with — a shared job's say which project it is for. Secrets hidden. */
-  parameters: Parameter[]
-  causes: string[]
-}
-
-export type Agent = {
-  name: string
-  offline: boolean
-  /** Taken offline on purpose, rather than lost. */
-  temporarilyOffline: boolean
-  reason: string | null
-  executors: number
-  busy: number
-}
-
-export type Parameter = { name: string; value: string | null; hidden: boolean }
 
 /** A build as history keeps it: what ran, where, why, and with what. Secrets already hidden. */
 export type HistoryBuild = Build & {
@@ -59,13 +32,6 @@ export type HistoryBuild = Build & {
 }
 
 export type Change = { commit: string | null; message: string; author: string | null }
-
-/**
- * A pipeline stage. `branches` are the parallel branches it ran, each a
- * stage of its own (and may have its own) — only the Pipeline Graph View
- * plugin says; Stage View lists stages flat, so there they are always empty.
- */
-export type Stage = { name: string; result: Result; startedAt: string | null; durationMs: number; agent: string | null; branches: Stage[] }
 
 /** Where a build's stages came from: Pipeline Graph View (with parallel branches), Stage View (flat), or nowhere. */
 export type StagesSource = 'graph' | 'stage-view' | null
@@ -438,9 +404,48 @@ function isSecret(p: RawParameter): boolean {
   return Boolean(p._class?.includes('PasswordParameterValue')) || /pass|secret|token|credential|api[-_]?key/i.test(p.name)
 }
 
-/** The end of a build's console log, where a failure says why. */
-export function logTail(job: string, number: number, maxBytes = LOG_TAIL_BYTES) {
-  return jenkinsTail(`${jobPath(job)}/${number}/consoleText`, maxBytes)
+type Tail = { size: number; text: string; truncated: boolean; done: boolean }
+
+/** Logs read, newest last: a finished build's tail, or how far a running one has been read. ~8 MB at most. */
+const tails = new Map<string, Tail>()
+const TAILS_KEPT = 32
+
+/**
+ * The end of a build's console log, where a failure says why.
+ *
+ * Read through `logText/progressiveText?start=`, which sends only what comes
+ * after byte `start` and says the log's size (`X-Text-Size`) and whether it
+ * can still grow (`X-More-Data`) — Jenkins spools before writing, so those
+ * headers arrive however long the log. The first read of a build is the whole
+ * log, kept to its tail as it streams; after that a running build's polls
+ * fetch only what was added, and a finished build — Jenkins says so in the
+ * same answer — is served from memory to everyone who opens it or asks why it
+ * failed. Jenkins gives no size before reading, so the first read cannot skip
+ * ahead.
+ */
+export async function logTail(job: string, number: number, maxBytes = LOG_TAIL_BYTES): Promise<{ text: string; truncated: boolean }> {
+  const key = `${jenkinsConfig().url}|${job}#${number}|${maxBytes}`
+  const known = tails.get(key)
+  if (known?.done) {
+    tails.delete(key)
+    tails.set(key, known)
+    return { text: known.text, truncated: known.truncated }
+  }
+  const start = known?.size ?? 0
+  const read = await jenkinsTail(`${jobPath(job)}/${number}/logText/progressiveText`, maxBytes, { start })
+  const size = Number(read.headers.get('x-text-size'))
+  // A Jenkins without the header: nothing to resume from, so nothing is kept.
+  if (!Number.isFinite(size) || read.headers.get('x-text-size') === null) return { text: read.text, truncated: read.truncated }
+
+  // A size below where we were means the log was replaced, and Jenkins sent it from 0.
+  const fresh = !known || size < start
+  const joined = fresh ? read.text : known.text + read.text
+  const { text, cut } = lastBytes(Buffer.from(joined), maxBytes)
+  const tail: Tail = { size, text, truncated: (fresh ? read.truncated : known.truncated || read.truncated) || cut, done: read.headers.get('x-more-data') !== 'true' }
+  tails.delete(key)
+  tails.set(key, tail)
+  while (tails.size > TAILS_KEPT) tails.delete(tails.keys().next().value!)
+  return { text: tail.text, truncated: tail.truncated }
 }
 
 /** Queues a build, with parameters when given. Returns the queue item Jenkins made, when it says. */

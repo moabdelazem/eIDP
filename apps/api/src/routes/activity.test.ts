@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
 import { createApp } from '../app.ts'
-import { closeDb, ensureSchema, query } from '../lib/db.ts'
+import { closeDb, migrate, query } from '../lib/db.ts'
 import { cleanPath, sectionOf } from '../services/activity.ts'
 
 const app = createApp()
@@ -38,7 +38,7 @@ async function json<T = Record<string, any>>(res: Response): Promise<T> {
 const maxId = async (table: string) => Number((await query<{ max: string | null }>(`select max(id) from ${table}`)).rows[0]?.max ?? 0)
 
 before(async () => {
-  await ensureSchema()
+  await migrate()
   ;[eventFloor, jenkinsFloor, auditFloor] = await Promise.all([maxId('activity_events'), maxId('jenkins_audit'), maxId('rbac_audit')])
   for (const who of ['alice', 'bob']) tokens[who] = ((await json(await login(who, `${who}pw`))) as { token: string }).token
 })
@@ -90,7 +90,13 @@ test('a page opened is kept as its path alone, once per half minute, in its part
 
   const bob = (await json<any[]>(await call(tokens.alice!, 'GET', '/activity/people?window=24h'))).find((p) => p.uid === 'bob')
   assert.ok(bob.visits >= 1)
-  assert.equal(bob.topSection, 'My pipelines')
+  // bob's top section is whatever he opened most today — the dev database may
+  // hold his real visits too — so it is worked out from the same rows.
+  const { rows: top } = await query<{ section: string }>(
+    `select section from activity_events where uid = 'bob' and kind = 'visit' and at > now() - interval '24 hours'
+      group by section order by count(*) desc, section limit 1`,
+  )
+  assert.equal(bob.topSection, top[0]!.section)
 })
 
 test('what an admin looks at while viewing as someone is never put down to them', async () => {

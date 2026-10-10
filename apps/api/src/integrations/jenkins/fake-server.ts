@@ -298,6 +298,8 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
   const stopped: string[] = []
   /** Job-level build reads, by job — to check the sync reads only what changed. */
   const reads: string[] = []
+  /** Progressive log reads, with where each started — to check a known log is not read twice. */
+  const logReads: { build: string; start: number }[] = []
 
   function find(names: string[]): Node | null {
     let node: Node = root
@@ -483,6 +485,18 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
       return c.redirect(urlOf(names), 302)
     }
     if (what === 'consoleText') return c.text(build.building ? liveLog(build, Date.now() - started) : build.log)
+    // As Jenkins' LargeText answers it: the log from byte `start`, its size so
+    // far in X-Text-Size, and X-More-Data while it can still grow. A start past
+    // the end means the log rolled over, and it starts again from 0.
+    if (what === 'logText/progressiveText') {
+      const bytes = Buffer.from(build.building ? liveLog(build, Date.now() - started) : build.log)
+      let start = Number(c.req.query('start') ?? 0)
+      if (start > bytes.length) start = 0
+      logReads.push({ build: `${fullName}#${build.number}`, start })
+      c.header('X-Text-Size', String(bytes.length))
+      if (build.building) c.header('X-More-Data', 'true')
+      return c.body(bytes.subarray(start), 200, { 'content-type': 'text/plain;charset=UTF-8' })
+    }
     if (what === 'api/json') return c.json(buildJson(names, build))
     // Pipeline Graph View, for the payments folder's pipelines only — the
     // rest stand for servers without the plugin, read through Stage View. Its
@@ -536,6 +550,7 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
     triggered,
     stopped,
     reads,
+    logReads,
     configReads,
     find,
     jobs,

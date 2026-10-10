@@ -1,0 +1,15 @@
+{
+  "name": "@eidp/contracts",
+  "private": true,
+  "type": "module",
+  "description": "The JSON the API sends and the web reads: types only, no runtime code.",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

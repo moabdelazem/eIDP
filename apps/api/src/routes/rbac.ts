@@ -1,3 +1,4 @@
+import type { Catalogue, Permission } from '@eidp/contracts/rbac'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { validate } from '../lib/validate.ts'
@@ -22,9 +23,9 @@ export const rbacRoutes = new Hono<AppEnv>()
   /** Roles and permissions are code; listed so the page can explain them. */
   .get('/roles', (c) =>
     c.json({
-      permissions: Object.entries(rbac.PERMISSIONS).map(([id, description]) => ({ id, description })),
+      permissions: (Object.entries(rbac.PERMISSIONS) as [Permission, string][]).map(([id, description]) => ({ id, description })),
       roles: Object.entries(rbac.ROLES).map(([id, role]) => ({ id, ...role })),
-    }),
+    } satisfies Catalogue),
   )
 
   .get('/bindings', async (c) => c.json(await rbac.listBindings()))

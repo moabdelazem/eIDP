@@ -45,7 +45,7 @@ export function BuildPage() {
   usePageTitle(job ? `${job.split('/').pop()} #${number} — ${fromPipelines ? 'My pipelines' : 'Jenkins'}` : 'Build — Jenkins')
 
   const [following, setFollowing] = useState(true)
-  const run = useResource(() => jenkinsApi.run(job, number), [job, number], {
+  const run = useResource(['jenkins', 'run', job, number], () => jenkinsApi.run(job, number), {
     // A running build's log grows; follow it until it ends, then stop asking.
     pollMs: following ? 3_000 : null,
   })

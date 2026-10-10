@@ -1,3 +1,5 @@
+import type { ChatEvent, Conversation, Feedback, PageContext, StoredMessage, Thread } from '@eidp/contracts/chatbot'
+export type { ChatEvent, Conversation, Feedback, PageContext, StoredMessage }
 import { z } from 'zod'
 import * as ollama from '../integrations/ollama/index.ts'
 import type { Message } from '../integrations/ollama/index.ts'
@@ -8,55 +10,6 @@ import { runTool, toolsFor } from './chatbot-tools.ts'
 import type { Me } from './pipelines.ts'
 import type { Access } from './rbac.ts'
 import type { Actor } from './requests.ts'
-
-/**
- * The portal's chatbot: Qwen on our own Ollama, as an agent inside the
- * portal. General engineering it answers from what the model knows; anything
- * about us — systems, owners, configuration, requests, approvals, builds,
- * pipelines, a team's week, what you may do — from the
- * portal's data, through read-only tools (`chatbot-tools.ts`) offered only as
- * far as the person asking may see. It never acts: for a request it hands
- * over the form filled in, and the person submits it.
- *
- * It knows the page it is asked from (`context`), so "why did this fail?" on
- * a build page is about that build.
- *
- * Conversations are kept per person; only their owner can read them. Tool
- * results live for the turn that used them and are not stored: the next turn
- * asks again, which keeps the history small and the data current. The tables
- * keep their first name, `assistant_*` — renaming them is a migration for a
- * word.
- */
-
-export type Conversation = { id: string; title: string; createdAt: string; updatedAt: string }
-
-export type Feedback = 'up' | 'down'
-
-export type StoredMessage = {
-  id: number
-  role: 'user' | 'assistant'
-  content: string
-  /** What the chatbot looked up to answer, as shown to the person. */
-  steps: string[]
-  model: string | null
-  feedback: Feedback | null
-  createdAt: string
-}
-
-/** The page a question is asked from, as the browser names it. */
-export type PageContext = { path: string; title?: string }
-
-/** What the page is told while an answer is made. */
-export type ChatEvent =
-  | { type: 'conversation'; conversation: Conversation }
-  | { type: 'step'; label: string }
-  | { type: 'delta'; text: string }
-  /** Text streamed so far this turn was a preamble to tool calls; drop it. */
-  | { type: 'reset' }
-  | { type: 'done'; message: StoredMessage }
-  /** The conversation was named, after its first answer. */
-  | { type: 'title'; conversation: Conversation }
-  | { type: 'error'; message: string }
 
 /** Tool rounds per answer before the model is asked to answer with what it has. */
 const MAX_ROUNDS = 5
@@ -101,7 +54,7 @@ export async function listConversations(uid: string): Promise<Conversation[]> {
   return rows.map(toConversation)
 }
 
-export async function readConversation(id: string, uid: string): Promise<{ conversation: Conversation; messages: StoredMessage[] }> {
+export async function readConversation(id: string, uid: string): Promise<Thread> {
   const conversation = await own(id, uid)
   const { rows } = await query<MessageRow>('select * from assistant_messages where conversation_id = $1 order by id', [id])
   return { conversation, messages: rows.map(toMessage) }

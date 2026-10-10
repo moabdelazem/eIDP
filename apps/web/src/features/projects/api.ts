@@ -1,63 +1,16 @@
 import { api } from '@/lib/api-client.ts'
 import type { System } from './catalog.ts'
 
-export type SyncState = {
-  startedAt: string | null
-  finishedAt: string | null
-  commit: string | null
-  ok: boolean
-  error: string | null
-  /** Files the last sync skipped because they could not be read. */
-  warnings: string[]
-}
-
-/** One row of an application — the base, or one environment's override. */
-export type ApplicationConfig = {
-  id: string
-  name: string
-  group: string
-  environment: string | null
-  repository: string | null
-  buildTechnology: string | null
-  deployPlatform: string | null
-  /** cicd.yml, the technology file and the rest, merged as Ansible merges them. */
-  descriptor: Record<string, unknown>
-}
+// The JSON's shapes are the API's, from @eidp/contracts — one definition, so the two cannot drift.
+import type { ApplicationDetail, CatalogResponse, CatalogSystem, SyncState } from '@eidp/contracts/catalog'
+export type { SyncState } from '@eidp/contracts/catalog'
+/** One row of an application — the base, or one environment's override — with its merged configuration. */
+export type ApplicationConfig = ApplicationDetail
 
 export function fetchApplication(system: string, name: string): Promise<ApplicationConfig[]> {
   return api<ApplicationConfig[]>(
     `/catalog/systems/${encodeURIComponent(system)}/applications/${encodeURIComponent(name)}`,
   )
-}
-
-type CatalogResponse = {
-  systems: ApiSystem[]
-  sync: SyncState
-}
-
-/** The API keeps one row per environment variant; the UI wants one per app. */
-type ApiApplication = {
-  id: string
-  name: string
-  group: string
-  environment: string | null
-  repository: string | null
-  buildTechnology: string | null
-  deployTechnology: string | null
-  deployPlatform: string | null
-  appType: string | null
-  microservice: boolean | null
-  technologies: string[]
-}
-
-type ApiSystem = {
-  id: string
-  projectName: string
-  company: string | null
-  teams: Record<string, string>
-  approvers: string[]
-  managers: string[]
-  applications: ApiApplication[]
 }
 
 /** Pulls inventories and rebuilds the catalog now. Needs `catalog.sync`. */
@@ -75,7 +28,7 @@ export async function fetchCatalog(): Promise<{ systems: System[]; sync: SyncSta
  * application carrying the environments it was found in. The unprefixed row is
  * the base, so it supplies the details when a variant leaves a field blank.
  */
-function foldEnvironments(system: ApiSystem): System {
+function foldEnvironments(system: CatalogSystem): System {
   const byName = new Map<string, System['applications'][number]>()
 
   for (const row of system.applications) {

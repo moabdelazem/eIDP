@@ -33,13 +33,13 @@ process.env.OLLAMA_URL = `http://localhost:${(ollamaServer.address() as AddressI
 process.env.OLLAMA_MODEL = 'qwen2.5'
 
 const { createApp } = await import('../app.ts')
-const { closeDb, ensureSchema, query } = await import('../lib/db.ts')
+const { closeDb, migrate, query } = await import('../lib/db.ts')
 const app = createApp()
 
 const tokens: Record<string, string> = {}
 
 before(async () => {
-  await ensureSchema()
+  await migrate()
   await query('delete from requests')
   for (const who of ['alice', 'bob', 'carol']) {
     const res = await app.request('/auth/login', {
@@ -330,6 +330,19 @@ test('work interrupted by a restart is surfaced as failed, not left hanging', as
   const seen = await json(await call('bob', 'GET', `/requests/${created.id}`))
   assert.equal(seen.status, 'failed')
   assert.match(String(seen.error), /restarted/)
+})
+
+test('another process’s creation still beating is left alone; one gone quiet is failed', async () => {
+  const { recoverInterrupted } = await import('../services/requests.ts')
+  const live = await json<{ id: string }>(await call('bob', 'POST', '/requests', repoRequest('beating')))
+  const quiet = await json<{ id: string }>(await call('bob', 'POST', '/requests', repoRequest('quiet')))
+  await query(`update requests set status = 'approved', heartbeat_at = now() where id = $1`, [live.id])
+  await query(`update requests set status = 'approved', heartbeat_at = now() - interval '5 minutes' where id = $1`, [quiet.id])
+  assert.equal(await recoverInterrupted(), 1)
+  assert.equal((await json(await call('bob', 'GET', `/requests/${live.id}`))).status, 'approved')
+  assert.equal((await json(await call('bob', 'GET', `/requests/${quiet.id}`))).status, 'failed')
+  // Leave nothing approved behind for the tests after this one.
+  await query(`update requests set status = 'failed' where id = $1`, [live.id])
 })
 
 const grantRequest = (extra: Record<string, unknown> = {}) => ({

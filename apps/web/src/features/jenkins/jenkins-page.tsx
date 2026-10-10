@@ -40,8 +40,8 @@ const RESULTS = Object.keys(RESULT) as Result[]
  */
 export function JenkinsPage() {
   const [version, setVersion] = useState(0)
-  const overview = useResource(() => jenkinsApi.overview(version > 0), [version], { pollMs: 30_000 })
-  const audit = useResource(() => jenkinsApi.audit(), [version], { pollMs: 60_000 })
+  const overview = useResource(['jenkins', 'overview', version], () => jenkinsApi.overview(version > 0), { pollMs: 30_000 })
+  const audit = useResource(['jenkins', 'audit', version], () => jenkinsApi.audit(), { pollMs: 60_000 })
   const { can } = useProfile()
   const canOperate = can('jenkins.operate')
 

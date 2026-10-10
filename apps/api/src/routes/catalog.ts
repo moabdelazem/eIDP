@@ -1,3 +1,4 @@
+import type { CatalogResponse } from '@eidp/contracts/catalog'
 import { Hono } from 'hono'
 import { ApiError } from '../lib/errors.ts'
 import { requireAuth, requirePermission, type AppEnv } from '../middleware/auth.ts'
@@ -28,7 +29,7 @@ export const catalogRoutes = new Hono<AppEnv>()
       )
     }
 
-    return c.json({ systems, sync })
+    return c.json({ systems, sync } satisfies CatalogResponse)
   })
 
   .get('/status', async (c) => c.json(await readSyncState()))

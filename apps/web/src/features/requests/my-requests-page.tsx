@@ -17,7 +17,7 @@ import { RequestRow } from './request-row.tsx'
 
 export function MyRequestsPage() {
   usePageTitle('My requests')
-  const mine = useResource(() => requestsApi.mine(), [], { pollMs: 10_000 })
+  const mine = useResource(['requests', 'mine'], () => requestsApi.mine(), { pollMs: 10_000 })
   const [view, setView] = useView()
   const [status, setStatus] = useState<RequestStatus | 'all'>('all')
   const has = mine.data && mine.data.length > 0

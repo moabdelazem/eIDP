@@ -1,3 +1,4 @@
+import type { Digest, DigestIndex, DigestView } from '@eidp/contracts/digest'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { ApiError } from '../lib/errors.ts'
@@ -19,7 +20,7 @@ export const digestRoutes = new Hono<AppEnv>()
   .get('/', requirePermission('catalog.view'), async (c) => {
     const access = await accessFrom(c)
     const { teams, mine } = await teamsFor(access)
-    return c.json({ teams, mine, weeks: recentWeeks(), current: weekOf(new Date()), canRegenerate: can(access, 'digests.all') })
+    return c.json({ teams, mine, weeks: recentWeeks(), current: weekOf(new Date()), canRegenerate: can(access, 'digests.all') } satisfies DigestIndex)
   })
 
   .get('/:team', requirePermission('catalog.view'), validate('query', Week), async (c) => {
@@ -27,7 +28,7 @@ export const digestRoutes = new Hono<AppEnv>()
     const week = c.req.valid('query').week ?? recentWeeks()[1]!
     const [result, kept] = await Promise.all([digest(team, week), storedWeeks(team)])
     const weeks = [...new Set([...recentWeeks(), ...kept])].sort().reverse()
-    return c.json({ ...result, weeks })
+    return c.json({ ...result, weeks } satisfies DigestView)
   })
 
   // Counted and written again — after a fix to the facts, or when the model was down.
@@ -36,5 +37,5 @@ export const digestRoutes = new Hono<AppEnv>()
     const { week } = c.req.valid('json')
     if (week >= weekOf(new Date())) throw new ApiError(400, 'week_in_progress', 'The week in progress is counted live; it is written up once it ends.')
     if (!recentWeeks().includes(week)) throw new ApiError(400, 'too_old', `The builds of the week of ${week} are no longer kept, so it cannot be counted again.`)
-    return c.json(await generate(team, week))
+    return c.json((await generate(team, week)) satisfies Digest)
   })

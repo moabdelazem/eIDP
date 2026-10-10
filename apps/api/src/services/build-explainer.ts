@@ -1,3 +1,7 @@
+import type { Brief } from '@eidp/contracts/pipelines'
+export type { Brief }
+import type { Category, Explanation } from '@eidp/contracts/jenkins'
+export type { Category, Explanation }
 import { z } from 'zod'
 import * as jenkins from '../integrations/jenkins/index.ts'
 import type { BuildDetail } from '../integrations/jenkins/index.ts'
@@ -40,25 +44,11 @@ export const CATEGORIES = [
   'timeout',
   'flaky',
   'unknown',
-] as const
+] as const satisfies readonly Category[]
 
-export type Explanation = {
-  summary: string
-  cause: string
-  category: (typeof CATEGORIES)[number]
-  confidence: 'low' | 'medium' | 'high'
-  /** Log lines the answer rests on, as numbered in the build page's log. */
-  evidence: { line: number; text: string }[]
-  nextSteps: string[]
-  model: string
-  createdAt: string
-  createdByName: string
-  durationMs: number
-  /** The log was longer than the context window allowed; only part of it was read. */
-  trimmed: boolean
-  /** Made by the automatic run when the build failed, not asked for by someone. */
-  automatic: boolean
-}
+// Every contract Category is in the list too, so the model's schema offers all of them.
+type _AllCategories = Exclude<Category, (typeof CATEGORIES)[number]> extends never ? true : never
+export const _allCategories: _AllCategories = true
 
 // ---- the log ---------------------------------------------------------------
 
@@ -257,9 +247,6 @@ export async function cached(job: string, number: number): Promise<Explanation |
   )
   return rows[0] ? toExplanation(rows[0]) : null
 }
-
-/** What a list shows of an answer: enough to say why, and what to try. */
-export type Brief = Pick<Explanation, 'summary' | 'category' | 'confidence' | 'nextSteps' | 'createdAt' | 'automatic'>
 
 /**
  * The kept answers for many builds at once, keyed `job#number` — one query,

@@ -1,3 +1,4 @@
+import type { LoginResponse, Profile } from '@eidp/contracts/auth'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { authenticate, profileOf } from '../integrations/ldap/index.ts'
@@ -36,7 +37,7 @@ export const authRoutes = new Hono<AppEnv>()
 
     const { token, expiresAt } = await issueSession(user)
     await activity.record({ uid: user.uid, name: user.name, kind: 'sign_in' })
-    return c.json({ token, expiresAt })
+    return c.json({ token, expiresAt } satisfies LoginResponse)
   })
   .get('/me', requireAuth, (c) => c.json(c.get('jwtPayload')))
 
@@ -55,7 +56,7 @@ export const authRoutes = new Hono<AppEnv>()
     if (!target) throw new ApiError(404, 'user_not_found', `The directory has no account called ${uid}.`)
     const session = await issueAssumedSession(target, { uid: actor.sub, name: actor.name })
     await auditAssume(actor.sub, target.uid)
-    return c.json(session)
+    return c.json(session satisfies LoginResponse)
   })
 
   /**
@@ -85,5 +86,5 @@ export const authRoutes = new Hono<AppEnv>()
         })),
         grants: access.grants.map(({ permission, scopeType, scope }) => ({ permission, scopeType, scope })),
       },
-    })
+    } satisfies Profile)
   })

@@ -7,7 +7,7 @@ import { after, before, test } from 'node:test'
 import { sign } from 'hono/jwt'
 import { createApp } from '../app.ts'
 import { config } from '../lib/config.ts'
-import { closeDb, ensureSchema, query } from '../lib/db.ts'
+import { closeDb, migrate, query } from '../lib/db.ts'
 import { can, grantsOf, type Access, type Binding } from '../services/rbac.ts'
 import { parseOldMap, planImport } from '../services/rbac-import.ts'
 
@@ -98,7 +98,7 @@ async function fileRequest(kind: 'grant_access' | 'create_repository', project: 
 }
 
 before(async () => {
-  await ensureSchema()
+  await migrate()
   await clearDave()
   ;[bob, alice, dave] = await Promise.all([login('bob'), login('alice'), login('dave')])
 })

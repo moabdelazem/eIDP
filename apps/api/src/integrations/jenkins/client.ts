@@ -117,13 +117,15 @@ export function jenkinsPost(path: string, form?: URLSearchParams, query?: Record
 /**
  * The last `maxBytes` of a text resource — a build log can be hundreds of
  * megabytes, and the end is where a failure explains itself. Read as a stream
- * and only the tail kept, so a huge log costs time, not memory.
- *
- * ponytail: still downloads the whole log. `logText/progressiveText?start=`
- * would skip ahead, but needs the size first; worth it when logs get that big.
+ * and only the tail kept, so a huge log costs time, not memory. The headers
+ * come back too: a progressive log says its size and whether it is done there.
  */
-export async function jenkinsTail(path: string, maxBytes: number): Promise<{ text: string; truncated: boolean }> {
-  const res = await send('GET', path)
+export async function jenkinsTail(
+  path: string,
+  maxBytes: number,
+  query?: Record<string, string | number>,
+): Promise<{ text: string; truncated: boolean; headers: Headers }> {
+  const res = await send('GET', path, query)
   const chunks: Buffer[] = []
   let kept = 0
   let truncated = false
@@ -135,15 +137,16 @@ export async function jenkinsTail(path: string, maxBytes: number): Promise<{ tex
       truncated = true
     }
   }
-  let buffer = Buffer.concat(chunks)
-  if (buffer.length > maxBytes) {
-    buffer = buffer.subarray(buffer.length - maxBytes)
-    truncated = true
-  }
-  let text = buffer.toString('utf8')
+  const { text, cut } = lastBytes(Buffer.concat(chunks), maxBytes)
+  return { text, truncated: truncated || cut, headers: res.headers }
+}
+
+/** The last `maxBytes` of `buffer` as text, starting at a whole line when anything was cut. */
+export function lastBytes(buffer: Buffer, maxBytes: number): { text: string; cut: boolean } {
+  if (buffer.length <= maxBytes) return { text: buffer.toString('utf8'), cut: false }
+  const text = buffer.subarray(buffer.length - maxBytes).toString('utf8')
   // Cut to a whole line, so the first line shown is not half of one.
-  if (truncated) text = text.slice(text.indexOf('\n') + 1)
-  return { text, truncated }
+  return { text: text.slice(text.indexOf('\n') + 1), cut: true }
 }
 
 async function jenkinsError(res: Response): Promise<ApiError> {
