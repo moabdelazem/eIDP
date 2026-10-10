@@ -1,0 +1,11 @@
+apiVersion: v2
+name: eidp
+description: e-IDP, the internal developer portal — the API, the web app, and optionally its own Postgres, behind an Envoy Gateway HTTPRoute.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.27.0-0"
+keywords: [developer-portal, backstage-alternative, envoy-gateway]
+home: https://github.com/moabdelazem/eIDP
+sources:
+  - https://github.com/moabdelazem/eIDP

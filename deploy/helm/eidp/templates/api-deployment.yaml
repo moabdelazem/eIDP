@@ -1,0 +1,153 @@
+{{- $api := .Values.api }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "eidp.api.fullname" . }}
+  labels:
+    {{- include "eidp.labels" (dict "root" . "component" "api") | nindent 4 }}
+spec:
+  {{- if not $api.autoscaling.enabled }}
+  replicas: {{ $api.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "eidp.selectorLabels" (dict "root" . "component" "api") | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "eidp.selectorLabels" (dict "root" . "component" "api") | nindent 8 }}
+        {{- with $api.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        # A changed setting rolls the pods; the API reads its environment once, at boot.
+        checksum/config: {{ include (print $.Template.BasePath "/api-configmap.yaml") . | sha256sum }}
+        {{- with $api.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "eidp.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: {{ include "eidp.image" (dict "root" . "image" $api.image) }}
+          imagePullPolicy: {{ $api.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          # Later sources win: the ConfigMap, the generated JWT secret, then
+          # the operator's Secret. Vault, read at boot, wins over all of them.
+          envFrom:
+            - configMapRef:
+                name: {{ include "eidp.api.fullname" . }}
+            {{- if $api.secrets.generateJwtSecret }}
+            - secretRef:
+                name: {{ include "eidp.api.fullname" . }}-generated
+            {{- end }}
+            {{- with $api.secrets.existingSecret }}
+            - secretRef:
+                name: {{ . }}
+            {{- end }}
+            {{- with $api.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            - name: PORT
+              value: "3000"
+            - name: INVENTORIES_CHECKOUT
+              value: /var/lib/eidp/inventories
+            {{- with $api.vault.auth.existingSecret }}
+            # Token or AppRole, whichever the Secret holds.
+            - name: VAULT_TOKEN
+              valueFrom:
+                secretKeyRef: { name: {{ . }}, key: {{ $api.vault.auth.tokenKey }}, optional: true }
+            - name: VAULT_ROLE_ID
+              valueFrom:
+                secretKeyRef: { name: {{ . }}, key: {{ $api.vault.auth.roleIdKey }}, optional: true }
+            - name: VAULT_SECRET_ID
+              valueFrom:
+                secretKeyRef: { name: {{ . }}, key: {{ $api.vault.auth.secretIdKey }}, optional: true }
+            {{- end }}
+            {{- if .Values.postgresql.enabled }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (include "eidp.postgres.fullname" .) .Values.postgresql.existingSecret }}
+                  key: {{ .Values.postgresql.passwordKey }}
+            - name: DATABASE_URL
+              value: "postgresql://{{ .Values.postgresql.username }}:$(POSTGRES_PASSWORD)@{{ include "eidp.postgres.fullname" . }}:5432/{{ .Values.postgresql.database }}"
+            {{- else if .Values.database.external.existingSecret }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.external.existingSecret }}
+                  key: {{ .Values.database.external.urlKey }}
+            {{- end }}
+            {{- with $api.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          # Migrations run before the server listens; give them room.
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            {{- toYaml $api.resources | nindent 12 }}
+          securityContext:
+            {{- include "eidp.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: inventories
+              mountPath: /var/lib/eidp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: inventories
+          {{- if $api.inventories.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-inventories" (include "eidp.api.fullname" .)) $api.inventories.persistence.existingClaim }}
+          {{- else }}
+          emptyDir:
+            sizeLimit: 4Gi
+          {{- end }}
+      {{- with $api.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $api.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $api.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $api.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

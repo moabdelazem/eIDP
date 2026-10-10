@@ -176,6 +176,14 @@ pnpm --filter @eidp/api vault:fake     # Vault
 
 Each prints the settings to point `.env` at it.
 
+### On Kubernetes
+
+Each app has a production image (`apps/api/Containerfile`,
+`apps/web/Containerfile`, built from the repository root), and
+`deploy/helm/eidp` installs both behind an Envoy Gateway `HTTPRoute`, with
+secrets from Vault or a Secret and an optional Postgres for dev clusters. See
+the chart's README and `docs/deploy.md`.
+
 ## Configuration
 
 Everything is in `.env.example`, grouped and commented: database, directory,

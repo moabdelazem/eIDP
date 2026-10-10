@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "e-IDP chart values",
+  "type": "object",
+  "definitions": {
+    "image": {
+      "type": "object",
+      "required": ["repository"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string" },
+        "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "duration": { "type": "string", "pattern": "^([0-9]{1,5}(h|m|s|ms)){1,4}$" },
+    "pdb": {
+      "type": "object",
+      "properties": { "enabled": { "type": "boolean" }, "minAvailable": { "type": ["integer", "string"] } }
+    }
+  },
+  "properties": {
+    "api": {
+      "type": "object",
+      "required": ["image", "replicaCount", "config", "secrets", "vault"],
+      "properties": {
+        "image": { "$ref": "#/definitions/image" },
+        "replicaCount": { "type": "integer", "minimum": 1 },
+        "config": {
+          "type": "object",
+          "description": "Non-secret settings, by the names in .env.example.",
+          "propertyNames": { "pattern": "^[A-Z][A-Z0-9_]*$" },
+          "not": {
+            "description": "Secrets belong in Vault or api.secrets.existingSecret, not in a ConfigMap.",
+            "anyOf": [
+              { "required": ["JWT_SECRET"] },
+              { "required": ["LDAP_BIND_PASSWORD"] },
+              { "required": ["ADO_PAT"] },
+              { "required": ["JIRA_TOKEN"] },
+              { "required": ["JENKINS_TOKEN"] },
+              { "required": ["DATABASE_URL"] },
+              { "required": ["VAULT_TOKEN"] },
+              { "required": ["VAULT_SECRET_ID"] }
+            ]
+          },
+          "additionalProperties": { "type": ["string", "number", "boolean"] }
+        },
+        "secrets": {
+          "type": "object",
+          "properties": {
+            "existingSecret": { "type": "string" },
+            "generateJwtSecret": { "type": "boolean" }
+          }
+        },
+        "vault": {
+          "type": "object",
+          "properties": {
+            "addr": { "type": "string", "pattern": "^(https?://.+)?$" },
+            "secretPaths": { "type": "string" },
+            "kvMount": { "type": "string" },
+            "kvVersion": { "enum": ["1", "2", 1, 2] },
+            "namespace": { "type": "string" },
+            "required": { "type": "boolean" },
+            "timeoutSeconds": { "type": "integer", "minimum": 1 },
+            "auth": { "type": "object" }
+          }
+        },
+        "inventories": { "type": "object" },
+        "autoscaling": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "minReplicas": { "type": "integer", "minimum": 1 },
+            "maxReplicas": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "podDisruptionBudget": { "$ref": "#/definitions/pdb" }
+      }
+    },
+    "web": {
+      "type": "object",
+      "required": ["image", "replicaCount"],
+      "properties": {
+        "image": { "$ref": "#/definitions/image" },
+        "replicaCount": { "type": "integer", "minimum": 1 },
+        "podDisruptionBudget": { "$ref": "#/definitions/pdb" }
+      }
+    },
+    "httpRoute": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "parentRefs": {
+          "type": "array",
+          "items": { "type": "object", "required": ["name"] }
+        },
+        "hostnames": { "type": "array", "items": { "type": "string" } },
+        "timeouts": {
+          "type": "object",
+          "properties": { "api": { "$ref": "#/definitions/duration" }, "streaming": { "$ref": "#/definitions/duration" } }
+        },
+        "streamingPaths": { "type": "array", "items": { "type": "string", "pattern": "^/api/" } }
+      },
+      "if": { "properties": { "enabled": { "const": true } } },
+      "then": { "required": ["parentRefs"], "properties": { "parentRefs": { "minItems": 1 } } }
+    },
+    "database": { "type": "object" },
+    "postgresql": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": { "$ref": "#/definitions/image" },
+        "database": { "type": "string", "pattern": "^[a-z_][a-z0-9_]*$" },
+        "username": { "type": "string", "pattern": "^[a-z_][a-z0-9_]*$" },
+        "password": { "type": "string", "pattern": "^[A-Za-z0-9._~-]*$", "description": "URL-safe: it is spliced into DATABASE_URL." }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "properties": { "enabled": { "type": "boolean" }, "gatewayNamespace": { "type": "string" } }
+    }
+  }
+}

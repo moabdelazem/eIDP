@@ -32,6 +32,8 @@ pnpm workspace. `apps/*` and `packages/*`.
   folder under `integrations/` and a route module — nothing else moves.
 - `packages/contracts` — `@eidp/contracts`, the JSON the API sends and the web
   reads, as types and nothing else. See *Talking to the API*.
+- `deploy/helm/eidp` — the Helm chart; each app's production image is its
+  `Containerfile` (`docs/deploy.md`).
 
 - `apps/web` — Vite + React UI (`@eidp/web`), organized by feature. Dev server
   proxies `/api` to the API on :3000.
@@ -87,6 +89,7 @@ Each area's detail — what it does, why, and the traps it has hit — lives in
 | [`docs/chatbot.md`](docs/chatbot.md) | the chatbot, its tools and rules, streaming, markdown |
 | [`docs/auth.md`](docs/auth.md) | LDAP sign-in, AD errors, the test users |
 | [`docs/running.md`](docs/running.md) | `scripts/dev.sh`, the dev image |
+| [`docs/deploy.md`](docs/deploy.md) | the production images, the Helm chart (`deploy/helm/eidp`), the HTTPRoute |
 
 ## Rules that break things
 

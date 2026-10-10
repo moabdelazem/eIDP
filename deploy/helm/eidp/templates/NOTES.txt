@@ -1,0 +1,33 @@
+e-IDP {{ .Chart.AppVersion }} is installed as {{ include "eidp.fullname" . }}.
+
+{{- if .Values.httpRoute.enabled }}
+
+It answers on {{ join ", " .Values.httpRoute.hostnames }} through the Gateway
+{{- range .Values.httpRoute.parentRefs }} {{ .namespace | default $.Release.Namespace }}/{{ .name }}{{ end }}:
+  /api/*  -> {{ include "eidp.api.fullname" . }} (with /api taken off)
+  /*      -> {{ include "eidp.web.fullname" . }}
+{{- else }}
+
+No HTTPRoute: reach it with
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "eidp.web.fullname" . }} 8080:80
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "eidp.api.fullname" . }} 3000:3000
+{{- end }}
+
+Check it:
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "eidp.api.fullname" . }} | grep -E 'database:|vault|secrets'
+
+{{- if not (or .Values.api.vault.addr .Values.api.secrets.existingSecret) }}
+
+WARNING: neither Vault (api.vault.addr) nor a Secret (api.secrets.existingSecret)
+is set, so the API has no LDAP bind password, tokens or {{ if not .Values.postgresql.enabled }}DATABASE_URL{{ else }}integration credentials{{ end }}.
+{{- end }}
+{{- if and (not .Values.postgresql.enabled) (not .Values.database.external.existingSecret) }}
+
+The database URL is expected from Vault or api.secrets.existingSecret (DATABASE_URL).
+{{- end }}
+{{- if .Values.postgresql.enabled }}
+
+The chart's own Postgres is on ({{ include "eidp.postgres.fullname" . }}). It is for dev and
+test clusters: one replica, no backups. Use an external database for production.
+{{- end }}

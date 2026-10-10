@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "eidp.fullname" . | trunc 52 | trimSuffix "-" }}-test-health
+  labels:
+    {{- include "eidp.labels" (dict "root" . "component" "test") | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    # The API is up, its jobs answer (which needs Postgres), and the web app serves.
+    - name: check
+      image: docker.io/curlimages/curl:8.11.1
+      securityContext:
+        {{- include "eidp.containerSecurityContext" . | nindent 8 }}
+      command: ["sh", "-c"]
+      args:
+        - >-
+          set -e;
+          curl -fsS http://{{ include "eidp.api.fullname" . }}:3000/health;
+          curl -fsS http://{{ include "eidp.api.fullname" . }}:3000/health/jobs > /dev/null;
+          curl -fsS http://{{ include "eidp.web.fullname" . }}/healthz;
+          curl -fsS http://{{ include "eidp.web.fullname" . }}/ | grep -q '<div id="root">'
