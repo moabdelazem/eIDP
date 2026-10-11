@@ -12,6 +12,7 @@ export type Permission =
   | 'jenkins.view'
   | 'jenkins.operate'
   | 'pipelines.view'
+  | 'pipelines.templates'
   | 'ai.use'
   | 'ai.chat'
   | 'activity.view'

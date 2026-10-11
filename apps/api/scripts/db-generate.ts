@@ -31,7 +31,7 @@ if (made.length === 0) process.exit(0) // "No schema changes"
 
 const last = Math.max(0, ...sqlIn(migrations).map((f) => Number(f.slice(0, 4))))
 const target = `${String(last + 1).padStart(4, '0')}_${name}.sql`
-const sql = readFileSync(join(kit, made[0]!), 'utf8').replaceAll('--> statement-breakpoint\n', '')
+const sql = readFileSync(join(kit, made[0]!), 'utf8').replaceAll('--> statement-breakpoint', '\n')
 writeFileSync(join(migrations, target), `-- ${target.slice(0, 4)} — TODO: why this change is made.\n\n${sql.trimEnd()}\n`)
 // The snapshot in drizzle/meta stays: it is what the next change is compared against.
 rmSync(join(kit, made[0]!))

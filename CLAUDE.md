@@ -139,5 +139,5 @@ docker compose up -d
 
 ## Notes
 
-- `inventories` is read-only input. e-IDP never writes back to it.
+- `inventories` is input, read by the catalog sync. The one thing e-IDP writes to it — and to `ocp-templates` — is an approved pipeline request's files, pushed to the default branch by `modules/requests/pipeline/write.ts` and nothing else (`docs/requests.md`).
 - Don't add a dependency for something Node 24 or Hono already does.

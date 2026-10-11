@@ -7,7 +7,12 @@ import { serve } from '@hono/node-server'
 import { createFakeAdo } from '../../integrations/ado/fake-server.ts'
 import { createFakeJira } from '../../integrations/jira/fake-server.ts'
 import { createFakeOllama } from '../../integrations/ollama/fake-server.ts'
+import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 
 const fake = createFakeAdo()
@@ -32,7 +37,74 @@ await new Promise((resolve) => ollamaServer.once('listening', resolve))
 process.env.OLLAMA_URL = `http://localhost:${(ollamaServer.address() as AddressInfo).port}`
 process.env.OLLAMA_MODEL = 'qwen2.5'
 
+// Inventories, for pipeline requests: a local repository seeded with the
+// parser's fixtures plus a project of the tests' own, pushed to over file://.
+const inventoriesRemote = mkdtempSync(join(tmpdir(), 'eidp-inventories-'))
+{
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: 'pipe' })
+  git(inventoriesRemote, 'init', '-q', '--bare', '-b', 'main')
+  const seed = mkdtempSync(join(tmpdir(), 'eidp-seed-'))
+  cpSync(fileURLToPath(new URL('../../integrations/inventories/__fixtures__/repo', import.meta.url)), seed, { recursive: true })
+  mkdirSync(join(seed, 'PipeHome/group_vars/all'), { recursive: true })
+  writeFileSync(join(seed, 'PipeHome/group_vars/all/project.yml'), 'project_name: PipeHome\n')
+  mkdirSync(join(seed, 'Reference/group_vars/ref-app'), { recursive: true })
+  writeFileSync(join(seed, 'Reference/group_vars/ref-app/resources.yml'), 'name: ref-app\nreplicas: 1\n')
+  // The references the .NET and project templates are imported from, as definitions.ts names them.
+  const reference = join(seed, 'LPGMS_Penalty/group_vars/LPGMS.PWebApi')
+  mkdirSync(reference, { recursive: true })
+  writeFileSync(
+    join(reference, 'cicd.yml'),
+    [
+      'repository_name: LPGMS.PWebApi',
+      'build_technology: DotNetCore',
+      'dockerfile_name: Dockerfile-User-global',
+      'packages: tz-global',
+      'nuget_name: Reference.Package',
+      'db_password: hunter2',
+      'build_image:',
+      '  name: sdk',
+      '  tag: "6.0"',
+      'deploy_image:',
+      '  tag: 6.0',
+      '',
+    ].join('\n'),
+  )
+  writeFileSync(join(reference, 'LPGMS.PWebApi.env.yml'), 'service: LPGMS.PWebApi\n')
+  mkdirSync(join(seed, 'GAFI_Digital_Network/group_vars/all'), { recursive: true })
+  writeFileSync(join(seed, 'GAFI_Digital_Network/group_vars/all/project.yml'), 'project_name: GAFI_Digital_Network\nmail_subject: GAFI_Digital_Network builds\n')
+  writeFileSync(join(seed, 'GAFI_Digital_Network/group_vars/all/team.yml'), 'company: someone-else\n')
+  git(seed, 'init', '-q', '-b', 'main')
+  git(seed, 'add', '.')
+  git(seed, '-c', 'user.name=seed', '-c', 'user.email=seed@x', 'commit', '-q', '-m', 'seed')
+  git(seed, 'push', '-q', inventoriesRemote, 'main')
+  rmSync(seed, { recursive: true, force: true })
+}
+process.env.INVENTORIES_GIT_URL = `file://${inventoriesRemote}`
+process.env.INVENTORIES_WRITE_CHECKOUT = mkdtempSync(join(tmpdir(), 'eidp-write-'))
+
+
+// ocp-templates, which approved pipelines write their manifests to.
+const ocpTemplatesRemote = mkdtempSync(join(tmpdir(), 'eidp-ocp-templates-'))
+{
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: 'pipe' })
+  git(ocpTemplatesRemote, 'init', '-q', '--bare', '-b', 'main')
+  const seed = mkdtempSync(join(tmpdir(), 'eidp-ocp-seed-'))
+  mkdirSync(join(seed, 'PipeHome'), { recursive: true })
+  writeFileSync(join(seed, 'PipeHome/README'), 'manifests\n')
+  mkdirSync(join(seed, 'LPGMS_Penalty/LPGMS.PWebApi'), { recursive: true })
+  writeFileSync(join(seed, 'LPGMS_Penalty/LPGMS.PWebApi/deployment-LPGMS.PWebApi.yml'), 'kind: Deployment\nname: "{{ app_name }}"\n')
+  git(seed, 'init', '-q', '-b', 'main')
+  git(seed, 'add', '.')
+  git(seed, '-c', 'user.name=seed', '-c', 'user.email=seed@x', 'commit', '-q', '-m', 'seed')
+  git(seed, 'push', '-q', ocpTemplatesRemote, 'main')
+  rmSync(seed, { recursive: true, force: true })
+}
+process.env.OCP_TEMPLATES_GIT_URL = `file://${ocpTemplatesRemote}`
+process.env.OCP_TEMPLATES_WRITE_CHECKOUT = mkdtempSync(join(tmpdir(), 'eidp-ocp-write-'))
+
 const { createApp } = await import('../../app.ts')
+const { registerTechnology } = await import('./pipeline/technologies.ts')
+const { writePipeline } = await import('./pipeline/write.ts')
 const { closeDb, migrate, query } = await import('../../lib/db.ts')
 const app = createApp()
 
@@ -52,6 +124,7 @@ before(async () => {
 })
 
 after(async () => {
+  await restoreTemplates()
   await query('delete from requests')
   await closeDb()
   server.close()
@@ -609,3 +682,298 @@ test('risk: without the model, the facts and the level still stand, and it says 
   await catalogLock.query('select pg_advisory_unlock(4202)')
   await catalogLock.end()
 })
+
+// ---- pipelines ------------------------------------------------------------------
+
+
+// A technology of the tests' own: what the ported templates will do, in miniature.
+registerTechnology({
+  key: 'TestTech',
+  label: 'Test Tech',
+  versions: ['1', '2'],
+  fields: [{ name: 'artifact_id', label: 'Artifact ID', options: null, default: '{application}', help: 'Letters and digits.', pattern: '^[a-z0-9-]+$' }],
+  targets: ['OCP'],
+  noNamespaces: false,
+  files: async (ctx, inventories) => [
+    // Copied from a reference application and patched, as the ported templates do.
+    { path: `${ctx.system}/group_vars/${ctx.spec.application}/resources.yml`, content: (await inventories.read('Reference/group_vars/ref-app/resources.yml'))!.replace('ref-app', ctx.spec.application) },
+    { path: `${ctx.system}/group_vars/${ctx.spec.application}/cicd.yml`, content: `repository_name: ${ctx.repository}\nbuild_technology: TestTech\n` },
+    { path: `${ctx.system}/group_vars/${ctx.spec.application}/TestTech.yml`, content: `artifact_id: ${ctx.spec.fields.artifact_id}\nversion: "${ctx.spec.version}"\n` },
+  ],
+})
+
+const adoProject = (name: string, repos: string[]) => {
+  const coll = fake.collections.get('DefaultCollection')!
+  const project = { id: randomUUID(), name, description: '', state: 'wellFormed' as const }
+  coll.projects.push(project)
+  for (const repo of repos) coll.repos.push({ id: randomUUID(), name: repo, project: { id: project.id, name } })
+}
+adoProject('PipeHome', ['pipe-api', 'pipe-web', 'pipe-late'])
+adoProject('PipeLab', ['lab-api'])
+
+const teams = {
+  company: 'eFinance', devTeam: 'Payments', qcTeam: 'QC', uatTeam: 'DEVOPS', prdTeam: 'DEVOPS', automaticDeployToQc: false,
+  devTeamList: [], opsTeamList: ['DEVOPS'], prdOnly: [], prdApprovers: ['DEVOPS'], projectManagers: [],
+}
+
+const pipelineRequest = (project: string, repository: string, pipeline: Record<string, unknown> = {}) => ({
+  kind: 'create_pipeline',
+  collection: 'DefaultCollection',
+  project,
+  repository,
+  justification: 'The new scoring service needs its pipeline.',
+  teamGroup: 'Payments',
+  pipeline: { application: repository, deployTarget: 'OCP', technology: 'TestTech', version: '2', library: false, fields: { artifact_id: repository }, newProject: null, ...pipeline },
+})
+
+/** What the inventories repository holds now, at `path`, or null. */
+function inventoriesFile(path: string): string | null {
+  try {
+    return execFileSync('git', ['--git-dir', inventoriesRemote, 'show', `main:${path}`], { stdio: 'pipe' }).toString()
+  } catch {
+    return null
+  }
+}
+const inventoriesLog = () => execFileSync('git', ['--git-dir', inventoriesRemote, 'log', '--format=%s%n%b', 'main']).toString()
+
+const pipelineLock = new pg.Client({ connectionString: process.env.DATABASE_URL ?? 'postgresql://eidp:eidp@localhost:5432/eidp' })
+
+// The templates are global rows in the shared database: the ones these tests
+// write are put back as they were, history included, whatever happens.
+const TEMPLATE_DIRS = ['DotNetCore/OCP', 'manifests/DotNetCore/OCP', 'project']
+let templatesBefore: { dir: string; files: unknown; updated_by: string; updated_by_name: string; updated_at: Date }[] = []
+let historyFloor = 0
+let templatesTaken = false
+/** Called by the file's `after`, before the pool closes. */
+async function restoreTemplates() {
+  if (!templatesTaken) return
+  await query('delete from pipeline_templates where dir = any($1)', [TEMPLATE_DIRS])
+  for (const row of templatesBefore) {
+    await query('insert into pipeline_templates (dir, files, updated_by, updated_by_name, updated_at) values ($1, $2, $3, $4, $5)', [row.dir, JSON.stringify(row.files), row.updated_by, row.updated_by_name, row.updated_at])
+  }
+  await query('delete from pipeline_template_history where id > $1 and dir = any($2)', [historyFloor, TEMPLATE_DIRS])
+}
+
+test('pipelines: DevOps imports a template from its reference, checks it, and saves it', async () => {
+  templatesBefore = (await query('select * from pipeline_templates where dir = any($1)', [TEMPLATE_DIRS])).rows as typeof templatesBefore
+  historyFloor = Number((await query('select coalesce(max(id), 0) as id from pipeline_template_history')).rows[0].id)
+  templatesTaken = true
+  await query('delete from pipeline_templates where dir = any($1)', [TEMPLATE_DIRS])
+  const at = (dir: string) => `/requests/pipeline/template?dir=${encodeURIComponent(dir)}`
+
+  const slots = await json<{ dir: string; repository: string; reference: string; saved: unknown }[]>(await call('alice', 'GET', '/requests/pipeline/templates'))
+  assert.deepEqual(slots.find((s) => s.dir === 'DotNetCore/OCP'), {
+    ...slots.find((s) => s.dir === 'DotNetCore/OCP'),
+    repository: 'inventories',
+    reference: 'LPGMS_Penalty/group_vars/LPGMS.PWebApi',
+    saved: null,
+  })
+
+  // Imported from the reference: the name a placeholder, the password not carried.
+  const imported = await json<{ files: { path: string; content: string }[]; notes: string[] }>(await call('alice', 'POST', `${at('DotNetCore/OCP')}`.replace('template?', 'template/import?')))
+  assert.deepEqual(imported.files.map((f) => f.path), ['__APPLICATION__.env.yml', 'cicd.yml'])
+  const cicd = imported.files.find((f) => f.path === 'cicd.yml')!.content
+  assert.match(cicd, /^repository_name: __APPLICATION__$/m)
+  assert.match(cicd, /^db_password: changeme$/m)
+  assert.match(imported.notes.join(' '), /db_password had a value in the reference/)
+
+  // Saving checks what it is given.
+  const refused = await call('alice', 'PUT', at('DotNetCore/OCP'), { files: [{ path: 'cicd.yml', content: 'db_password: hunter2\n' }] })
+  assert.equal(refused.status, 422)
+  assert.equal((await call('alice', 'PUT', at('DotNetCore/OCP'), { files: [{ path: '../escape.yml', content: 'a: 1\n' }] })).status, 400)
+  assert.equal((await call('alice', 'PUT', at('nowhere'), { files: [{ path: 'a.yml', content: 'a: 1\n' }] })).status, 404)
+
+  const saved = await json<{ files: unknown[]; history: { changedBy: string; files: number }[] }>(await call('alice', 'PUT', at('DotNetCore/OCP'), { files: imported.files }))
+  assert.equal(saved.files.length, 2)
+  assert.deepEqual(saved.history.slice(0, 1).map((h) => [h.changedBy, h.files]), [['alice', 2]], 'newest first')
+
+  // The manifests, from ocp-templates: the name replaced in paths only.
+  const manifests = await json<{ files: { path: string; content: string }[]; notes: string[] }>(await call('alice', 'POST', at('manifests/DotNetCore/OCP').replace('template?', 'template/import?')))
+  assert.deepEqual(manifests.files, [{ path: 'deployment-__APPLICATION__.yml', content: 'kind: Deployment\nname: "{{ app_name }}"\n' }])
+  assert.equal((await call('alice', 'PUT', at('manifests/DotNetCore/OCP'), { files: manifests.files })).status, 200)
+
+  // The project's own files, never its team.yml.
+  const project = await json<{ files: { path: string; content: string }[] }>(await call('alice', 'POST', at('project').replace('template?', 'template/import?')))
+  assert.deepEqual(project.files, [{ path: 'project.yml', content: 'project_name: __PROJECT__\nmail_subject: __PROJECT__ builds\n' }])
+  assert.equal((await call('alice', 'PUT', at('project'), { files: [...project.files, { path: 'team.yml', content: 'company: x\n' }] })).status, 400)
+  assert.equal((await call('alice', 'PUT', at('project'), { files: project.files })).status, 200)
+
+  // Removing one stops the technology being offered, and is kept in the history.
+  const technologies = async () => (await json<{ key: string }[]>(await call('bob', 'GET', '/requests/pipeline/technologies'))).map((t) => t.key)
+  assert.ok((await technologies()).includes('DotNetCore'))
+  assert.equal((await call('alice', 'DELETE', at('manifests/DotNetCore/OCP'))).status, 204)
+  assert.ok(!(await technologies()).includes('DotNetCore'), 'every template a target needs, or it is not offered')
+  const history = await json<{ history: { files: number | null }[] }>(await call('alice', 'GET', at('manifests/DotNetCore/OCP')))
+  assert.deepEqual(history.history.slice(0, 2).map((h) => h.files), [null, 1])
+  assert.equal((await call('alice', 'PUT', at('manifests/DotNetCore/OCP'), { files: manifests.files })).status, 200)
+})
+
+test('pipelines: the form learns the technologies and whether the project is in inventories yet', async () => {
+  await pipelineLock.connect()
+  await pipelineLock.query('select pg_advisory_lock(4202)')
+  await query("delete from catalog_systems where dir in ('PipeHome', 'PipeLab')")
+  await query("insert into catalog_systems (dir, project_name) values ('PipeHome', 'PipeHome')")
+  await query("insert into catalog_applications (id, system_dir, group_name, name) values ('PipeHome/taken-api', 'PipeHome', 'taken-api', 'taken-api')")
+
+  const technologies = await json<{ key: string; files?: unknown }[]>(await call('bob', 'GET', '/requests/pipeline/technologies'))
+  const tech = technologies.find((t) => t.key === 'TestTech')!
+  assert.deepEqual(
+    technologies.filter((t) => t.key === 'DotNetCore').map((t) => (t as unknown as { targets: string[] }).targets),
+    [['OCP']],
+    'a technology is offered once its templates are saved, for the targets they cover',
+  )
+  assert.ok(tech && !('files' in tech), 'what to ask, never the templates')
+  const home = await json<{ exists: boolean; system: string }>(await call('bob', 'GET', '/requests/pipeline/project?project=pipehome'))
+  assert.deepEqual([home.exists, home.system], [true, 'PipeHome'])
+  const lab = await json<{ exists: boolean; environments: Record<string, { key: string }[]> }>(await call('bob', 'GET', '/requests/pipeline/project?project=PipeLab'))
+  assert.equal(lab.exists, false)
+  assert.deepEqual(lab.environments.OCP!.map((e) => e.key), ['dev', 'qc', 'uat', 'prd', 'prd_dr'])
+  assert.deepEqual(lab.environments.K8s!.map((e) => e.key), ['dev', 'qc', 'uat', 'preprod', 'prd', 'prd_dr'])
+})
+
+test('pipelines: the check refuses what inventories or the registry could not take', async () => {
+  const reason = async (body: Record<string, unknown>) => (await json<{ ok: boolean; reason?: string }>(await call('bob', 'POST', '/requests/check', body))).reason ?? 'ok'
+  assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { application: 'prd_pipe' })), /prd override/)
+  assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { technology: 'Cobol' })), /not set up/)
+  assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { fields: {} })), /Artifact ID/)
+  assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { version: null })), /version/)
+  assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { version: '9' })), /version the platform builds: 1, 2/, 'only listed versions')
+  assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { fields: { artifact_id: 'Not Valid' } })), /Artifact ID does not look right. Letters and digits./)
+  assert.match(await reason(pipelineRequest('PipeHome', 'no-such-repo')), /no repository called no-such-repo/)
+  assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { application: 'Taken-API' })), /already has an application called taken-api/)
+  assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { newProject: { teams, namespaces: {} } })), /already has its project files/)
+  assert.match(await reason(pipelineRequest('PipeLab', 'lab-api')), /new to inventories/)
+  assert.match(await reason(pipelineRequest('PipeLab', 'lab-api', { newProject: { teams, namespaces: { dev: { name: 'lab-dev', user: null } } } })), /Name the QC namespace/)
+  assert.match(await reason(pipelineRequest('PipeLab', 'lab-api', { newProject: { teams: { ...teams, automaticDeployToQc: null }, namespaces: {} } })), /deploy to QC automatically/)
+  assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { application: 'pipe api' })), /no spaces/)
+  assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { application: 'a'.repeat(51) })), /at most 50/)
+  assert.equal(await reason(pipelineRequest('PipeHome', 'pipe-api')), 'ok')
+})
+
+test('pipelines: approved, its files are pushed to inventories in one commit that says who and why', async () => {
+  const filed = await json<{ id: string; pipeline: { application: string } }>(await call('bob', 'POST', '/requests', pipelineRequest('PipeHome', 'pipe-api')))
+  assert.equal(filed.pipeline.application, 'pipe-api')
+  assert.equal((await call('bob', 'GET', `/requests/${filed.id}/pipeline`)).status, 403, 'the files are the approver’s to read')
+  // A second ask for the same pipeline waits on the first.
+  assert.equal((await call('carol', 'POST', '/requests', pipelineRequest('PipeHome', 'pipe-api'))).status, 409)
+
+  const preview = await json<{ files: { path: string }[]; errors: string[]; commit: string | null }>(await call('alice', 'GET', `/requests/${filed.id}/pipeline`))
+  assert.deepEqual(preview.errors, [])
+  assert.deepEqual(preview.files.map((f) => f.path).sort(), ['PipeHome/group_vars/pipe-api/TestTech.yml', 'PipeHome/group_vars/pipe-api/cicd.yml', 'PipeHome/group_vars/pipe-api/resources.yml', 'PipeHome/pipe-api.yml'])
+  assert.equal(inventoriesFile('PipeHome/group_vars/pipe-api/cicd.yml'), null, 'a preview writes nothing')
+
+  await call('alice', 'POST', `/requests/${filed.id}/approve`, {})
+  const done = await settled(filed.id)
+  assert.equal(done.status, 'completed', done.error)
+  assert.match(done.resultUrl!, /#[0-9a-f]{40}$/)
+  assert.equal(inventoriesFile('PipeHome/group_vars/pipe-api/TestTech.yml'), 'artifact_id: pipe-api\nversion: "2"\n')
+  assert.equal(inventoriesFile('PipeHome/group_vars/pipe-api/resources.yml'), 'name: pipe-api\nreplicas: 1\n', 'copied from the reference and patched')
+  const log = inventoriesLog()
+  assert.match(log, /Add the pipe-api pipeline \(Test Tech on OCP\)/)
+  assert.match(log, /Requested by .+ \(bob\); approved by .+ \(alice\)/)
+  assert.ok(log.includes(`e-IDP-Request: ${filed.id}`))
+
+  // Writing it again finds the commit rather than pushing a second one.
+  const before = inventoriesLog().split('e-IDP-Request').length
+  const again = await writePipeline((await json(await call('alice', 'GET', `/requests/${filed.id}`))) as never)
+  assert.equal(again.files.length, 0)
+  assert.equal(inventoriesLog().split('e-IDP-Request').length, before)
+})
+
+test('pipelines: a new project also gets its team.yml and namespaces', async () => {
+  const body = pipelineRequest('PipeLab', 'lab-api', {
+    newProject: {
+      teams,
+      namespaces: {
+        dev: { name: 'lab-dev', user: null },
+        qc: { name: 'lab-qc', user: null },
+        uat: { name: 'lab-uat', user: null },
+        prd: { name: 'lab-prd', user: 'svc-lab' },
+        prd_dr: { name: 'lab-prd', user: 'svc-lab' },
+      },
+    },
+  })
+  const filed = await json<{ id: string }>(await call('bob', 'POST', '/requests', body))
+  await call('alice', 'POST', `/requests/${filed.id}/approve`, {})
+  assert.equal((await settled(filed.id)).status, 'completed')
+  const team = inventoriesFile('PipeLab/group_vars/all/team.yml')!
+  assert.match(team, /^company: eFinance$/m)
+  assert.match(team, /^automatic_deploy_to_qc: "false"$/m)
+  assert.match(team, /^dev_team_list:\n  -$/m, 'an empty list is one empty item, as the repository spells it')
+  assert.match(team, /^ops_team_list:\n  - DEVOPS$/m)
+  assert.match(team, /^prd_approvers:\n  - DEVOPS\nprd_only:\n  - DEVOPS$/m, 'empty approver lists fall back to DEVOPS, in the old order')
+  assert.equal(inventoriesFile('PipeLab/host_vars/prd_ocp/vars.yml'), 'cluster_type: HQ\n\nocp_namespace:\n  name: lab-prd\n  user: svc-lab\n  token: changeme\n')
+  assert.match(inventoriesFile('PipeLab/host_vars/prd_dr_ocp/vars.yml')!, /^cluster_type: DR$/m)
+  assert.match(inventoriesFile('PipeLab/host_vars/dev_ocp/vars.yml')!, /^  user: changeme$/m, 'no user: the placeholder, listed as a follow-up')
+  assert.equal(inventoriesFile('PipeLab/group_vars/all/project.yml'), 'project_name: PipeLab\nmail_subject: PipeLab builds\n')
+  assert.match(inventoriesFile('PipeLab/lab-api.yml')!, /prd_lab-api:\n          hosts:\n            prd_ocp:\n            prd_dr_ocp:/)
+  assert.ok(inventoriesFile('PipeLab/group_vars/lab-api/cicd.yml'))
+})
+
+test('pipelines: a technology from its template — the reference copied with the name, version and fields set', async () => {
+  const body = pipelineRequest('PipeHome', 'pipe-web', { technology: 'DotNetCore', version: '8.0', fields: { nuget_name: 'Pipe.Web' } })
+  const filed = await json<{ id: string }>(await call('bob', 'POST', '/requests', body))
+  await call('alice', 'POST', `/requests/${filed.id}/approve`, {})
+  assert.equal((await settled(filed.id)).status, 'completed')
+  assert.equal(
+    inventoriesFile('PipeHome/group_vars/pipe-web/cicd.yml'),
+    [
+      'repository_name: pipe-web',
+      'build_technology: DotNetCore',
+      'dockerfile_name: Dockerfile-User',
+      'packages: tz',
+      'nuget_name: Pipe.Web',
+      'db_password: changeme',
+      'build_image:',
+      '  name: sdk',
+      '  tag: "8.0"',
+      'deploy_image:',
+      '  tag: 8.0',
+      'app_path: "pipe-web"',
+      '',
+    ].join('\n'),
+  )
+  assert.equal(inventoriesFile('PipeHome/group_vars/pipe-web/pipe-web.env.yml'), 'service: pipe-web\n', 'the name in paths too')
+  const manifest = execFileSync('git', ['--git-dir', ocpTemplatesRemote, 'show', 'main:PipeHome/pipe-web/deployment-pipe-web.yml']).toString()
+  assert.equal(manifest, 'kind: Deployment\nname: "{{ app_name }}"\n', 'the manifests to ocp-templates: the name in paths, the contents as they are')
+  assert.match(execFileSync('git', ['--git-dir', ocpTemplatesRemote, 'log', '-1', '--format=%B', 'main']).toString(), /Add the pipe-web manifests[\s\S]*e-IDP-Request: /)
+})
+
+test('pipelines: a library gets no manifests, and a test technology without them never touches ocp-templates', async () => {
+  const before = execFileSync('git', ['--git-dir', ocpTemplatesRemote, 'rev-parse', 'main']).toString()
+  const body = pipelineRequest('PipeHome', 'pipe-api', { application: 'pipe-lib', technology: 'DotNetCore', version: '6.0', library: true, fields: { nuget_name: 'Pipe.Lib' } })
+  const filed = await json<{ id: string }>(await call('bob', 'POST', '/requests', body))
+  const preview = await json<{ manifests: unknown[] }>(await call('alice', 'GET', `/requests/${filed.id}/pipeline`))
+  assert.deepEqual(preview.manifests, [])
+  await call('alice', 'POST', `/requests/${filed.id}/approve`, {})
+  assert.equal((await settled(filed.id)).status, 'completed')
+  assert.ok(inventoriesFile('PipeHome/group_vars/pipe-lib/cicd.yml'), 'inventories written')
+  assert.equal(execFileSync('git', ['--git-dir', ocpTemplatesRemote, 'rev-parse', 'main']).toString(), before)
+})
+
+test('pipelines: what appeared in inventories while it waited is a conflict at approval, and nothing is pushed', async () => {
+  const filed = await json<{ id: string }>(await call('bob', 'POST', '/requests', pipelineRequest('PipeHome', 'pipe-late')))
+  // Someone adds the application by hand after the request was filed.
+  const hand = mkdtempSync(join(tmpdir(), 'eidp-hand-'))
+  execFileSync('git', ['clone', '-q', inventoriesRemote, hand])
+  mkdirSync(join(hand, 'PipeHome/group_vars/pipe-late'), { recursive: true })
+  writeFileSync(join(hand, 'PipeHome/group_vars/pipe-late/cicd.yml'), 'by: hand\n')
+  execFileSync('git', ['-C', hand, 'add', '.'])
+  execFileSync('git', ['-C', hand, '-c', 'user.name=h', '-c', 'user.email=h@x', 'commit', '-q', '-m', 'by hand'])
+  execFileSync('git', ['-C', hand, 'push', '-q', 'origin', 'main'])
+  rmSync(hand, { recursive: true, force: true })
+
+  const preview = await json<{ errors: string[] }>(await call('alice', 'GET', `/requests/${filed.id}/pipeline`))
+  assert.match(preview.errors.join(' '), /pipe-late already has files in inventories/)
+  await call('alice', 'POST', `/requests/${filed.id}/approve`, {})
+  const failed = await settled(filed.id)
+  assert.equal(failed.status, 'failed')
+  assert.match(failed.error!, /already has files/)
+  assert.equal(inventoriesFile('PipeHome/group_vars/pipe-late/cicd.yml'), 'by: hand\n', 'nothing overwritten')
+
+  await query("delete from catalog_applications where system_dir in ('PipeHome', 'PipeLab')")
+  await query("delete from catalog_systems where dir in ('PipeHome', 'PipeLab')")
+  await pipelineLock.query('select pg_advisory_unlock(4202)')
+  await pipelineLock.end()
+})
+

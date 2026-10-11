@@ -33,6 +33,7 @@ export const PERMISSIONS = {
   'jenkins.view': 'See Jenkins jobs, recent runs, failures, the queue and agents',
   'jenkins.operate': 'Re-run and stop Jenkins builds, and take them out of the queue — scoped, only the pipelines its team or project owns',
   'pipelines.view': 'See the Jenkins pipelines your teams own and the builds you started',
+  'pipelines.templates': 'Edit the templates new pipelines are written from — what every approved pipeline request writes to inventories and ocp-templates',
   'ai.use': 'Ask the portal’s AI (Ollama, on our own machines) to explain what it shows',
   'digests.all': 'Read every team’s weekly digest, not only your own teams’, and write one again',
   'ai.chat': 'Chat with the portal’s chatbot, which looks up only what you may already see',

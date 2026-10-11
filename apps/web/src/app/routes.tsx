@@ -18,9 +18,12 @@ const MyRequestsPage = lazyPage(() => import('@/features/requests/my-requests-pa
 const NewRequestPage = lazyPage(() => import('@/features/requests/new-request-page.tsx'), 'NewRequestPage')
 const GrantAccessPage = lazyPage(() => import('@/features/requests/grant-access-page.tsx'), 'GrantAccessPage')
 const JiraProjectPage = lazyPage(() => import('@/features/requests/jira-project-page.tsx'), 'JiraProjectPage')
+const PipelineRequestPage = lazyPage(() => import('@/features/requests/pipeline-request-page.tsx'), 'PipelineRequestPage')
 const RequestPage = lazyPage(() => import('@/features/requests/request-page.tsx'), 'RequestPage')
 const AccessPage = lazyPage(() => import('@/features/admin/access-page.tsx'), 'AccessPage')
 const JenkinsPage = lazyPage(() => import('@/features/jenkins/jenkins-page.tsx'), 'JenkinsPage')
+const PipelineTemplatesPage = lazyPage(() => import('@/features/pipeline-templates/templates-page.tsx'), 'PipelineTemplatesPage')
+const TemplateEditorPage = lazyPage(() => import('@/features/pipeline-templates/template-editor-page.tsx'), 'TemplateEditorPage')
 const ChatbotPage = lazyPage(() => import('@/features/chatbot/chatbot-page.tsx'), 'ChatbotPage')
 const BuildPage = lazyPage(() => import('@/features/jenkins/build-page.tsx'), 'BuildPage')
 const PipelinesPage = lazyPage(() => import('@/features/pipelines/pipelines-page.tsx'), 'PipelinesPage')
@@ -47,6 +50,8 @@ export function AppRoutes() {
                   <GrantAccessPage />
                 ) : type.kind === 'create_jira_project' ? (
                   <JiraProjectPage />
+                ) : type.kind === 'create_pipeline' ? (
+                  <PipelineRequestPage />
                 ) : (
                   <NewRequestPage key={type.path} kind={type.kind!} />
                 )
@@ -81,6 +86,10 @@ export function AppRoutes() {
           </Route>
           <Route element={<RequirePermission permission="rbac.manage" />}>
             <Route path="access" element={<AccessPage />} />
+          </Route>
+          <Route element={<RequirePermission permission="pipelines.templates" />}>
+            <Route path="pipeline-templates" element={<PipelineTemplatesPage />} />
+            <Route path="pipeline-templates/edit" element={<TemplateEditorPage />} />
           </Route>
           <Route element={<RequirePermission permission="activity.view" />}>
             <Route path="activity" element={<ActivityPage />} />

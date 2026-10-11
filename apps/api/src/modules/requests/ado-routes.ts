@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { ApiError } from '../../lib/errors.ts'
 import { requireAuth, requirePermission, type AppEnv } from '../../middleware/auth.ts'
-import { adoConfig, listCollections, listProjects } from '../../integrations/ado/index.ts'
+import { adoConfig, listCollections, listProjects, listRepositories } from '../../integrations/ado/index.ts'
 import { log } from '../../lib/log.ts'
 
 /** What the request form needs to offer choices rather than free text. */
@@ -40,4 +40,10 @@ export const adoRoutes = new Hono<AppEnv>()
         .map(({ name, description }) => ({ name, description: description ?? null }))
         .sort((a, b) => a.name.localeCompare(b.name)),
     )
+  })
+
+  /** A project's repositories — the pipeline form picks the one its application is built from. */
+  .get('/collections/:collection/projects/:project/repositories', async (c) => {
+    const repos = await listRepositories(c.req.param('collection'), c.req.param('project'))
+    return c.json(repos.map(({ name, webUrl }) => ({ name, webUrl: webUrl ?? null })).sort((a, b) => a.name.localeCompare(b.name)))
   })

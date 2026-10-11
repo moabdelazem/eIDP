@@ -79,6 +79,11 @@ spec:
               value: "3000"
             - name: INVENTORIES_CHECKOUT
               value: /var/lib/eidp/inventories
+            # Approved pipeline requests are pushed from a copy of their own, on the same volume.
+            - name: INVENTORIES_WRITE_CHECKOUT
+              value: /var/lib/eidp/inventories-write
+            - name: OCP_TEMPLATES_WRITE_CHECKOUT
+              value: /var/lib/eidp/ocp-templates-write
             - name: METRICS_PORT
               value: {{ ternary .Values.metrics.port 0 .Values.metrics.enabled | quote }}
             {{- with $api.vault.auth.existingSecret }}

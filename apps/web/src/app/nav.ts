@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { Activity, Bot, Boxes, Inbox, LayoutDashboard, ListChecks, Newspaper, ShieldCheck, Workflow } from 'lucide-react'
+import { Activity, Bot, Boxes, FileCode2, Inbox, LayoutDashboard, ListChecks, Newspaper, ShieldCheck, Workflow } from 'lucide-react'
 import { JenkinsIcon } from '@/components/brand-icons.tsx'
 import type { Permission } from '@/features/auth/profile-context.tsx'
 
@@ -49,6 +49,7 @@ export const manageItems: (NavItem & { permission: Permission; scoped?: boolean 
   // Scoped: a team lead has an approvals queue too, holding only their teams'.
   { path: '/approvals', label: 'Approvals', icon: ListChecks, permission: 'requests.decide_access', scoped: true },
   { path: '/jenkins', label: 'Jenkins', icon: JenkinsIcon, permission: 'jenkins.view', owns: (p) => p.startsWith('/jenkins/') },
+  { path: '/pipeline-templates', label: 'Pipeline templates', icon: FileCode2, permission: 'pipelines.templates', owns: (p) => p.startsWith('/pipeline-templates/') },
   { path: '/access', label: 'Access', icon: ShieldCheck, permission: 'rbac.manage' },
   { path: '/activity', label: 'Platform activity', icon: Activity, permission: 'activity.view' },
 ]

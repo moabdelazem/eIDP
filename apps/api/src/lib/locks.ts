@@ -97,3 +97,17 @@ export async function exclusive<T>(name: string, fn: () => Promise<T>, joined: (
     if (theirs !== null) return theirs
   }
 }
+
+/**
+ * Work that must not overlap but is not the same work: each caller waits its
+ * turn and then does its own — two pipeline requests writing to one working
+ * copy, one after the other.
+ */
+export async function inTurn<T>(name: string, fn: () => Promise<T>, { waitMs = 10 * 60_000 } = {}): Promise<T> {
+  const until = Date.now() + waitMs
+  for (;;) {
+    const run = await tryWithLock(name, fn)
+    if (run.held) return run.value
+    await waitUntilFree(name, Math.max(until - Date.now(), 0))
+  }
+}

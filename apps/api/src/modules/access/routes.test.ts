@@ -49,6 +49,12 @@ const DEVOPS_ONLY: [method: string, path: string][] = [
   ['POST', '/jenkins/ignore'],
   ['POST', '/jenkins/unignore'],
   ['POST', '/digests/Payments/regenerate'],
+  // A template that does not exist: past the guard it is a 404, and no real template is touched.
+  ['GET', '/requests/pipeline/templates'],
+  ['GET', '/requests/pipeline/template?dir=none'],
+  ['PUT', '/requests/pipeline/template?dir=none'],
+  ['DELETE', '/requests/pipeline/template?dir=none'],
+  ['POST', '/requests/pipeline/template/import?dir=none'],
 ]
 
 async function login(username: string): Promise<string> {
