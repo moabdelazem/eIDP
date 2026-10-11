@@ -32,3 +32,11 @@ test('a log names the agents it ran on, Jenkins’ own node as built-in', async 
   assert.deepEqual(agentsInLog(log), ['linux-02', 'built-in'])
   assert.deepEqual(agentsInLog('Building in workspace /var/x\n'), [])
 })
+
+test('a console note on the agent’s name is not part of the name', async () => {
+  const { agentsInLog, stripNotes } = await import('./index.ts')
+  // As a real Jenkins writes it: the note links the name, inside the line.
+  const note = '\x1b[8mha:////4LHZjdXBWyMtpg/9Z+p6P2xuWoE2i6y8iqqhl5UwObq/AAAAnx+LCAAAAAAAAP9b85aBtbiI==\x1b[0m'
+  assert.deepEqual(agentsInLog(`Running on ${note}devops08 in /home/jenkins/workspace/app\n`), ['devops08'])
+  assert.equal(stripNotes(`${note}[Pipeline] Start of Pipeline\n\x1b[31mred\x1b[0m`), '[Pipeline] Start of Pipeline\n\x1b[31mred\x1b[0m')
+})

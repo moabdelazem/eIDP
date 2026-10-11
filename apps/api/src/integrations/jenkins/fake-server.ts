@@ -40,6 +40,9 @@ const STRING = 'hudson.model.StringParameterValue'
 const BOOLEAN = 'hudson.model.BooleanParameterValue'
 const PASSWORD = 'hudson.model.PasswordParameterValue'
 const HOUR = 3_600_000
+/** A console note as Jenkins writes one (the payload is a serialized Java object, base64). */
+const NOTE = '\x1b[8mha:////4LHZjdXBWyMtpg/9Z+p6P2xuWoE2i6y8iqqhl5UwObq/AAAAnx+LCAAAAAAAAP9b85aBtbiIQTGjNKU4P08vOT+vOD8nVc83PyU1x6OyILUoJzMv2y+/JJUBAhiZGBgqihhk0NSjKDWzXb3RdlLBUSYGJk8GtpzUvPSSDB8G5tKinBIGIZ+sxLJE/ZzEvHT94JKizLx0a6BxUmjGOUNodHsLgAyOEgZh/eT83ILSktQi/ZTUsvyCYgMLfQDLH8HIyAAAAA==\x1b[0m'
+
 const AGENTS = ['linux-01', 'linux-02', 'linux-03']
 const PEOPLE = ['alice', 'bob', 'carol']
 
@@ -69,8 +72,10 @@ function history(
       changes: i % 4 === 0 ? [{ commitId: `c0ffee${String(count - i).padStart(2, '0')}`, msg: `Fix scoring for build ${count - i}`, author: who }] : [],
       log: [
         `Started by user ${who}`,
-        `Running on ${AGENTS[i % AGENTS.length]} in /var/jenkins/workspace`,
-        '[Pipeline] Start of Pipeline',
+        // Jenkins links the agent's name with a console note, hidden markup
+        // right inside the line: what a log read raw really looks like.
+        `Running on ${NOTE}${AGENTS[i % AGENTS.length]} in /var/jenkins/workspace`,
+        `${NOTE}[Pipeline] Start of Pipeline`,
         '[Pipeline] { (Checkout)',
         '+ git checkout main',
         // Secrets as real logs leak them — for the build explainer to redact.

@@ -265,6 +265,9 @@ test('a build shows its stages, commits, agent, parameters and the end of its lo
   const run = await json(await call('alice', 'GET', `/jenkins/run?job=${encodeURIComponent('payments/loan-scoring-api')}&number=40`))
   assert.equal(run.result, 'failure')
   assert.equal(run.builtOn, 'linux-01')
+  // The fake writes console notes as Jenkins does; none reaches the page.
+  assert.ok(run.log.includes('Running on linux-01 in'), 'the agent line reads as a person would')
+  assert.ok(!run.log.includes('ha:////'), 'no console note left in the log')
   assert.deepEqual(
     run.stages.map((s: any) => `${s.name}:${s.result}`),
     ['Checkout:success', 'Build:success', 'Test:failure', 'Deploy:not_built'],
