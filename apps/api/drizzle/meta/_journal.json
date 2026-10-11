@@ -15,6 +15,13 @@
       "when": 1791700149424,
       "tag": "0001_pipeline_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791703974045,
+      "tag": "0002_pipeline_templates",
+      "breakpoints": true
     }
   ]
 }

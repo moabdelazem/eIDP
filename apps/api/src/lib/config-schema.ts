@@ -167,8 +167,6 @@ export const schema = z.object({
   OCP_TEMPLATES_WRITE_CHECKOUT: z.string().min(1).default('.cache/ocp-templates-write'),
   /** Push manifests here instead — a mirror, or a local repository in tests. */
   OCP_TEMPLATES_GIT_URL: z.string().min(1).optional(),
-  /** Where pipeline templates are read from instead of the ones bundled with the API — the tests' own. */
-  PIPELINE_TEMPLATES_DIR: z.string().min(1).optional(),
 })
 
 /**

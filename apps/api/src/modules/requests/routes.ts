@@ -1,10 +1,20 @@
 import { Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
 import { validate } from '../../lib/validate.ts'
 import { accessFrom, requireAuth, requirePermission, type AppEnv } from '../../middleware/auth.ts'
 import * as requests from './service.ts'
 
 const names = z.array(z.string().trim().min(1).max(256)).max(100)
+
+const TemplateDir = z.object({ dir: z.string().min(1).max(128) })
+/** A template's size, as a whole; each file's is the service's to check. */
+const templateLimit = bodyLimit({
+  maxSize: 8 * 1024 * 1024,
+  onError: (c) => c.json({ error: { code: 'template_too_big', message: 'A template is at most 8 MB.' } }, 413),
+})
+/** Paths and sizes are checked by the service, which says which file and why. */
+const TemplateFiles = z.object({ files: z.array(z.object({ path: z.string().max(512), content: z.string() })).max(500) })
 
 /** A pipeline: what is checked against the technology registry is the service's (`pipeline/check.ts`). */
 const Pipeline = z.object({
@@ -103,11 +113,33 @@ export const requestRoutes = new Hono<AppEnv>()
   // ---- pipelines ----------------------------------------------------------
 
   /** The technologies a pipeline can be asked for, and what each asks — the form is built from it. */
-  .get('/pipeline/technologies', requirePermission('requests.create'), (c) => c.json(requests.listTechnologies()))
+  .get('/pipeline/technologies', requirePermission('requests.create'), async (c) => c.json(await requests.listTechnologies()))
 
   /** Whether inventories has the project yet, so the form knows to ask for its teams and namespaces. */
   .get('/pipeline/project', requirePermission('requests.create'), validate('query', z.object({ project: z.string().min(1).max(256) })), async (c) =>
     c.json(await requests.pipelineProject(c.req.valid('query').project)),
+  )
+
+  // ---- pipeline templates: DevOps ------------------------------------------
+  // What approved pipelines are written from, edited on the Pipeline
+  // templates page. `dir` names the template (`DotNetCore/OCP`, `project`…).
+
+  .get('/pipeline/templates', requirePermission('pipelines.templates'), async (c) => c.json(await requests.listTemplates()))
+
+  .get('/pipeline/template', requirePermission('pipelines.templates'), validate('query', TemplateDir), async (c) => c.json(await requests.getTemplate(c.req.valid('query').dir)))
+
+  .put('/pipeline/template', requirePermission('pipelines.templates'), templateLimit, validate('query', TemplateDir), validate('json', TemplateFiles), async (c) =>
+    c.json(await requests.saveTemplate(c.req.valid('query').dir, c.req.valid('json').files, actor(c))),
+  )
+
+  .delete('/pipeline/template', requirePermission('pipelines.templates'), validate('query', TemplateDir), async (c) => {
+    await requests.removeTemplate(c.req.valid('query').dir, actor(c))
+    return c.body(null, 204)
+  })
+
+  /** The template's reference, read as a template for the editor — not saved. */
+  .post('/pipeline/template/import', requirePermission('pipelines.templates'), validate('query', TemplateDir), async (c) =>
+    c.json(await requests.importReference(c.req.valid('query').dir)),
   )
 
   // ---- deciding ---------------------------------------------------------

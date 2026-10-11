@@ -3,7 +3,7 @@ import { ENVIRONMENTS } from '../../../integrations/inventories/parse.ts'
 import { credentialsIn } from './credentials.ts'
 import { inventoryFile, localhostVars, namespaceFile, projectFiles } from './generate.ts'
 import { PROJECT_TEMPLATE_DIR, readTemplate } from './templates.ts'
-import { environmentsFor, technology, templatesRoot, type Inventories, type PipelineContext } from './technologies.ts'
+import { environmentsFor, technology, type Inventories, type PipelineContext } from './technologies.ts'
 
 /**
  * What a pipeline request writes into inventories, worked out from the
@@ -24,7 +24,7 @@ export async function planFiles(ctx: PipelineContext, inventories: Inventories):
   const { exists } = inventories
   const { spec, system } = ctx
   const errors: string[] = []
-  const template = technology(spec.technology)
+  const template = await technology(spec.technology)
   if (!template) return { files: [], errors: [`Pipelines for ${spec.technology} are not set up in the portal.`] }
 
   const files: PipelineFile[] = []
@@ -42,7 +42,7 @@ export async function planFiles(ctx: PipelineContext, inventories: Inventories):
   if (spec.newProject) {
     if (await exists(`${system}/group_vars/all`)) errors.push(`${system} already has its project files; it is not a new project.`)
     if (spec.newProject.teams.automaticDeployToQc === null) errors.push('Whether QC is deployed to automatically was never chosen.')
-    const project = await readTemplate(templatesRoot(), PROJECT_TEMPLATE_DIR)
+    const project = await readTemplate(PROJECT_TEMPLATE_DIR)
     if (!project) errors.push('The new-project template has not been extracted into the portal yet.')
     else files.push(...projectFiles(ctx, spec.newProject.teams, project))
     if (!template.noNamespaces) {
@@ -72,7 +72,7 @@ export async function planFiles(ctx: PipelineContext, inventories: Inventories):
  * is a conflict, as it was in the old portal.
  */
 export async function planManifests(ctx: PipelineContext, repository: Inventories): Promise<Plan> {
-  const template = technology(ctx.spec.technology)
+  const template = await technology(ctx.spec.technology)
   if (!template?.manifests?.needed(ctx.spec)) return { files: [], errors: [] }
   const errors: string[] = []
   const dir = `${ctx.manifestsDir}/${ctx.spec.application}`

@@ -93,6 +93,33 @@ export type PipelineFile = { path: string; content: string }
  */
 export type PipelinePreview = { files: PipelineFile[]; manifests: PipelineFile[]; errors: string[]; commit: string | null }
 
+/**
+ * One template on the Pipeline templates page: what a technology writes for a
+ * deploy target (its group_vars to inventories, or its manifests to
+ * ocp-templates), or a new project's files. `dir` is its key.
+ */
+export type TemplateSlot = {
+  dir: string
+  kind: 'group_vars' | 'manifests' | 'project'
+  /** The technology's key and label; null for the project template. */
+  technology: string | null
+  label: string
+  target: DeployTarget | null
+  /** Flutter on OCP: one per app_path. */
+  appPath: string | null
+  /** Where "Import from the reference" reads it from. */
+  repository: 'inventories' | 'ocp-templates'
+  reference: string
+  saved: { files: number; updatedByName: string; updatedAt: string } | null
+}
+
+export type TemplateChange = { changedBy: string; changedByName: string; changedAt: string; files: number | null }
+
+export type PipelineTemplate = { slot: TemplateSlot; files: PipelineFile[]; history: TemplateChange[] }
+
+/** A reference read as a template: not saved, for the editor. `notes` says what to check. */
+export type TemplateImport = { files: PipelineFile[]; notes: string[] }
+
 export type RiskLevel = 'low' | 'medium' | 'high'
 export type Fact = { level: 'caution' | 'info'; text: string }
 

@@ -28,7 +28,7 @@ export async function checkPipeline(input: PipelineTarget): Promise<Check> {
   const prefix = overridePrefix(spec.application)
   if (prefix) return fail(`Inventories reads a name starting with “${prefix}_” as the ${prefix} override of another application. Choose a name without it.`)
 
-  const template = technology(spec.technology)
+  const template = await technology(spec.technology)
   if (!template) return fail(`Pipelines for ${spec.technology} are not set up in the portal.`)
   if (!template.targets.includes(spec.deployTarget)) return fail(`${template.label} does not deploy to ${spec.deployTarget}.`)
   // Listed versions only. The old form let anyone type one, and a version

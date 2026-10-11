@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { useNavigate, useSearchParams } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { useProfile } from '@/features/auth/profile-context.tsx'
 import { ApiError } from '@/lib/api-client.ts'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
@@ -49,6 +50,7 @@ export function PipelineRequestPage() {
   const type = REQUEST_TYPES.find((t) => t.kind === 'create_pipeline')!
   usePageTitle(type.title)
   const navigate = useNavigate()
+  const { can } = useProfile()
   const [params] = useSearchParams()
 
   const collections = useResource(['requests', 'collections'], () => requestsApi.collections())
@@ -170,7 +172,20 @@ export function PipelineRequestPage() {
         type={type}
         lead={lead}
         message="No build technologies are set up in the portal yet, so a pipeline can’t be asked for."
-        error={technologies.error ?? 'The technology registry is empty.'}
+        error={
+          technologies.error ??
+          (can('pipelines.templates') ? (
+            <>
+              A technology is offered once its templates are saved. Import and save them on{' '}
+              <Link to="/pipeline-templates" className="underline underline-offset-4">
+                Pipeline templates
+              </Link>
+              .
+            </>
+          ) : (
+            'DevOps has not saved the templates pipelines are written from yet.'
+          ))
+        }
         onRetry={technologies.reload}
       />
     )

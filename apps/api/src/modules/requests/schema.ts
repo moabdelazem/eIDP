@@ -1,6 +1,6 @@
-import type { AccessLevel, Fact, PipelineSpec, RequestKind, RequestStatus, RiskLevel } from '@eidp/contracts/requests'
+import type { AccessLevel, Fact, PipelineFile, PipelineSpec, RequestKind, RequestStatus, RiskLevel } from '@eidp/contracts/requests'
 import { sql } from 'drizzle-orm'
-import { check, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
+import { bigserial, check, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 
 export const requests = pgTable('requests', {
   id: uuid().defaultRandom().primaryKey(),
@@ -59,3 +59,28 @@ export const requestAssessments = pgTable('request_assessments', {
   }).onDelete('cascade'),
   check('request_assessments_level_check', sql`level = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])`),
 ])
+
+/**
+ * The templates approved pipelines are written from, edited by DevOps on the
+ * Pipeline templates page: one row per slot — a technology's group_vars or
+ * manifests for a deploy target, or the new-project files — keyed by its
+ * `dir` (`DotNetCore/OCP`, `manifests/DotNetCore/OCP`, `project`).
+ */
+export const pipelineTemplates = pgTable('pipeline_templates', {
+  dir: text().primaryKey(),
+  files: jsonb().$type<PipelineFile[]>().notNull(),
+  updatedBy: text('updated_by').notNull(),
+  updatedByName: text('updated_by_name').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+/** Every save and removal of a template, as it was saved: what a pipeline was written from, and who changed it. */
+export const pipelineTemplateHistory = pgTable('pipeline_template_history', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  dir: text().notNull(),
+  /** Null when the template was removed. */
+  files: jsonb().$type<PipelineFile[]>(),
+  changedBy: text('changed_by').notNull(),
+  changedByName: text('changed_by_name').notNull(),
+  changedAt: timestamp('changed_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [index('pipeline_template_history_dir_idx').on(table.dir, table.changedAt.desc())])

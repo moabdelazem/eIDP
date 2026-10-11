@@ -1,10 +1,11 @@
-import type { PipelinePreview, RequestRecord } from '@eidp/contracts/requests'
+import type { PipelinePreview, RequestRecord, TemplateImport } from '@eidp/contracts/requests'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import { commitAndPush, findCommit, freshCopy, inventoriesRemote, ocpTemplatesRemote, webUrlFor, type Remote } from '../../../integrations/ado/index.ts'
 import { config } from '../../../lib/config.ts'
 import { inTurn } from '../../../lib/locks.ts'
 import { planFiles, planManifests, type Plan } from './files.ts'
+import { readReference, slotOf } from './templates.ts'
 import { technology, type Inventories, type PipelineContext } from './technologies.ts'
 
 /**
@@ -42,7 +43,8 @@ export const marker = (id: string) => `e-IDP-Request: ${id}`
  */
 export async function writePipeline(request: RequestRecord): Promise<{ commit: string; manifestsCommit: string | null; files: Plan['files'] }> {
   const inventories = side(inventoriesRemote(), config.INVENTORIES_WRITE_CHECKOUT)
-  const needsManifests = Boolean(technology(request.pipeline!.technology)?.manifests?.needed(request.pipeline!))
+  const template = await technology(request.pipeline!.technology)
+  const needsManifests = Boolean(template?.manifests?.needed(request.pipeline!))
   const templates = needsManifests ? side(ocpTemplatesRemote(), config.OCP_TEMPLATES_WRITE_CHECKOUT) : null
   const committer = { name: config.INVENTORIES_COMMITTER_NAME, email: config.INVENTORIES_COMMITTER_EMAIL }
   return inTurn(LOCK, async () => {
@@ -60,11 +62,11 @@ export async function writePipeline(request: RequestRecord): Promise<{ commit: s
       if (errors.length) throw new Error(errors.join(' '))
 
       if (templates && !manifestsCommit) {
-        const pushed = await commitAndPush(templates.remote, templates.checkout, templatesBranch!, manifests.files, message(request, 'manifests'), committer)
+        const pushed = await commitAndPush(templates.remote, templates.checkout, templatesBranch!, manifests.files, message(request, 'manifests', template?.label), committer)
         if (!pushed.pushed) continue
         manifestsCommit = pushed.commit
       }
-      const pushed = await commitAndPush(inventories.remote, inventories.checkout, branch, plan.files, message(request, 'inventories'), committer)
+      const pushed = await commitAndPush(inventories.remote, inventories.checkout, branch, plan.files, message(request, 'inventories', template?.label), committer)
       if (pushed.pushed) return { commit: pushed.commit, manifestsCommit, files: [...manifests.files, ...plan.files] }
     }
     throw new Error(`The repositories kept moving: ${PUSH_ATTEMPTS} pushes in a row were overtaken by someone else's. Retry.`)
@@ -78,7 +80,8 @@ export async function writePipeline(request: RequestRecord): Promise<{ commit: s
  */
 export async function previewPipeline(request: RequestRecord): Promise<PipelinePreview> {
   const inventories = side(inventoriesRemote(), config.INVENTORIES_WRITE_CHECKOUT)
-  const needsManifests = Boolean(technology(request.pipeline!.technology)?.manifests?.needed(request.pipeline!))
+  const template = await technology(request.pipeline!.technology)
+  const needsManifests = Boolean(template?.manifests?.needed(request.pipeline!))
   const templates = needsManifests ? side(ocpTemplatesRemote(), config.OCP_TEMPLATES_WRITE_CHECKOUT) : null
   return inTurn(LOCK, async () => {
     await freshCopy(inventories.remote, inventories.checkout)
@@ -89,6 +92,21 @@ export async function previewPipeline(request: RequestRecord): Promise<PipelineP
     const plan = await planFiles(ctx, readerAt(inventories.checkout))
     const manifests = templates ? await planManifests(ctx, readerAt(templates.checkout)) : { files: [], errors: [] }
     return { files: plan.files, manifests: manifests.files, errors: [...new Set([...plan.errors, ...manifests.errors])], commit: null }
+  })
+}
+
+/**
+ * A template's reference, read from its repository as it is now — for the
+ * Pipeline templates page's "Import from the reference". In the writer's own
+ * copy, in turn with the writes, so it never reads a half-reset copy.
+ */
+export async function importReference(dir: string): Promise<TemplateImport> {
+  const slot = slotOf(dir)
+  const repository =
+    slot.repository === 'inventories' ? side(inventoriesRemote(), config.INVENTORIES_WRITE_CHECKOUT) : side(ocpTemplatesRemote(), config.OCP_TEMPLATES_WRITE_CHECKOUT)
+  return inTurn(LOCK, async () => {
+    await freshCopy(repository.remote, repository.checkout)
+    return readReference(dir, repository.checkout)
   })
 }
 
@@ -152,9 +170,9 @@ function readerAt(checkout: string): Inventories {
   }
 }
 
-function message(request: RequestRecord, part: 'inventories' | 'manifests'): string {
+function message(request: RequestRecord, part: 'inventories' | 'manifests', technologyLabel: string | undefined): string {
   const spec = request.pipeline!
-  const label = technology(spec.technology)?.label ?? spec.technology
+  const label = technologyLabel ?? spec.technology
   return [
     part === 'manifests' ? `Add the ${spec.application} manifests (${label} on ${spec.deployTarget})` : `Add the ${spec.application} pipeline (${label} on ${spec.deployTarget})`,
     '',

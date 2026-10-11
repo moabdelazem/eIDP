@@ -116,17 +116,35 @@ and namespaces); `requests_pipeline_check` keeps that column to this kind.
   project names namespaces for are the old ones, in their order — OCP `dev`,
   `qc`, `uat`, `prd`, `prd_dr`; K8s adds `preprod` — and the application name
   rule is the old `APP_NAME_REGEX`, at most 50.
-- **The templates live in e-IDP** (`pipeline/templates/`, `templates.ts`),
-  one per technology and deploy target (Flutter on OCP: one per `app_path`),
-  plus `project/` for a new project's `group_vars/all`. They are extracted
-  from the reference applications by
-  `pnpm --filter @eidp/api pipeline:templates extract <inventories> <ocp-templates>` (two checkouts).
-  The script replaces the reference's name with `__APPLICATION__` (`__PROJECT__`
-  for the project), writes any literal credential as `changeme` and lists it,
-  and is read as a diff before committing. `… check <inventories> <ocp-templates>` reports drift
-  and exits 1; the portal never follows a reference on its own. **A
-  technology is on the form only once its templates are committed**, and only
-  for the targets they cover, so nobody can file what cannot be written.
+- **The templates are edited in the portal**, on Manage → *Pipeline
+  templates* (`/pipeline-templates`, permission `pipelines.templates`, which
+  only `devops-admin` holds). They are rows in the database
+  (`pipeline_templates`, `pipeline/templates.ts`), not files in the image, so
+  a template changes without a release. Every save and removal is kept in
+  `pipeline_template_history`, with who made it. There is one template per
+  *slot*:
+  - each technology's `group_vars` per deploy target (Flutter on OCP: one per
+    `app_path`);
+  - its manifests per target, for ocp-templates;
+  - `project`, a new project's `group_vars/all`.
+
+  *Import from the reference* reads the slot's reference application from a
+  fresh copy of its repository, on the server, into the editor. It does not
+  save anything. The reference's name becomes `__APPLICATION__`
+  (`__PROJECT__` for the project; manifests only in their paths, as the old
+  portal copied them). A literal credential becomes `changeme`. The page
+  lists what to check: each credential replaced, and each file where the name
+  was replaced more than once. Saving refuses:
+  - a credential;
+  - a path that is not plainly relative;
+  - the same path twice;
+  - more than 200 files or 256 KB a file;
+  - for the project template, a folder or a `team.yml` (the requester fills
+    that in).
+
+  **A technology is on the request form only for the targets whose templates
+  are all saved**, so nobody can file what cannot be written. Removing one
+  takes it off the form at once.
 - **`generate.ts` is the old `new_applications.py`**, file for file, checked
   byte for byte against the Python when ported:
   `<system>/<application>.yml` (OCP without `preprod`, K8s with it, a
@@ -170,7 +188,7 @@ and namespaces); `requests_pipeline_check` keeps that column to this kind.
   account's PAT needs Code (read & write) on inventories and ocp-templates.
 - **The manifests go to ocp-templates** (`OCP_TEMPLATES_REPO`, in the
   inventories' project unless `OCP_TEMPLATES_PROJECT` says otherwise), under
-  `<project>/<application>/`, from `templates/manifests/<Technology>/<target>/`
+  `<project>/<application>/`, from the `manifests/<Technology>/<target>` template
   — the old `reference_template` copy, the name replaced in paths only, as it
   was. Not for a library, nor a technology without a reference on that
   target. Both repositories are planned before either is pushed, so a
@@ -197,10 +215,10 @@ the old generator's output, not its traps:
 | `group_id`, `artifact_id`, `nuget_name` as typed | Checked against `FIELD_RULES` on the form and at filing |
 | Copied the reference app's files with whatever credential sat in them | A file carrying a literal value for a credential-named key stops the write (`credentialsIn`); placeholders, `{{ … }}` and vaulted values pass |
 | Names like `prd_api` or `all`, and case-only duplicates, accepted | Refused: inventories would read them as an override or the project's own files |
-| Copied a live reference application at every request: an edit or rename there changed or broke every pipeline after it, and its hostnames, ports and DB names came along | Templates extracted once into e-IDP, versioned and reviewed; a reference that moved on is reported as drift |
+| Copied a live reference application at every request: an edit or rename there changed or broke every pipeline after it, and its hostnames, ports and DB names came along | Templates imported once from the reference, checked by a person and saved in the portal, with every change kept; a reference changing later changes nothing |
 | Namespace tokens written as `changeme` and left to memory; deploys failed until someone remembered | Still `changeme` (never a real token in inventories), but the completed request lists the tokens to set as an open follow-up |
 | DBScripts skipped namespaces but Database_Microsoft did not | Every database skips them and gets `host_vars/localhost` |
-| Replaced the reference app's name wherever it appeared in the copied text, hitting anything that contained it | `__APPLICATION__` marks where the name goes, put there once at extraction and reviewed |
+| Replaced the reference app's name wherever it appeared in the copied text, hitting anything that contained it | `__APPLICATION__` marks where the name goes, put there once at import and checked before saving |
 | Copied GAFI_Digital_Network's project files changing only `project_name`, and wrote `team.yml` only if that project had one | `__PROJECT__` in the template; `team.yml` always written |
 | Ignored the auto-deploy answer: "false" for DEVdotNET, "true" for everyone else | The requester's answer is written, and the approver sees it |
 | "Leave empty — default user will be used", then wrote `changeme` | The form says `changeme`, and the request lists it to set |

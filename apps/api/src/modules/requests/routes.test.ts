@@ -49,6 +49,30 @@ const inventoriesRemote = mkdtempSync(join(tmpdir(), 'eidp-inventories-'))
   writeFileSync(join(seed, 'PipeHome/group_vars/all/project.yml'), 'project_name: PipeHome\n')
   mkdirSync(join(seed, 'Reference/group_vars/ref-app'), { recursive: true })
   writeFileSync(join(seed, 'Reference/group_vars/ref-app/resources.yml'), 'name: ref-app\nreplicas: 1\n')
+  // The references the .NET and project templates are imported from, as definitions.ts names them.
+  const reference = join(seed, 'LPGMS_Penalty/group_vars/LPGMS.PWebApi')
+  mkdirSync(reference, { recursive: true })
+  writeFileSync(
+    join(reference, 'cicd.yml'),
+    [
+      'repository_name: LPGMS.PWebApi',
+      'build_technology: DotNetCore',
+      'dockerfile_name: Dockerfile-User-global',
+      'packages: tz-global',
+      'nuget_name: Reference.Package',
+      'db_password: hunter2',
+      'build_image:',
+      '  name: sdk',
+      '  tag: "6.0"',
+      'deploy_image:',
+      '  tag: 6.0',
+      '',
+    ].join('\n'),
+  )
+  writeFileSync(join(reference, 'LPGMS.PWebApi.env.yml'), 'service: LPGMS.PWebApi\n')
+  mkdirSync(join(seed, 'GAFI_Digital_Network/group_vars/all'), { recursive: true })
+  writeFileSync(join(seed, 'GAFI_Digital_Network/group_vars/all/project.yml'), 'project_name: GAFI_Digital_Network\nmail_subject: GAFI_Digital_Network builds\n')
+  writeFileSync(join(seed, 'GAFI_Digital_Network/group_vars/all/team.yml'), 'company: someone-else\n')
   git(seed, 'init', '-q', '-b', 'main')
   git(seed, 'add', '.')
   git(seed, '-c', 'user.name=seed', '-c', 'user.email=seed@x', 'commit', '-q', '-m', 'seed')
@@ -58,35 +82,6 @@ const inventoriesRemote = mkdtempSync(join(tmpdir(), 'eidp-inventories-'))
 process.env.INVENTORIES_GIT_URL = `file://${inventoriesRemote}`
 process.env.INVENTORIES_WRITE_CHECKOUT = mkdtempSync(join(tmpdir(), 'eidp-write-'))
 
-// Pipeline templates of the tests' own, laid out as the extraction script writes them.
-const pipelineTemplates = mkdtempSync(join(tmpdir(), 'eidp-templates-'))
-{
-  const put = (path: string, content: string) => {
-    mkdirSync(join(pipelineTemplates, path, '..'), { recursive: true })
-    writeFileSync(join(pipelineTemplates, path), content)
-  }
-  put('project/project.yml', 'project_name: GAFI_Digital_Network\nmail_subject: __PROJECT__ builds\n')
-  put('project/team.yml', 'company: someone-else\n')
-  put(
-    'DotNetCore/OCP/cicd.yml',
-    [
-      'repository_name: __APPLICATION__',
-      'build_technology: DotNetCore',
-      'dockerfile_name: Dockerfile-User-global',
-      'packages: tz-global',
-      'nuget_name: Reference.Package',
-      'build_image:',
-      '  name: sdk',
-      '  tag: "6.0"',
-      'deploy_image:',
-      '  tag: 6.0',
-      '',
-    ].join('\n'),
-  )
-  put('DotNetCore/OCP/__APPLICATION__.env.yml', 'service: __APPLICATION__\n')
-  put('manifests/DotNetCore/OCP/deployment-__APPLICATION__.yml', 'kind: Deployment\nname: "{{ app_name }}"\n')
-}
-process.env.PIPELINE_TEMPLATES_DIR = pipelineTemplates
 
 // ocp-templates, which approved pipelines write their manifests to.
 const ocpTemplatesRemote = mkdtempSync(join(tmpdir(), 'eidp-ocp-templates-'))
@@ -96,6 +91,8 @@ const ocpTemplatesRemote = mkdtempSync(join(tmpdir(), 'eidp-ocp-templates-'))
   const seed = mkdtempSync(join(tmpdir(), 'eidp-ocp-seed-'))
   mkdirSync(join(seed, 'PipeHome'), { recursive: true })
   writeFileSync(join(seed, 'PipeHome/README'), 'manifests\n')
+  mkdirSync(join(seed, 'LPGMS_Penalty/LPGMS.PWebApi'), { recursive: true })
+  writeFileSync(join(seed, 'LPGMS_Penalty/LPGMS.PWebApi/deployment-LPGMS.PWebApi.yml'), 'kind: Deployment\nname: "{{ app_name }}"\n')
   git(seed, 'init', '-q', '-b', 'main')
   git(seed, 'add', '.')
   git(seed, '-c', 'user.name=seed', '-c', 'user.email=seed@x', 'commit', '-q', '-m', 'seed')
@@ -127,6 +124,7 @@ before(async () => {
 })
 
 after(async () => {
+  await restoreTemplates()
   await query('delete from requests')
   await closeDb()
   server.close()
@@ -740,6 +738,76 @@ const inventoriesLog = () => execFileSync('git', ['--git-dir', inventoriesRemote
 
 const pipelineLock = new pg.Client({ connectionString: process.env.DATABASE_URL ?? 'postgresql://eidp:eidp@localhost:5432/eidp' })
 
+// The templates are global rows in the shared database: the ones these tests
+// write are put back as they were, history included, whatever happens.
+const TEMPLATE_DIRS = ['DotNetCore/OCP', 'manifests/DotNetCore/OCP', 'project']
+let templatesBefore: { dir: string; files: unknown; updated_by: string; updated_by_name: string; updated_at: Date }[] = []
+let historyFloor = 0
+let templatesTaken = false
+/** Called by the file's `after`, before the pool closes. */
+async function restoreTemplates() {
+  if (!templatesTaken) return
+  await query('delete from pipeline_templates where dir = any($1)', [TEMPLATE_DIRS])
+  for (const row of templatesBefore) {
+    await query('insert into pipeline_templates (dir, files, updated_by, updated_by_name, updated_at) values ($1, $2, $3, $4, $5)', [row.dir, JSON.stringify(row.files), row.updated_by, row.updated_by_name, row.updated_at])
+  }
+  await query('delete from pipeline_template_history where id > $1 and dir = any($2)', [historyFloor, TEMPLATE_DIRS])
+}
+
+test('pipelines: DevOps imports a template from its reference, checks it, and saves it', async () => {
+  templatesBefore = (await query('select * from pipeline_templates where dir = any($1)', [TEMPLATE_DIRS])).rows as typeof templatesBefore
+  historyFloor = Number((await query('select coalesce(max(id), 0) as id from pipeline_template_history')).rows[0].id)
+  templatesTaken = true
+  await query('delete from pipeline_templates where dir = any($1)', [TEMPLATE_DIRS])
+  const at = (dir: string) => `/requests/pipeline/template?dir=${encodeURIComponent(dir)}`
+
+  const slots = await json<{ dir: string; repository: string; reference: string; saved: unknown }[]>(await call('alice', 'GET', '/requests/pipeline/templates'))
+  assert.deepEqual(slots.find((s) => s.dir === 'DotNetCore/OCP'), {
+    ...slots.find((s) => s.dir === 'DotNetCore/OCP'),
+    repository: 'inventories',
+    reference: 'LPGMS_Penalty/group_vars/LPGMS.PWebApi',
+    saved: null,
+  })
+
+  // Imported from the reference: the name a placeholder, the password not carried.
+  const imported = await json<{ files: { path: string; content: string }[]; notes: string[] }>(await call('alice', 'POST', `${at('DotNetCore/OCP')}`.replace('template?', 'template/import?')))
+  assert.deepEqual(imported.files.map((f) => f.path), ['__APPLICATION__.env.yml', 'cicd.yml'])
+  const cicd = imported.files.find((f) => f.path === 'cicd.yml')!.content
+  assert.match(cicd, /^repository_name: __APPLICATION__$/m)
+  assert.match(cicd, /^db_password: changeme$/m)
+  assert.match(imported.notes.join(' '), /db_password had a value in the reference/)
+
+  // Saving checks what it is given.
+  const refused = await call('alice', 'PUT', at('DotNetCore/OCP'), { files: [{ path: 'cicd.yml', content: 'db_password: hunter2\n' }] })
+  assert.equal(refused.status, 422)
+  assert.equal((await call('alice', 'PUT', at('DotNetCore/OCP'), { files: [{ path: '../escape.yml', content: 'a: 1\n' }] })).status, 400)
+  assert.equal((await call('alice', 'PUT', at('nowhere'), { files: [{ path: 'a.yml', content: 'a: 1\n' }] })).status, 404)
+
+  const saved = await json<{ files: unknown[]; history: { changedBy: string; files: number }[] }>(await call('alice', 'PUT', at('DotNetCore/OCP'), { files: imported.files }))
+  assert.equal(saved.files.length, 2)
+  assert.deepEqual(saved.history.slice(0, 1).map((h) => [h.changedBy, h.files]), [['alice', 2]], 'newest first')
+
+  // The manifests, from ocp-templates: the name replaced in paths only.
+  const manifests = await json<{ files: { path: string; content: string }[]; notes: string[] }>(await call('alice', 'POST', at('manifests/DotNetCore/OCP').replace('template?', 'template/import?')))
+  assert.deepEqual(manifests.files, [{ path: 'deployment-__APPLICATION__.yml', content: 'kind: Deployment\nname: "{{ app_name }}"\n' }])
+  assert.equal((await call('alice', 'PUT', at('manifests/DotNetCore/OCP'), { files: manifests.files })).status, 200)
+
+  // The project's own files, never its team.yml.
+  const project = await json<{ files: { path: string; content: string }[] }>(await call('alice', 'POST', at('project').replace('template?', 'template/import?')))
+  assert.deepEqual(project.files, [{ path: 'project.yml', content: 'project_name: __PROJECT__\nmail_subject: __PROJECT__ builds\n' }])
+  assert.equal((await call('alice', 'PUT', at('project'), { files: [...project.files, { path: 'team.yml', content: 'company: x\n' }] })).status, 400)
+  assert.equal((await call('alice', 'PUT', at('project'), { files: project.files })).status, 200)
+
+  // Removing one stops the technology being offered, and is kept in the history.
+  const technologies = async () => (await json<{ key: string }[]>(await call('bob', 'GET', '/requests/pipeline/technologies'))).map((t) => t.key)
+  assert.ok((await technologies()).includes('DotNetCore'))
+  assert.equal((await call('alice', 'DELETE', at('manifests/DotNetCore/OCP'))).status, 204)
+  assert.ok(!(await technologies()).includes('DotNetCore'), 'every template a target needs, or it is not offered')
+  const history = await json<{ history: { files: number | null }[] }>(await call('alice', 'GET', at('manifests/DotNetCore/OCP')))
+  assert.deepEqual(history.history.slice(0, 2).map((h) => h.files), [null, 1])
+  assert.equal((await call('alice', 'PUT', at('manifests/DotNetCore/OCP'), { files: manifests.files })).status, 200)
+})
+
 test('pipelines: the form learns the technologies and whether the project is in inventories yet', async () => {
   await pipelineLock.connect()
   await pipelineLock.query('select pg_advisory_lock(4202)')
@@ -750,9 +818,9 @@ test('pipelines: the form learns the technologies and whether the project is in 
   const technologies = await json<{ key: string; files?: unknown }[]>(await call('bob', 'GET', '/requests/pipeline/technologies'))
   const tech = technologies.find((t) => t.key === 'TestTech')!
   assert.deepEqual(
-    technologies.filter((t) => t.key !== 'TestTech').map((t) => [t.key, (t as unknown as { targets: string[] }).targets]),
-    [['DotNetCore', ['OCP']]],
-    'a technology is offered once its templates are there, and only those',
+    technologies.filter((t) => t.key === 'DotNetCore').map((t) => (t as unknown as { targets: string[] }).targets),
+    [['OCP']],
+    'a technology is offered once its templates are saved, for the targets they cover',
   )
   assert.ok(tech && !('files' in tech), 'what to ask, never the templates')
   const home = await json<{ exists: boolean; system: string }>(await call('bob', 'GET', '/requests/pipeline/project?project=pipehome'))
@@ -855,6 +923,7 @@ test('pipelines: a technology from its template — the reference copied with th
       'dockerfile_name: Dockerfile-User',
       'packages: tz',
       'nuget_name: Pipe.Web',
+      'db_password: changeme',
       'build_image:',
       '  name: sdk',
       '  tag: "8.0"',
