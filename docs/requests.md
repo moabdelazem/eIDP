@@ -147,6 +147,21 @@ and namespaces); `requests_pipeline_check` keeps that column to this kind.
   and the namespaces come from the registry's templates, ported from the old
   portal.
 
+**What it does differently from the old portal, on purpose.** The port keeps
+the old generator's output, not its traps:
+
+| The old portal | Here |
+|---|---|
+| Worked out the files when the request was filed and stored them; the approver approved a snapshot that could be stale | Worked out at approval against inventories as they are then; what changed meanwhile is a conflict |
+| Pulled a shared checkout from the page; two people at once raced | One working copy, reset before every write, one writer at a time across replicas |
+| "Treat as new project" override, so a project's `team.yml` could be written over | New or existing comes from the catalog and is checked again at approval; `group_vars/all` is never written over |
+| No duplicate check: two people could ask for the same app | An open request for the same application or repository blocks a second |
+| Any typed version, even one with no build image | Listed versions only; another is a request to DevOps first |
+| `group_id`, `artifact_id`, `nuget_name` as typed | Checked against `FIELD_RULES` on the form and at filing |
+| Copied the reference app's files with whatever credential sat in them | A file carrying a literal value for a credential-named key stops the write (`credentialsIn`); placeholders, `{{ … }}` and vaulted values pass |
+| Names like `prd_api` or `all`, and case-only duplicates, accepted | Refused: inventories would read them as an override or the project's own files |
+| Auto-deploy to QC as a string; a failed submit could pass silently | An explicit yes/no, and a request is filed in one transaction or not at all |
+
 **Every request is assessed for its approver** (`modules/requests/risk.ts`),
 in the background the moment it is filed, and shown only to people who may
 decide it — on the approval card, in the approve dialog when it is not low,

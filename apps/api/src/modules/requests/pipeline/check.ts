@@ -11,7 +11,6 @@ import { environmentsFor, namespacesFor, technology } from './technologies.ts'
 
 export type PipelineTarget = { kind: 'create_pipeline'; collection: string; project: string; repository: string; pipeline: PipelineSpec }
 
-const VERSION = /^[\w.+-]{1,32}$/
 
 /**
  * Whether a pipeline could be asked for as it stands — the same answer the
@@ -32,11 +31,16 @@ export async function checkPipeline(input: PipelineTarget): Promise<Check> {
   const template = technology(spec.technology)
   if (!template) return fail(`Pipelines for ${spec.technology} are not set up in the portal.`)
   if (!template.targets.includes(spec.deployTarget)) return fail(`${template.label} does not deploy to ${spec.deployTarget}.`)
-  if (template.versions.length && !(spec.version && VERSION.test(spec.version))) return fail(`Choose the ${template.label} version.`)
+  // Listed versions only. The old form let anyone type one, and a version
+  // with no build image behind it was only found when the first build failed.
+  if (template.versions.length && !(spec.version && template.versions.includes(spec.version))) {
+    return fail(`Choose a ${template.label} version the platform builds: ${template.versions.join(', ')}. Another one is a request to DevOps first.`)
+  }
   for (const field of template.fields) {
     const value = spec.fields[field.name]?.trim()
     if (!value) return fail(`${field.label} is needed for ${template.label}.`)
     if (field.options && !field.options.includes(value)) return fail(`${field.label} is one of ${field.options.join(', ')}.`)
+    if (field.pattern && !new RegExp(field.pattern).test(value)) return fail(`${field.label} does not look right. ${field.help ?? ''}`.trim())
   }
 
   const repos = await listRepositories(input.collection, input.project)

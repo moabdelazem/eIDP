@@ -164,6 +164,17 @@ export const TECHNOLOGIES: Record<string, TechnologyDefinition> = {
   },
 }
 
+/**
+ * Not in the old portal, which took these as typed: a mistyped group id or
+ * package name only showed up when the first build failed. What each must
+ * look like, checked on the form and at filing.
+ */
+export const FIELD_RULES: Record<string, { label: string; pattern: string; help: string; default?: '{application}' }> = {
+  artifact_id: { label: 'Artifact ID', pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$', help: 'Letters, digits, dots, dashes and underscores, as in the pom.', default: '{application}' },
+  group_id: { label: 'Group ID', pattern: '^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$', help: 'A Java package name, like eg.com.efinance.billing.' },
+  nuget_name: { label: 'NuGet package', pattern: '^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$', help: 'Letters, digits, dots, dashes and underscores.', default: '{application}' },
+}
+
 /** The deploy targets a technology has a reference for. */
 export const targetsOf = (d: TechnologyDefinition): DeployTarget[] => (d.k8sInventoryReference ? ['OCP', 'K8s'] : ['OCP'])
 

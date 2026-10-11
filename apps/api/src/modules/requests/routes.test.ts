@@ -646,7 +646,7 @@ registerTechnology({
   key: 'TestTech',
   label: 'Test Tech',
   versions: ['1', '2'],
-  fields: [{ name: 'artifact_id', label: 'Artifact ID', options: null, default: '{application}', help: null }],
+  fields: [{ name: 'artifact_id', label: 'Artifact ID', options: null, default: '{application}', help: 'Letters and digits.', pattern: '^[a-z0-9-]+$' }],
   targets: ['OCP'],
   noNamespaces: false,
   files: async (ctx, inventories) => [
@@ -721,6 +721,8 @@ test('pipelines: the check refuses what inventories or the registry could not ta
   assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { technology: 'Cobol' })), /not set up/)
   assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { fields: {} })), /Artifact ID/)
   assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { version: null })), /version/)
+  assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { version: '9' })), /version the platform builds: 1, 2/, 'only listed versions')
+  assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { fields: { artifact_id: 'Not Valid' } })), /Artifact ID does not look right. Letters and digits./)
   assert.match(await reason(pipelineRequest('PipeHome', 'no-such-repo')), /no repository called no-such-repo/)
   assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { application: 'Taken-API' })), /already has an application called taken-api/)
   assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { newProject: { teams, namespaces: {} } })), /already has its project files/)

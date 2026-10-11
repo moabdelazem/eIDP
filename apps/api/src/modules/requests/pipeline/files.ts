@@ -1,5 +1,5 @@
 import type { PipelineFile, ProjectTeams } from '@eidp/contracts/requests'
-import { ENVIRONMENTS } from '../../../integrations/inventories/parse.ts'
+import { ENVIRONMENTS, isSecretKey } from '../../../integrations/inventories/parse.ts'
 import { namespacesFor, technology, type Inventories, type PipelineContext } from './technologies.ts'
 
 /**
@@ -44,9 +44,32 @@ export async function planFiles(ctx: PipelineContext, inventories: Inventories):
   for (const file of files) {
     if (!file.path.startsWith(`${ctx.system}/`)) errors.push(`A template wrote outside ${ctx.system}: ${file.path}`)
     else if (await exists(file.path)) errors.push(`${file.path} already exists.`)
+    for (const key of credentialsIn(file.content)) errors.push(`${file.path} would carry a value for ${key}. A credential is never copied from another application; it is set from the vault.`)
   }
   return { files, errors: [...new Set(errors)] }
 }
+
+/**
+ * The keys in a YAML file that look like credentials and hold a literal value.
+ * The old generator copied a live application's files, and with them whatever
+ * password or token sat in plaintext there — into a second application, under
+ * a second team. A template-only placeholder, an Ansible expression or a
+ * vaulted value is fine; anything else stops the write. Names only, never values.
+ */
+export function credentialsIn(content: string): string[] {
+  const found: string[] = []
+  for (const line of content.split('\n')) {
+    const match = /^\s*(?:-\s+)?([\w.-]+)\s*:\s*(.*?)\s*$/.exec(line)
+    if (!match || !isSecretKey(match[1]!)) continue
+    const value = match[2]!.replace(/^(['"])(.*)\1$/, '$2')
+    if (value === '' || value === '~' || value === 'null' || value === PLACEHOLDER || value.startsWith('!vault') || /^\{\{.*\}\}$/.test(value)) continue
+    found.push(match[1]!)
+  }
+  return [...new Set(found)]
+}
+
+/** What a credential a person sets by hand after approval is written as. */
+export const PLACEHOLDER = 'changeme'
 
 /** An application name that inventories would read back as an environment's override of another. */
 export function overridePrefix(application: string): string | null {

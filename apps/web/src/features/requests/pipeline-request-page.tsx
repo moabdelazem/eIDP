@@ -334,13 +334,19 @@ export function PipelineRequestPage() {
               </ToggleGroup>
             </Field>
             {technology.versions.length > 0 && (
-              <Field label={`${technology.label} version`} htmlFor="version" hint="Not listed? Type it.">
-                <Input id="version" list="versions" value={version} onChange={(event) => setVersion(event.target.value.trim())} className="w-40 font-mono" autoComplete="off" />
-                <datalist id="versions">
-                  {technology.versions.map((v) => (
-                    <option key={v} value={v} />
-                  ))}
-                </datalist>
+              <Field label={`${technology.label} version`} htmlFor="version" hint="The versions the platform builds. Need another? Ask DevOps to add it first.">
+                <Select value={version} onValueChange={(value) => value && setVersion(value)}>
+                  <SelectTrigger id="version" className="w-40 font-mono">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {technology.versions.map((v) => (
+                      <SelectItem key={v} value={v} className="font-mono">
+                        {v}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </Field>
             )}
             {technology.fields.map((f) => (

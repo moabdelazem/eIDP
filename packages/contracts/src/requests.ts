@@ -49,7 +49,15 @@ export type PipelineSpec = {
 }
 
 /** A field a technology asks for. `options` makes it a choice; `default` may name `{application}`. */
-export type TechnologyField = { name: string; label: string; options: string[] | null; default: string | null; help: string | null }
+export type TechnologyField = {
+  name: string
+  label: string
+  options: string[] | null
+  default: string | null
+  help: string | null
+  /** A regular expression (source) the value must match; `help` says what it expects. */
+  pattern: string | null
+}
 
 /** A build technology the portal can write a pipeline for. */
 export type Technology = {
