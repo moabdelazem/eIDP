@@ -435,7 +435,7 @@ export function PipelineRequestPage() {
                   ['projectManagers', 'Project managers'],
                 ] as const
               ).map(([key, label]) => (
-                <Field key={key} label={label} htmlFor={`list-${key}`} hint="One per line." optional>
+                <Field key={key} label={label} htmlFor={`list-${key}`} hint={key === 'devTeamList' ? 'One per line.' : 'One per line. Empty means DEVOPS.'} optional>
                   <Textarea id={`list-${key}`} rows={3} value={teamLists[key]} onChange={(event) => setTeamLists((current) => ({ ...current, [key]: event.target.value }))} />
                 </Field>
               ))}
@@ -454,7 +454,7 @@ export function PipelineRequestPage() {
                         autoComplete="off"
                       />
                     </Field>
-                    <Field label={`${env.label} user`} htmlFor={`ns-user-${env.key}`} optional hint="Empty for the default user.">
+                    <Field label={`${env.label} user`} htmlFor={`ns-user-${env.key}`} optional hint="Empty: written as changeme, and listed on the request to set.">
                       <Input
                         id={`ns-user-${env.key}`}
                         value={namespaces[env.key]?.user ?? ''}

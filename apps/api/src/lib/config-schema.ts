@@ -160,6 +160,8 @@ export const schema = z.object({
   /** Who commits pipeline changes to inventories; the requester and approver are named in the message. */
   INVENTORIES_COMMITTER_NAME: z.string().min(1).default('e-IDP'),
   INVENTORIES_COMMITTER_EMAIL: z.string().min(3).default('e-idp@noreply.local'),
+  /** Where pipeline templates are read from instead of the ones bundled with the API — the tests' own. */
+  PIPELINE_TEMPLATES_DIR: z.string().min(1).optional(),
 })
 
 /**

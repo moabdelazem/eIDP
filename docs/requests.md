@@ -115,9 +115,36 @@ and namespaces); `requests_pipeline_check` keeps that column to this kind.
   `exists`, `read`, `list`), as well as the request. The environments a new
   project names namespaces for are the old ones, in their order — OCP `dev`,
   `qc`, `uat`, `prd`, `prd_dr`; K8s adds `preprod` — and the application name
-  rule is the old `APP_NAME_REGEX`, at most 50. No technology is registered
-  from it until the copy-and-patch is ported from `new_applications.py`, so
-  nobody can file a request that cannot be written as the old portal would.
+  rule is the old `APP_NAME_REGEX`, at most 50.
+- **The templates live in e-IDP** (`pipeline/templates/`, `templates.ts`),
+  one per technology and deploy target (Flutter on OCP: one per `app_path`),
+  plus `project/` for a new project's `group_vars/all`. They are extracted
+  from the reference applications by
+  `pnpm --filter @eidp/api pipeline:templates extract <inventories checkout>`.
+  The script replaces the reference's name with `__APPLICATION__` (`__PROJECT__`
+  for the project), writes any literal credential as `changeme` and lists it,
+  and is read as a diff before committing. `… check <checkout>` reports drift
+  and exits 1; the portal never follows a reference on its own. **A
+  technology is on the form only once its templates are committed**, and only
+  for the targets they cover, so nobody can file what cannot be written.
+- **`generate.ts` is the old `new_applications.py`**, file for file, checked
+  byte for byte against the Python when ported:
+  `<system>/<application>.yml` (OCP without `preprod`, K8s with it, a
+  database on `localhost`); the application's `group_vars` from its template
+  with `repository_name`, the library keys, Maven's artifact/group (and
+  `group_path` = `group_id`), .NET's `app_path`/`nuget_name`/version fields,
+  Flutter's `app_path`, the proxy's Dockerfile per target, the image tags
+  from the version (`yaml-edit.ts`, line-level, so the rest of the file is
+  untouched), and the generated files; for a new project, the template
+  project's files, `team.yml` and one namespace per environment
+  (`cluster_type` DR for `prd_dr`); for a database, `host_vars/localhost`
+  when the project has none.
+- **What approval leaves to a person** is listed on the completed request
+  (*Still to do by hand*): each namespace's token, and its user when left
+  empty — written as placeholders, never real — and the provisioning command
+  the old portal printed. Not yet ported: the old approval's automatic
+  provisioning and test builds, and its copy of the reference's OpenShift
+  manifests into the templates repository (`reference_template`).
 - **`check()`** refuses an application name inventories would misread — one
   starting with an environment prefix (`prd_api` is read as the `prd`
   override of `api`), or `all` — an unknown technology, a missing version or
@@ -142,10 +169,10 @@ and namespaces); `requests_pipeline_check` keeps that column to this kind.
   synced at once. `INVENTORIES_GIT_URL` points the writer elsewhere — a
   mirror, or the local repository the tests push to. The ADO service
   account's PAT needs Code (read & write) on the inventories repository.
-- `team.yml` is written the way the repository spells it — the auto-deploy
-  flag quoted, an empty list as one empty item. The application's own files
-  and the namespaces come from the registry's templates, ported from the old
-  portal.
+- `team.yml` is written the way the repository spells it, in the old order —
+  the auto-deploy flag quoted, an empty list as one empty item, and the ops,
+  approver, prd-only and manager lists DEVOPS when left empty (the form says
+  so).
 
 **What it does differently from the old portal, on purpose.** The port keeps
 the old generator's output, not its traps:
@@ -163,6 +190,12 @@ the old generator's output, not its traps:
 | Copied a live reference application at every request: an edit or rename there changed or broke every pipeline after it, and its hostnames, ports and DB names came along | Templates extracted once into e-IDP, versioned and reviewed; a reference that moved on is reported as drift |
 | Namespace tokens written as `changeme` and left to memory; deploys failed until someone remembered | Still `changeme` (never a real token in inventories), but the completed request lists the tokens to set as an open follow-up |
 | DBScripts skipped namespaces but Database_Microsoft did not | Every database skips them and gets `host_vars/localhost` |
+| Replaced the reference app's name wherever it appeared in the copied text, hitting anything that contained it | `__APPLICATION__` marks where the name goes, put there once at extraction and reviewed |
+| Copied GAFI_Digital_Network's project files changing only `project_name`, and wrote `team.yml` only if that project had one | `__PROJECT__` in the template; `team.yml` always written |
+| Ignored the auto-deploy answer: "false" for DEVdotNET, "true" for everyone else | The requester's answer is written, and the approver sees it |
+| "Leave empty — default user will be used", then wrote `changeme` | The form says `changeme`, and the request lists it to set |
+| Pushed inventories and the templates repository separately, cleaning up local files on failure | One commit to inventories, found again by its marker on retry (the templates repository is not written yet) |
+| Audit, history and ELK in files and best-effort calls | The request itself: who, what, when, the decision, the commit |
 | Auto-deploy to QC as a string; a failed submit could pass silently | An explicit yes/no, and a request is filed in one transaction or not at all |
 
 **Every request is assessed for its approver** (`modules/requests/risk.ts`),

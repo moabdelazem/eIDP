@@ -58,8 +58,37 @@ const inventoriesRemote = mkdtempSync(join(tmpdir(), 'eidp-inventories-'))
 process.env.INVENTORIES_GIT_URL = `file://${inventoriesRemote}`
 process.env.INVENTORIES_WRITE_CHECKOUT = mkdtempSync(join(tmpdir(), 'eidp-write-'))
 
+// Pipeline templates of the tests' own, laid out as the extraction script writes them.
+const pipelineTemplates = mkdtempSync(join(tmpdir(), 'eidp-templates-'))
+{
+  const put = (path: string, content: string) => {
+    mkdirSync(join(pipelineTemplates, path, '..'), { recursive: true })
+    writeFileSync(join(pipelineTemplates, path), content)
+  }
+  put('project/project.yml', 'project_name: GAFI_Digital_Network\nmail_subject: __PROJECT__ builds\n')
+  put('project/team.yml', 'company: someone-else\n')
+  put(
+    'DotNetCore/OCP/cicd.yml',
+    [
+      'repository_name: __APPLICATION__',
+      'build_technology: DotNetCore',
+      'dockerfile_name: Dockerfile-User-global',
+      'packages: tz-global',
+      'nuget_name: Reference.Package',
+      'build_image:',
+      '  name: sdk',
+      '  tag: "6.0"',
+      'deploy_image:',
+      '  tag: 6.0',
+      '',
+    ].join('\n'),
+  )
+  put('DotNetCore/OCP/__APPLICATION__.env.yml', 'service: __APPLICATION__\n')
+}
+process.env.PIPELINE_TEMPLATES_DIR = pipelineTemplates
+
 const { createApp } = await import('../../app.ts')
-const { registerNamespaces, registerTechnology } = await import('./pipeline/technologies.ts')
+const { registerTechnology } = await import('./pipeline/technologies.ts')
 const { writePipeline } = await import('./pipeline/write.ts')
 const { closeDb, migrate, query } = await import('../../lib/db.ts')
 const app = createApp()
@@ -656,10 +685,6 @@ registerTechnology({
     { path: `${ctx.system}/group_vars/${ctx.spec.application}/TestTech.yml`, content: `artifact_id: ${ctx.spec.fields.artifact_id}\nversion: "${ctx.spec.version}"\n` },
   ],
 })
-registerNamespaces('OCP', {
-  files: (ctx, namespaces) =>
-    Object.entries(namespaces).map(([env, ns]) => ({ path: `${ctx.system}/host_vars/${env}_ocp/vars.yml`, content: `namespace: ${ns.name}\ntoken: changeme\n` })),
-})
 
 const adoProject = (name: string, repos: string[]) => {
   const coll = fake.collections.get('DefaultCollection')!
@@ -706,6 +731,11 @@ test('pipelines: the form learns the technologies and whether the project is in 
 
   const technologies = await json<{ key: string; files?: unknown }[]>(await call('bob', 'GET', '/requests/pipeline/technologies'))
   const tech = technologies.find((t) => t.key === 'TestTech')!
+  assert.deepEqual(
+    technologies.filter((t) => t.key !== 'TestTech').map((t) => [t.key, (t as unknown as { targets: string[] }).targets]),
+    [['DotNetCore', ['OCP']]],
+    'a technology is offered once its templates are there, and only those',
+  )
   assert.ok(tech && !('files' in tech), 'what to ask, never the templates')
   const home = await json<{ exists: boolean; system: string }>(await call('bob', 'GET', '/requests/pipeline/project?project=pipehome'))
   assert.deepEqual([home.exists, home.system], [true, 'PipeHome'])
@@ -743,7 +773,7 @@ test('pipelines: approved, its files are pushed to inventories in one commit tha
 
   const preview = await json<{ files: { path: string }[]; errors: string[]; commit: string | null }>(await call('alice', 'GET', `/requests/${filed.id}/pipeline`))
   assert.deepEqual(preview.errors, [])
-  assert.deepEqual(preview.files.map((f) => f.path).sort(), ['PipeHome/group_vars/pipe-api/TestTech.yml', 'PipeHome/group_vars/pipe-api/cicd.yml', 'PipeHome/group_vars/pipe-api/resources.yml'])
+  assert.deepEqual(preview.files.map((f) => f.path).sort(), ['PipeHome/group_vars/pipe-api/TestTech.yml', 'PipeHome/group_vars/pipe-api/cicd.yml', 'PipeHome/group_vars/pipe-api/resources.yml', 'PipeHome/pipe-api.yml'])
   assert.equal(inventoriesFile('PipeHome/group_vars/pipe-api/cicd.yml'), null, 'a preview writes nothing')
 
   await call('alice', 'POST', `/requests/${filed.id}/approve`, {})
@@ -785,8 +815,38 @@ test('pipelines: a new project also gets its team.yml and namespaces', async () 
   assert.match(team, /^automatic_deploy_to_qc: "false"$/m)
   assert.match(team, /^dev_team_list:\n  -$/m, 'an empty list is one empty item, as the repository spells it')
   assert.match(team, /^ops_team_list:\n  - DEVOPS$/m)
-  assert.equal(inventoriesFile('PipeLab/host_vars/prd_ocp/vars.yml'), 'namespace: lab-prd\ntoken: changeme\n')
+  assert.match(team, /^prd_approvers:\n  - DEVOPS\nprd_only:\n  - DEVOPS$/m, 'empty approver lists fall back to DEVOPS, in the old order')
+  assert.equal(inventoriesFile('PipeLab/host_vars/prd_ocp/vars.yml'), 'cluster_type: HQ\n\nocp_namespace:\n  name: lab-prd\n  user: svc-lab\n  token: changeme\n')
+  assert.match(inventoriesFile('PipeLab/host_vars/prd_dr_ocp/vars.yml')!, /^cluster_type: DR$/m)
+  assert.match(inventoriesFile('PipeLab/host_vars/dev_ocp/vars.yml')!, /^  user: changeme$/m, 'no user: the placeholder, listed as a follow-up')
+  assert.equal(inventoriesFile('PipeLab/group_vars/all/project.yml'), 'project_name: PipeLab\nmail_subject: PipeLab builds\n')
+  assert.match(inventoriesFile('PipeLab/lab-api.yml')!, /prd_lab-api:\n          hosts:\n            prd_ocp:\n            prd_dr_ocp:/)
   assert.ok(inventoriesFile('PipeLab/group_vars/lab-api/cicd.yml'))
+})
+
+test('pipelines: a technology from its template — the reference copied with the name, version and fields set', async () => {
+  const body = pipelineRequest('PipeHome', 'pipe-web', { technology: 'DotNetCore', version: '8.0', fields: { nuget_name: 'Pipe.Web' } })
+  const filed = await json<{ id: string }>(await call('bob', 'POST', '/requests', body))
+  await call('alice', 'POST', `/requests/${filed.id}/approve`, {})
+  assert.equal((await settled(filed.id)).status, 'completed')
+  assert.equal(
+    inventoriesFile('PipeHome/group_vars/pipe-web/cicd.yml'),
+    [
+      'repository_name: pipe-web',
+      'build_technology: DotNetCore',
+      'dockerfile_name: Dockerfile-User',
+      'packages: tz',
+      'nuget_name: Pipe.Web',
+      'build_image:',
+      '  name: sdk',
+      '  tag: "8.0"',
+      'deploy_image:',
+      '  tag: 8.0',
+      'app_path: "pipe-web"',
+      '',
+    ].join('\n'),
+  )
+  assert.equal(inventoriesFile('PipeHome/group_vars/pipe-web/pipe-web.env.yml'), 'service: pipe-web\n', 'the name in paths too')
 })
 
 test('pipelines: what appeared in inventories while it waited is a conflict at approval, and nothing is pushed', async () => {

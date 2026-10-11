@@ -14,7 +14,8 @@
     "ollama:fake": "node src/integrations/ollama/fake-server.ts",
     "rbac:import": "node --env-file-if-exists=../../.env src/with-secrets.ts src/modules/access/import.ts",
     "vault:fake": "node src/integrations/vault/fake-server.ts",
-    "db:generate": "node scripts/db-generate.ts"
+    "db:generate": "node scripts/db-generate.ts",
+    "pipeline:templates": "node scripts/pipeline-templates.ts"
   },
   "dependencies": {
     "@eidp/contracts": "workspace:*",

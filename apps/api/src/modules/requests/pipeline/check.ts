@@ -7,7 +7,7 @@ import { same } from '../rows.ts'
 import { requests } from '../schema.ts'
 import { overridePrefix } from './files.ts'
 import { APPLICATION_MAX, APPLICATION_NAME } from './definitions.ts'
-import { environmentsFor, namespacesFor, technology } from './technologies.ts'
+import { environmentsFor, technology } from './technologies.ts'
 
 export type PipelineTarget = { kind: 'create_pipeline'; collection: string; project: string; repository: string; pipeline: PipelineSpec }
 
@@ -63,7 +63,6 @@ export async function checkPipeline(input: PipelineTarget): Promise<Check> {
     if (missing) return fail(`${missing[0]} is needed for a new project.`)
     if (t.automaticDeployToQc === null) return fail('Choose whether builds deploy to QC automatically.')
     if (!template.noNamespaces) {
-      if (!namespacesFor(spec.deployTarget)) return fail(`Namespaces for ${spec.deployTarget} are not set up in the portal.`)
       const environments = environmentsFor(spec.deployTarget)
       const empty = environments.find((env) => !spec.newProject!.namespaces[env.key]?.name.trim())
       if (empty) return fail(`Name the ${empty.label} namespace.`)

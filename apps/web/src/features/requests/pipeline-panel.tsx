@@ -1,4 +1,4 @@
-import { FileCode2, TriangleAlert } from 'lucide-react'
+import { CircleDashed, FileCode2, TriangleAlert } from 'lucide-react'
 import { Facts, Section } from '@/components/page-layout.tsx'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useResource } from '@/lib/use-resource.ts'
@@ -25,6 +25,7 @@ export function PipelinePanel({ request: r }: { request: PortalRequest }) {
           ['Project in inventories', spec.newProject ? 'New — its team.yml and namespaces are written too' : 'Already there; reused'],
         ]}
       />
+      {r.status === 'completed' && <FollowUps request={r} />}
       {r.canDecide && r.status !== 'completed' && r.status !== 'rejected' && r.status !== 'cancelled' && <Files requestId={r.id} />}
     </Section>
   )
@@ -67,6 +68,43 @@ function Files({ requestId }: { requestId: string }) {
           <pre className="overflow-x-auto border-t bg-muted/40 p-3 text-xs">{file.content}</pre>
         </details>
       ))}
+    </div>
+  )
+}
+
+/**
+ * What approval leaves to a person: the namespaces' tokens (and users left
+ * empty), written as placeholders because a credential never goes into
+ * inventories from the portal, and the provisioning the old portal printed
+ * as a command. Worked out from the request, so it is there for as long as
+ * the request is.
+ */
+function FollowUps({ request: r }: { request: PortalRequest }) {
+  const spec = r.pipeline!
+  const namespaces = Object.entries(spec.newProject?.namespaces ?? {})
+  const env = (key: string) => key.toUpperCase().replace('_', '-')
+  const script = spec.newProject ? `createBranchs_hooks_initProject.sh ${r.collection} ${r.project}` : `createBranchs_hooks_initApp.sh ${r.collection} ${r.project} ${spec.application}`
+  const items: React.ReactNode[] = [
+    ...namespaces.map(([key, ns]) => (
+      <>
+        Set the token for <code>{ns.name}</code> ({env(key)}){ns.user ? '' : ', and its user'} in <code>host_vars/{key}_{spec.deployTarget === 'K8s' ? 'k8s' : 'ocp'}/vars.yml</code>.
+      </>
+    )),
+    <>
+      Provision it: <code className="break-words">{`podman exec podit-FH bash -lc "bash ~/scripts/CICD/Provisioning/${script}"`}</code>
+    </>,
+  ]
+  return (
+    <div className="mt-4 space-y-2">
+      <h3 className="text-sm font-semibold">Still to do by hand</h3>
+      <ul className="space-y-1 text-sm">
+        {items.map((item, i) => (
+          <li key={i} className="flex gap-2">
+            <CircleDashed className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

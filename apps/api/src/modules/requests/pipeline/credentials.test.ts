@@ -3,7 +3,7 @@
 // does not.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { credentialsIn } from './files.ts'
+import { credentialsIn } from './credentials.ts'
 
 test('a literal credential is found by its key, whatever the quoting or nesting', () => {
   const yaml = ['db:', '  password: s3cret', "api_key: 'abc'", '  - token: "t"', 'connection_string: |', 'name: app'].join('\n')
