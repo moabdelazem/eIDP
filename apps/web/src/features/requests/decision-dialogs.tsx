@@ -28,13 +28,14 @@ export function ApproveDialog({
 }) {
   const granting = r.kind === 'grant_access'
   const noun = r.kind === 'create_repository' ? 'repository' : 'project'
+  const pipeline = r.kind === 'create_pipeline'
   const system = systemOf(r)
   return (
     <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={granting ? 'Approve and grant access?' : `Approve and create this ${noun}?`}
-      confirm={granting ? 'Approve and grant' : 'Approve and create'}
+      title={granting ? 'Approve and grant access?' : pipeline ? 'Approve and push this pipeline?' : `Approve and create this ${noun}?`}
+      confirm={granting ? 'Approve and grant' : pipeline ? 'Approve and push' : 'Approve and create'}
       onConfirm={async () => {
         const ok = await decide('approve', r)
         if (ok) onApproved()
@@ -43,7 +44,9 @@ export function ApproveDialog({
     >
       <TargetPath parts={targetPath(r)} className="block text-foreground" />
       <p>
-        {granting ? (
+        {pipeline ? (
+          <>Its files are pushed to the inventories repository’s main branch straight away, checked against it as it is then. Nothing is overwritten: a file that exists stops it.</>
+        ) : granting ? (
           <>
             <span className="text-foreground">{who(r)}</span> will get{' '}
             {r.accessLevel === 'read' ? 'read access' : 'Contributor access'} to{' '}

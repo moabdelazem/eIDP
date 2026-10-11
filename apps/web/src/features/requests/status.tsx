@@ -1,4 +1,4 @@
-import { Check, CircleDashed, ClipboardList, FolderGit2, FolderKanban, KeyRound, Loader2, TriangleAlert, X, type LucideIcon } from 'lucide-react'
+import { Check, CircleDashed, ClipboardList, FolderGit2, FolderKanban, KeyRound, Loader2, TriangleAlert, Workflow, X, type LucideIcon } from 'lucide-react'
 import { isJira, whereOf, type PortalRequest, type RequestKind, type RequestStatus } from './api.ts'
 
 /** What each status is called in a badge. Access requests say Granting/Granted instead. */
@@ -16,6 +16,7 @@ export const KIND_LABEL: Record<RequestKind, string> = {
   create_project: 'Project',
   grant_access: 'Access',
   create_jira_project: 'Jira project',
+  create_pipeline: 'Pipeline',
 }
 
 export const KIND_ICON: Record<RequestKind, LucideIcon> = {
@@ -23,10 +24,13 @@ export const KIND_ICON: Record<RequestKind, LucideIcon> = {
   create_project: FolderKanban,
   grant_access: KeyRound,
   create_jira_project: ClipboardList,
+  create_pipeline: Workflow,
 }
 
 /** Nothing is created by an access request, so its badge says what it does. */
 const GRANT_LABEL: Partial<Record<RequestStatus, string>> = { approved: 'Granting', completed: 'Granted' }
+/** Nor by a pipeline request: its files are pushed to inventories. */
+const PIPELINE_LABEL: Partial<Record<RequestStatus, string>> = { approved: 'Pushing', completed: 'Pushed' }
 
 /**
  * What each status looks like: a badge fill and a dot. Red only where someone
@@ -61,7 +65,7 @@ export function StatusBadge({ status, kind }: { status: RequestStatus; kind?: Re
       className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${STATUS_TONE[status].badge}`}
     >
       <Icon className={`size-3.5 ${status === 'approved' ? 'animate-spin motion-reduce:animate-none' : ''}`} />
-      {(kind === 'grant_access' && GRANT_LABEL[status]) || STATUS_LABEL[status]}
+      {(kind === 'grant_access' && GRANT_LABEL[status]) || (kind === 'create_pipeline' && PIPELINE_LABEL[status]) || STATUS_LABEL[status]}
     </span>
   )
 }

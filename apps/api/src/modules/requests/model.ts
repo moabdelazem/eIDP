@@ -1,4 +1,5 @@
 import type { AccessLevel, RequestKind, Target as RequestBody } from '@eidp/contracts/requests'
+import type { PipelineTarget } from './pipeline/check.ts'
 
 /**
  * What a request is asked for with, and who asks.
@@ -12,7 +13,7 @@ export type { Actor } from '../../lib/actor.ts'
 
 /** What is being asked for in Azure DevOps. */
 export type AdoTarget = {
-  kind: Exclude<RequestKind, 'create_jira_project'>
+  kind: Exclude<RequestKind, 'create_jira_project' | 'create_pipeline'>
   collection: string
   project: string
   repository?: string
@@ -30,7 +31,9 @@ export type JiraTarget = {
   description?: string
 }
 
-export type Target = AdoTarget | JiraTarget
+export type { PipelineTarget } from './pipeline/check.ts'
+
+export type Target = AdoTarget | JiraTarget | PipelineTarget
 
 /** The web sends a contract Target; this stops compiling if one is ever something check() and submit() do not accept. */
 export const asTarget = (body: RequestBody): Target => body

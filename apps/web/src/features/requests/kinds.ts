@@ -79,8 +79,7 @@ export const REQUEST_TYPES: RequestType[] = [
     description: 'A build and deploy pipeline for an application',
     icon: Workflow,
     path: '/requests/new/jenkins/pipeline',
-    // Soon: what creating one involves is still to be specified.
-    kind: null,
+    kind: 'create_pipeline',
   },
 ]
 

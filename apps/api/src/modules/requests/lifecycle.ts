@@ -1,4 +1,4 @@
-import type { RequestRecord } from '@eidp/contracts/requests'
+import type { PipelinePreview, RequestRecord } from '@eidp/contracts/requests'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import { profileOf } from '../../integrations/ldap/index.ts'
 import { can, type Access } from '../access/index.ts'
@@ -8,6 +8,7 @@ import { assess, assessmentsOf, type Assessment } from './risk.ts'
 import { check, uniqueNames } from './check.ts'
 import { assertCanDecide, decidableBy, mayDecide } from './deciding.ts'
 import { execute } from './execute.ts'
+import { previewPipeline } from './pipeline/write.ts'
 import type { Actor, AdoTarget, NewRequest } from './model.ts'
 import { find, same, toRecord } from './rows.ts'
 import { requests } from './schema.ts'
@@ -41,8 +42,9 @@ export async function submit(input: NewRequest, actor: Actor): Promise<RequestRe
         collection: input.kind === 'create_jira_project' ? null : input.collection,
         project: input.project,
         projectKey: input.kind === 'create_jira_project' ? input.projectKey : null,
-        repository: input.kind === 'create_repository' ? input.repository : null,
-        description: input.description?.trim() || null,
+        repository: input.kind === 'create_repository' || input.kind === 'create_pipeline' ? input.repository : null,
+        description: input.kind === 'create_pipeline' ? null : input.description?.trim() || null,
+        pipeline: input.kind === 'create_pipeline' ? input.pipeline : null,
         justification: input.justification.trim(),
         requestedBy: actor.uid,
         requestedByName: actor.name,
@@ -229,4 +231,12 @@ export async function retry(id: string, access: Access): Promise<RequestRecord> 
   if (!rows[0]) throw new ApiError(409, 'request_not_failed', 'Only a failed request can be retried.')
   void execute(toRecord(rows[0]))
   return toRecord(rows[0])
+}
+
+/** What approving a pipeline request would write — for the people who may decide it, who read the files before approving. */
+export async function pipelinePreview(id: string, access: Access): Promise<PipelinePreview> {
+  await assertCanDecide(id, access)
+  const request = await find(id)
+  if (request.kind !== 'create_pipeline') throw new ApiError(404, 'not_a_pipeline', 'That request is not for a pipeline.')
+  return previewPipeline(request)
 }

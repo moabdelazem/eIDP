@@ -150,6 +150,16 @@ export const schema = z.object({
   INVENTORIES_REPO: z.string().min(1).default('inventories'),
   /** Working copy the sync clones into and pulls on later runs. */
   INVENTORIES_CHECKOUT: z.string().min(1).default('.cache/inventories'),
+  /**
+   * Where approved pipeline requests are written and pushed from: a working
+   * copy of its own, never the sync's, reset before every write.
+   */
+  INVENTORIES_WRITE_CHECKOUT: z.string().min(1).default('.cache/inventories-write'),
+  /** Push pipeline changes here instead of the ADO repository above — a mirror, or a local repository in tests. */
+  INVENTORIES_GIT_URL: z.string().min(1).optional(),
+  /** Who commits pipeline changes to inventories; the requester and approver are named in the message. */
+  INVENTORIES_COMMITTER_NAME: z.string().min(1).default('e-IDP'),
+  INVENTORIES_COMMITTER_EMAIL: z.string().min(3).default('e-idp@noreply.local'),
 })
 
 /**

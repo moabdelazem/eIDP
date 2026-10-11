@@ -90,6 +90,47 @@ retry just grants again — both operations are idempotent. The form is its own
 page (`grant-access-page.tsx`); the badge says Granting/Granted, not
 Creating/Created.
 
+**Pipelines** (`create_pipeline`) write an application into the inventories
+repository for a repository that already exists — the old portal's "create
+new application". The request carries the repository and a `pipeline`
+document (application, technology, version, deploy target, library, the
+technology's own fields, and for a project new to inventories its team.yml
+and namespaces); `requests_pipeline_check` keeps that column to this kind.
+
+- **The technology registry** (`modules/requests/pipeline/technologies.ts`)
+  is the old `TECH_CONFIG` and its templates in one place: each technology's
+  label, versions, fields and deploy targets, and a function writing its
+  files; namespaces are registered per deploy target. The form is built from
+  it (`GET /requests/pipeline/technologies`), so a technology added there is
+  on the form with its fields. Until one is registered the form says none is
+  set up.
+- **`check()`** refuses an application name inventories would misread — one
+  starting with an environment prefix (`prd_api` is read as the `prd`
+  override of `api`), or `all` — an unknown technology, a missing version or
+  field, a repository ADO does not have, an application the catalog already
+  has, a pipeline already asked for, and a project whose new-or-existing
+  answer does not match the catalog (`GET /requests/pipeline/project`).
+- **The files are worked out at approval, not at filing** (`files.ts`), from
+  inventories as they are then; anything that appeared while the request
+  waited is a conflict, and nothing is ever overwritten. Deciders read the
+  exact files first (`GET /requests/:id/pipeline`, the request page's
+  *What approving writes*); the requester never sees them.
+- **Approval pushes straight to the default branch** (`write.ts`), as the old
+  portal did: in a working copy of its own (`INVENTORIES_WRITE_CHECKOUT`,
+  never the catalog sync's), reset to the remote before every write, one
+  writer at a time across replicas (`inTurn` on lock `inventories-write`). A
+  push overtaken by someone else's starts again from a fresh copy, three
+  times. Every commit carries `e-IDP-Request: <id>`, and a retry looks for
+  it first, so a push that landed but was never recorded is found rather
+  than made twice. The commit is the request's result, and the catalog is
+  synced at once. `INVENTORIES_GIT_URL` points the writer elsewhere — a
+  mirror, or the local repository the tests push to. The ADO service
+  account's PAT needs Code (read & write) on the inventories repository.
+- `team.yml` is written the way the repository spells it — the auto-deploy
+  flag quoted, an empty list as one empty item. The application's own files
+  and the namespaces come from the registry's templates, ported from the old
+  portal.
+
 **Every request is assessed for its approver** (`modules/requests/risk.ts`),
 in the background the moment it is filed, and shown only to people who may
 decide it — on the approval card, in the approve dialog when it is not low,

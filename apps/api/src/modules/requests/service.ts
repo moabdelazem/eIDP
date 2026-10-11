@@ -15,3 +15,6 @@ export type { Actor, AdoTarget, JiraTarget, NewRequest, Target } from './model.t
 export { check } from './check.ts'
 export { HISTORY_LIMIT, approve, cancel, get, listHistory, listMine, listPool, reassess, reject, retry, submit } from './lifecycle.ts'
 export { recoverInterrupted } from './execute.ts'
+export { pipelineProject } from './pipeline/check.ts'
+export { listTechnologies } from './pipeline/technologies.ts'
+export { pipelinePreview } from './lifecycle.ts'

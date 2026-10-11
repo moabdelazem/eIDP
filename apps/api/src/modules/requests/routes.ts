@@ -4,6 +4,36 @@ import { validate } from '../../lib/validate.ts'
 import { accessFrom, requireAuth, requirePermission, type AppEnv } from '../../middleware/auth.ts'
 import * as requests from './service.ts'
 
+const names = z.array(z.string().trim().min(1).max(256)).max(100)
+
+/** A pipeline: what is checked against the technology registry is the service's (`pipeline/check.ts`). */
+const Pipeline = z.object({
+  application: z.string().max(64),
+  deployTarget: z.enum(['OCP', 'K8s']),
+  technology: z.string().min(1).max(64),
+  version: z.string().max(32).nullable(),
+  library: z.boolean(),
+  fields: z.record(z.string().max(64), z.string().max(512)),
+  newProject: z
+    .object({
+      teams: z.object({
+        company: z.string().max(256),
+        devTeam: z.string().max(256),
+        qcTeam: z.string().max(256),
+        uatTeam: z.string().max(256),
+        prdTeam: z.string().max(256),
+        automaticDeployToQc: z.boolean(),
+        devTeamList: names,
+        opsTeamList: names,
+        prdOnly: names,
+        prdApprovers: names,
+        projectManagers: names,
+      }),
+      namespaces: z.record(z.string().max(32), z.object({ name: z.string().max(253), user: z.string().max(256).nullable() })),
+    })
+    .nullable(),
+})
+
 const Target = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('create_repository'),
@@ -24,6 +54,13 @@ const Target = z.discriminatedUnion('kind', [
     // Always the whole project, always Contribute — neither is the
     // requester's choice, so neither is accepted.
     grantees: z.array(z.string().max(256)).max(100),
+  }),
+  z.object({
+    kind: z.literal('create_pipeline'),
+    collection: z.string().min(1),
+    project: z.string().min(1),
+    repository: z.string().min(1),
+    pipeline: Pipeline,
   }),
   z.object({
     kind: z.literal('create_jira_project'),
@@ -63,6 +100,16 @@ export const requestRoutes = new Hono<AppEnv>()
 
   .get('/mine', async (c) => c.json(await requests.listMine(actor(c).uid)))
 
+  // ---- pipelines ----------------------------------------------------------
+
+  /** The technologies a pipeline can be asked for, and what each asks — the form is built from it. */
+  .get('/pipeline/technologies', requirePermission('requests.create'), (c) => c.json(requests.listTechnologies()))
+
+  /** Whether inventories has the project yet, so the form knows to ask for its teams and namespaces. */
+  .get('/pipeline/project', requirePermission('requests.create'), validate('query', z.object({ project: z.string().min(1).max(256) })), async (c) =>
+    c.json(await requests.pipelineProject(c.req.valid('query').project)),
+  )
+
   // ---- deciding ---------------------------------------------------------
   // Reachable by anyone who may decide something — DevOps everywhere, a team
   // lead within their teams. Which requests is the service's call.
@@ -83,6 +130,9 @@ export const requestRoutes = new Hono<AppEnv>()
   .post('/:id/assess', decider, async (c) => c.json(await requests.reassess(c.req.param('id'), await accessFrom(c))))
 
   .post('/:id/retry', decider, async (c) => c.json(await requests.retry(c.req.param('id'), await accessFrom(c))))
+
+  /** What approving a pipeline request would write into inventories, as they are now. */
+  .get('/:id/pipeline', decider, async (c) => c.json(await requests.pipelinePreview(c.req.param('id'), await accessFrom(c))))
 
   // ---- the requester's own, or DevOps ------------------------------------
 

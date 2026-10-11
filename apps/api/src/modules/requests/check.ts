@@ -6,6 +6,7 @@ import { and, eq, inArray, or, sql, type SQLWrapper } from 'drizzle-orm'
 import { db } from '../../lib/db.ts'
 import { jiraKeyProblem, jiraNameProblem, nameProblem } from './rules.ts'
 import { type AdoTarget, type JiraTarget, MAX_GRANTEES, type Target } from './model.ts'
+import { checkPipeline } from './pipeline/check.ts'
 import { requests } from './schema.ts'
 import { same } from './rows.ts'
 
@@ -20,6 +21,7 @@ const open = inArray(requests.status, ['pending', 'approved'])
  */
 export async function check(input: Target): Promise<Check> {
   if (input.kind === 'create_jira_project') return checkJiraProject(input)
+  if (input.kind === 'create_pipeline') return checkPipeline(input)
   if (input.kind === 'grant_access') return checkGrant(input)
   const creatingRepo = input.kind === 'create_repository'
   const name = creatingRepo ? (input.repository ?? '') : input.project

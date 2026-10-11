@@ -87,6 +87,11 @@ export async function factsFor(r: RequestRecord): Promise<Fact[]> {
         caution(`${outside.length} of ${grantees.length} ${outside.length === 1 ? 'is' : 'are'} outside the teams that own ${r.project}: ${outside.join(', ')}.`)
       } else info(`Everyone named is in a team that owns ${r.project}.`)
     }
+  } else if (r.kind === 'create_pipeline') {
+    // The repository exists by design, so there is no similar name to look for; what approving changes is inventories.
+    if (production) info(`${r.project} deploys to production.`)
+    if (r.pipeline!.newProject) caution(`${r.project} is new to inventories: approving also writes its team.yml${r.pipeline!.newProject.namespaces && Object.keys(r.pipeline!.newProject.namespaces).length ? ' and namespaces' : ''}.`)
+    if (r.pipeline!.library) info(`${r.pipeline!.application} is a library: built and published, not deployed.`)
   } else {
     if (production) info(`${r.project} deploys to production.`)
     if (r.teamGroup) info(`${r.teamGroup} gets Contributor with ${r.requestedByName}.`)
@@ -191,6 +196,10 @@ function describe(r: RequestRecord): string {
       return `A new Jira project ${r.project} with key ${r.projectKey}.`
     case 'grant_access':
       return `Contribute access to the whole Azure DevOps project ${r.project} (${r.collection}) for: ${(r.grantees ?? []).join(', ')}.`
+    case 'create_pipeline': {
+      const p = r.pipeline!
+      return `A ${p.technology} pipeline deploying to ${p.deployTarget} for the application ${p.application}, from repository ${r.repository} in ${r.project} (${r.collection})${p.newProject ? ', making it a new project in inventories' : ''}.`
+    }
   }
 }
 
