@@ -14,9 +14,17 @@ import type { DeployTarget } from '@eidp/contracts/requests'
  * registers these:
  * - `artifact_id` and `nuget_name` default to the application name;
  * - Maven's `group_path` is never asked for — it is always `group_id`;
- * - only DBScripts skips the namespaces (it writes
- *   `host_vars/localhost/vars.yml` with `ansible_connection: local` instead),
- *   even though Database_Microsoft is a database too.
+ * - only DBScripts skipped the namespaces (writing
+ *   `host_vars/localhost/vars.yml` with `ansible_connection: local` instead);
+ *   Database_Microsoft asked for them though it deploys from the host too.
+ *   That was a bug: here every database skips them (`noNamespacesOf`).
+ *
+ * The references are where the templates are *extracted from*, once, not
+ * what is read at approval. The old generator copied the live application
+ * each time, so an edit, rename or deletion of South_Cairo_Token_Job changed
+ * or broke every pipeline after it, and its own hostnames, ports and database
+ * names came along. The templates live in e-IDP, versioned and reviewed; a
+ * reference that has moved on is reported as drift, not followed.
  */
 
 /** An application in inventories: `<project>/group_vars/<app>`. */
@@ -174,6 +182,9 @@ export const FIELD_RULES: Record<string, { label: string; pattern: string; help:
   group_id: { label: 'Group ID', pattern: '^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$', help: 'A Java package name, like eg.com.efinance.billing.' },
   nuget_name: { label: 'NuGet package', pattern: '^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$', help: 'Letters, digits, dots, dashes and underscores.', default: '{application}' },
 }
+
+/** A database deploys from the host: no namespaces, for either kind. */
+export const noNamespacesOf = (d: TechnologyDefinition): boolean => Boolean(d.isDatabase)
 
 /** The deploy targets a technology has a reference for. */
 export const targetsOf = (d: TechnologyDefinition): DeployTarget[] => (d.k8sInventoryReference ? ['OCP', 'K8s'] : ['OCP'])

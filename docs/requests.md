@@ -160,6 +160,9 @@ the old generator's output, not its traps:
 | `group_id`, `artifact_id`, `nuget_name` as typed | Checked against `FIELD_RULES` on the form and at filing |
 | Copied the reference app's files with whatever credential sat in them | A file carrying a literal value for a credential-named key stops the write (`credentialsIn`); placeholders, `{{ … }}` and vaulted values pass |
 | Names like `prd_api` or `all`, and case-only duplicates, accepted | Refused: inventories would read them as an override or the project's own files |
+| Copied a live reference application at every request: an edit or rename there changed or broke every pipeline after it, and its hostnames, ports and DB names came along | Templates extracted once into e-IDP, versioned and reviewed; a reference that moved on is reported as drift |
+| Namespace tokens written as `changeme` and left to memory; deploys failed until someone remembered | Still `changeme` (never a real token in inventories), but the completed request lists the tokens to set as an open follow-up |
+| DBScripts skipped namespaces but Database_Microsoft did not | Every database skips them and gets `host_vars/localhost` |
 | Auto-deploy to QC as a string; a failed submit could pass silently | An explicit yes/no, and a request is filed in one transaction or not at all |
 
 **Every request is assessed for its approver** (`modules/requests/risk.ts`),
