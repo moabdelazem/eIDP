@@ -35,7 +35,7 @@ const TEAMS: ProjectTeams = {
   qcTeam: '',
   uatTeam: '',
   prdTeam: '',
-  automaticDeployToQc: false,
+  automaticDeployToQc: null,
   devTeamList: [],
   opsTeamList: [],
   prdOnly: [],
@@ -404,12 +404,20 @@ export function PipelineRequestPage() {
                   <Input id={`team-${key}`} value={teams[key]} onChange={(event) => setTeams((current) => ({ ...current, [key]: event.target.value }))} autoComplete="off" />
                 </Field>
               ))}
-              <div className="flex items-center gap-2 self-end pb-2">
-                <Checkbox id="auto-qc" checked={teams.automaticDeployToQc} onCheckedChange={(value) => setTeams((current) => ({ ...current, automaticDeployToQc: value === true }))} />
-                <label htmlFor="auto-qc" className="text-sm">
-                  Deploy to QC automatically
-                </label>
-              </div>
+              <Field label="Deploy to QC automatically" htmlFor="auto-qc">
+                <Select
+                  value={teams.automaticDeployToQc === null ? '' : String(teams.automaticDeployToQc)}
+                  onValueChange={(value) => value && setTeams((current) => ({ ...current, automaticDeployToQc: value === 'true' }))}
+                >
+                  <SelectTrigger id="auto-qc" className="w-full">
+                    <SelectValue placeholder="Choose" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">Yes</SelectItem>
+                    <SelectItem value="false">No</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               {(

@@ -1,11 +1,11 @@
 import type { PipelinePreview, RequestRecord } from '@eidp/contracts/requests'
-import { readdir, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readdir, readFile, stat } from 'node:fs/promises'
+import { join, relative } from 'node:path'
 import { commitAndPush, findCommit, freshCopy, inventoriesRemote, webUrlFor } from '../../../integrations/ado/index.ts'
 import { config } from '../../../lib/config.ts'
 import { inTurn } from '../../../lib/locks.ts'
 import { planFiles, type Plan } from './files.ts'
-import { technology, type PipelineContext } from './technologies.ts'
+import { technology, type Inventories, type PipelineContext } from './technologies.ts'
 
 /**
  * Writing an approved pipeline request into the inventories repository: the
@@ -38,7 +38,7 @@ export async function writePipeline(request: RequestRecord): Promise<{ commit: s
       const { branch } = await freshCopy(remote, checkout)
       const landed = await findCommit(checkout, marker(request.id))
       if (landed) return { commit: landed, files: [] }
-      const plan = await planFiles(await contextFor(request, checkout), existsIn(checkout))
+      const plan = await planFiles(await contextFor(request, checkout), inventoriesAt(checkout))
       if (plan.errors.length) throw new Error(plan.errors.join(' '))
       const pushed = await commitAndPush(remote, checkout, branch, plan.files, message(request), {
         name: config.INVENTORIES_COMMITTER_NAME,
@@ -61,7 +61,7 @@ export async function previewPipeline(request: RequestRecord): Promise<PipelineP
     await freshCopy(inventoriesRemote(), checkout)
     const landed = await findCommit(checkout, marker(request.id))
     if (landed) return { files: [], errors: [], commit: landed }
-    const plan = await planFiles(await contextFor(request, checkout), existsIn(checkout))
+    const plan = await planFiles(await contextFor(request, checkout), inventoriesAt(checkout))
     return { ...plan, commit: null }
   })
 }
@@ -99,11 +99,29 @@ export async function systemDir(checkout: string, project: string): Promise<stri
   return dirs.find((d) => d.isDirectory() && d.name.toLowerCase() === project.toLowerCase())?.name ?? project
 }
 
-const existsIn = (checkout: string) => (path: string) =>
-  stat(join(checkout, path)).then(
-    () => true,
-    () => false,
-  )
+/** The working copy, read-only, as the templates see it. */
+function inventoriesAt(checkout: string): Inventories {
+  const inside = (path: string) => {
+    const full = join(checkout, path)
+    if (relative(checkout, full).startsWith('..')) throw new Error(`${path} is outside the repository`)
+    return full
+  }
+  return {
+    exists: (path) =>
+      stat(inside(path)).then(
+        () => true,
+        () => false,
+      ),
+    read: (path) => readFile(inside(path), 'utf8').catch(() => null),
+    list: async (dir) => {
+      const entries = await readdir(inside(dir), { recursive: true, withFileTypes: true }).catch(() => [])
+      return entries
+        .filter((e) => e.isFile())
+        .map((e) => relative(checkout, join(e.parentPath, e.name)))
+        .sort()
+    },
+  }
+}
 
 function message(request: RequestRecord): string {
   const spec = request.pipeline!

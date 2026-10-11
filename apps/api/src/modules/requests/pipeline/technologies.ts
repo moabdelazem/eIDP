@@ -1,5 +1,6 @@
 import type { DeployTarget, Namespace, PipelineSpec, Technology } from '@eidp/contracts/requests'
 import type { FileWrite } from '../../../integrations/ado/index.ts'
+import { NAMESPACE_ENVIRONMENTS } from './definitions.ts'
 
 /**
  * The build technologies a pipeline can be asked for, and what each writes
@@ -22,15 +23,27 @@ export type PipelineContext = {
   requestedBy: { uid: string; name: string }
 }
 
-export type TechnologyTemplate = Technology & {
-  /** The application's own files — `group_vars/<application>/…` — paths relative to the repository root. */
-  files: (ctx: PipelineContext) => FileWrite[]
+/**
+ * The inventories repository as it is at the moment of planning, read-only:
+ * the old generator copied a reference application and patched it, so a
+ * template reads before it writes. Paths are relative to the repository root.
+ */
+export type Inventories = {
+  exists: (path: string) => Promise<boolean>
+  /** A file's text, or null when there is none. */
+  read: (path: string) => Promise<string | null>
+  /** The files under a directory, recursively, relative to the root; empty when there is none. */
+  list: (dir: string) => Promise<string[]>
 }
 
-/** A new project's namespaces for one deploy target: the environments asked for, and the files they become. */
+export type TechnologyTemplate = Technology & {
+  /** The application's own files — `group_vars/<application>/…` — paths relative to the repository root. */
+  files: (ctx: PipelineContext, inventories: Inventories) => FileWrite[] | Promise<FileWrite[]>
+}
+
+/** A new project's namespaces for one deploy target: the files the names become. Which environments are asked for is `definitions.ts`'s. */
 export type NamespaceTemplate = {
-  environments: { key: string; label: string }[]
-  files: (ctx: PipelineContext, namespaces: Record<string, Namespace>) => FileWrite[]
+  files: (ctx: PipelineContext, namespaces: Record<string, Namespace>, inventories: Inventories) => FileWrite[] | Promise<FileWrite[]>
 }
 
 const technologies = new Map<string, TechnologyTemplate>()
@@ -55,6 +68,7 @@ export function listTechnologies(): Technology[] {
     .sort((a, b) => a.label.localeCompare(b.label))
 }
 
+/** The environments a new project names a namespace for, on a deploy target — the old portal's, in its order. */
 export function environmentsFor(target: DeployTarget): { key: string; label: string }[] {
-  return namespaceTemplates.get(target)?.environments ?? []
+  return NAMESPACE_ENVIRONMENTS[target].map(({ key, label }) => ({ key, label }))
 }

@@ -19,7 +19,8 @@ export type ProjectTeams = {
   qcTeam: string
   uatTeam: string
   prdTeam: string
-  automaticDeployToQc: boolean
+  /** An explicit choice, as the old form had it: null until made, and a request is refused while it is. */
+  automaticDeployToQc: boolean | null
   devTeamList: string[]
   opsTeamList: string[]
   prdOnly: string[]

@@ -22,7 +22,7 @@ const Pipeline = z.object({
         qcTeam: z.string().max(256),
         uatTeam: z.string().max(256),
         prdTeam: z.string().max(256),
-        automaticDeployToQc: z.boolean(),
+        automaticDeployToQc: z.boolean().nullable(),
         devTeamList: names,
         opsTeamList: names,
         prdOnly: names,

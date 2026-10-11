@@ -104,12 +104,28 @@ and namespaces); `requests_pipeline_check` keeps that column to this kind.
   it (`GET /requests/pipeline/technologies`), so a technology added there is
   on the form with its fields. Until one is registered the form says none is
   set up.
+- **`definitions.ts` is the old `tech_config.py` as data**, key for key so the
+  two can be compared: per technology, the application in inventories it is
+  copied from (per deploy target — no K8s reference, no K8s), the keys patched
+  from the version (`versionTagOverrides`, `versionFieldOverrides`), and its
+  special cases (`appPathReferenceMap`, `dockerfileByTarget`,
+  `generatedFiles`, `isDatabase`). The old generator kept no templates of its
+  own: it copied a real application of the same kind and patched it. So a
+  template is handed the inventories working copy, read-only (`Inventories`:
+  `exists`, `read`, `list`), as well as the request. The environments a new
+  project names namespaces for are the old ones, in their order — OCP `dev`,
+  `qc`, `uat`, `prd`, `prd_dr`; K8s adds `preprod` — and the application name
+  rule is the old `APP_NAME_REGEX`, at most 50. No technology is registered
+  from it until the copy-and-patch is ported from `new_applications.py`, so
+  nobody can file a request that cannot be written as the old portal would.
 - **`check()`** refuses an application name inventories would misread — one
   starting with an environment prefix (`prd_api` is read as the `prd`
   override of `api`), or `all` — an unknown technology, a missing version or
   field, a repository ADO does not have, an application the catalog already
   has, a pipeline already asked for, and a project whose new-or-existing
-  answer does not match the catalog (`GET /requests/pipeline/project`).
+  answer does not match the catalog (`GET /requests/pipeline/project`). For a
+  new project every team is required, and so is the auto-deploy-to-QC answer:
+  it starts unset, as on the old form, rather than defaulting to no.
 - **The files are worked out at approval, not at filing** (`files.ts`), from
   inventories as they are then; anything that appeared while the request
   waited is a conflict, and nothing is ever overwritten. Deciders read the

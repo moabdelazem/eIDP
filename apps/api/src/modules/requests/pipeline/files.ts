@@ -1,6 +1,6 @@
 import type { PipelineFile, ProjectTeams } from '@eidp/contracts/requests'
 import { ENVIRONMENTS } from '../../../integrations/inventories/parse.ts'
-import { namespacesFor, technology, type PipelineContext } from './technologies.ts'
+import { namespacesFor, technology, type Inventories, type PipelineContext } from './technologies.ts'
 
 /**
  * What a pipeline request writes into inventories, worked out from the
@@ -15,10 +15,8 @@ import { namespacesFor, technology, type PipelineContext } from './technologies.
 
 export type Plan = { files: PipelineFile[]; errors: string[] }
 
-/** Whether a path exists in the repository, relative to its root. */
-export type Exists = (path: string) => Promise<boolean>
-
-export async function planFiles(ctx: PipelineContext, exists: Exists): Promise<Plan> {
+export async function planFiles(ctx: PipelineContext, inventories: Inventories): Promise<Plan> {
+  const { exists } = inventories
   const { spec } = ctx
   const errors: string[] = []
   const template = technology(spec.technology)
@@ -27,17 +25,18 @@ export async function planFiles(ctx: PipelineContext, exists: Exists): Promise<P
   const files: PipelineFile[] = []
   const appDir = `${ctx.system}/group_vars/${spec.application}`
   if (await exists(appDir)) errors.push(`${spec.application} already has files in inventories (${appDir}).`)
-  files.push(...template.files(ctx))
+  files.push(...(await template.files(ctx, inventories)))
 
   if (spec.newProject) {
     if (await exists(`${ctx.system}/group_vars/all`)) {
       errors.push(`${ctx.system} already has its project files; it is not a new project.`)
     }
+    if (spec.newProject.teams.automaticDeployToQc === null) errors.push('Whether QC is deployed to automatically was never chosen.')
     files.push({ path: `${ctx.system}/group_vars/all/team.yml`, content: teamYml(spec.newProject.teams) })
     if (!template.noNamespaces) {
       const namespaces = namespacesFor(spec.deployTarget)
       if (!namespaces) errors.push(`Namespaces for ${spec.deployTarget} are not set up in the portal.`)
-      else files.push(...namespaces.files(ctx, spec.newProject.namespaces))
+      else files.push(...(await namespaces.files(ctx, spec.newProject.namespaces, inventories)))
     }
   }
 

@@ -6,12 +6,11 @@ import { catalogApplications, catalogSystems } from '../../catalog/index.ts'
 import { same } from '../rows.ts'
 import { requests } from '../schema.ts'
 import { overridePrefix } from './files.ts'
-import { environmentsFor, technology } from './technologies.ts'
+import { APPLICATION_MAX, APPLICATION_NAME } from './definitions.ts'
+import { environmentsFor, namespacesFor, technology } from './technologies.ts'
 
 export type PipelineTarget = { kind: 'create_pipeline'; collection: string; project: string; repository: string; pipeline: PipelineSpec }
 
-/** What inventories would accept as an application's directory name. */
-const APPLICATION = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const VERSION = /^[\w.+-]{1,32}$/
 
 /**
@@ -24,7 +23,8 @@ export async function checkPipeline(input: PipelineTarget): Promise<Check> {
   const spec = input.pipeline
   const fail = (reason: string): Check => ({ ok: false, reason })
 
-  if (!APPLICATION.test(spec.application)) return fail('An application name is letters, digits, dots, dashes and underscores, starting with a letter or digit, at most 64.')
+  if (spec.application.length > APPLICATION_MAX) return fail(`An application name is at most ${APPLICATION_MAX} characters; this one is ${spec.application.length}.`)
+  if (!APPLICATION_NAME.test(spec.application)) return fail('An application name is letters, digits, dots, dashes and underscores, starting with a letter or digit — no spaces.')
   if (spec.application.toLowerCase() === 'all') return fail('“all” holds a project’s own files in inventories; choose another name.')
   const prefix = overridePrefix(spec.application)
   if (prefix) return fail(`Inventories reads a name starting with “${prefix}_” as the ${prefix} override of another application. Choose a name without it.`)
@@ -57,9 +57,10 @@ export async function checkPipeline(input: PipelineTarget): Promise<Check> {
       ] as const
     ).find(([, value]) => !value.trim())
     if (missing) return fail(`${missing[0]} is needed for a new project.`)
+    if (t.automaticDeployToQc === null) return fail('Choose whether builds deploy to QC automatically.')
     if (!template.noNamespaces) {
+      if (!namespacesFor(spec.deployTarget)) return fail(`Namespaces for ${spec.deployTarget} are not set up in the portal.`)
       const environments = environmentsFor(spec.deployTarget)
-      if (!environments.length) return fail(`Namespaces for ${spec.deployTarget} are not set up in the portal.`)
       const empty = environments.find((env) => !spec.newProject!.namespaces[env.key]?.name.trim())
       if (empty) return fail(`Name the ${empty.label} namespace.`)
     }

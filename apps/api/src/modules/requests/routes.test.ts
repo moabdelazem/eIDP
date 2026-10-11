@@ -47,6 +47,8 @@ const inventoriesRemote = mkdtempSync(join(tmpdir(), 'eidp-inventories-'))
   cpSync(fileURLToPath(new URL('../../integrations/inventories/__fixtures__/repo', import.meta.url)), seed, { recursive: true })
   mkdirSync(join(seed, 'PipeHome/group_vars/all'), { recursive: true })
   writeFileSync(join(seed, 'PipeHome/group_vars/all/project.yml'), 'project_name: PipeHome\n')
+  mkdirSync(join(seed, 'Reference/group_vars/ref-app'), { recursive: true })
+  writeFileSync(join(seed, 'Reference/group_vars/ref-app/resources.yml'), 'name: ref-app\nreplicas: 1\n')
   git(seed, 'init', '-q', '-b', 'main')
   git(seed, 'add', '.')
   git(seed, '-c', 'user.name=seed', '-c', 'user.email=seed@x', 'commit', '-q', '-m', 'seed')
@@ -647,16 +649,14 @@ registerTechnology({
   fields: [{ name: 'artifact_id', label: 'Artifact ID', options: null, default: '{application}', help: null }],
   targets: ['OCP'],
   noNamespaces: false,
-  files: (ctx) => [
+  files: async (ctx, inventories) => [
+    // Copied from a reference application and patched, as the ported templates do.
+    { path: `${ctx.system}/group_vars/${ctx.spec.application}/resources.yml`, content: (await inventories.read('Reference/group_vars/ref-app/resources.yml'))!.replace('ref-app', ctx.spec.application) },
     { path: `${ctx.system}/group_vars/${ctx.spec.application}/cicd.yml`, content: `repository_name: ${ctx.repository}\nbuild_technology: TestTech\n` },
     { path: `${ctx.system}/group_vars/${ctx.spec.application}/TestTech.yml`, content: `artifact_id: ${ctx.spec.fields.artifact_id}\nversion: "${ctx.spec.version}"\n` },
   ],
 })
 registerNamespaces('OCP', {
-  environments: [
-    { key: 'dev', label: 'Development' },
-    { key: 'prd', label: 'Production' },
-  ],
   files: (ctx, namespaces) =>
     Object.entries(namespaces).map(([env, ns]) => ({ path: `${ctx.system}/host_vars/${env}_ocp/vars.yml`, content: `namespace: ${ns.name}\ntoken: changeme\n` })),
 })
@@ -709,9 +709,10 @@ test('pipelines: the form learns the technologies and whether the project is in 
   assert.ok(tech && !('files' in tech), 'what to ask, never the templates')
   const home = await json<{ exists: boolean; system: string }>(await call('bob', 'GET', '/requests/pipeline/project?project=pipehome'))
   assert.deepEqual([home.exists, home.system], [true, 'PipeHome'])
-  const lab = await json<{ exists: boolean; environments: Record<string, unknown[]> }>(await call('bob', 'GET', '/requests/pipeline/project?project=PipeLab'))
+  const lab = await json<{ exists: boolean; environments: Record<string, { key: string }[]> }>(await call('bob', 'GET', '/requests/pipeline/project?project=PipeLab'))
   assert.equal(lab.exists, false)
-  assert.equal(lab.environments.OCP!.length, 2)
+  assert.deepEqual(lab.environments.OCP!.map((e) => e.key), ['dev', 'qc', 'uat', 'prd', 'prd_dr'])
+  assert.deepEqual(lab.environments.K8s!.map((e) => e.key), ['dev', 'qc', 'uat', 'preprod', 'prd', 'prd_dr'])
 })
 
 test('pipelines: the check refuses what inventories or the registry could not take', async () => {
@@ -724,7 +725,10 @@ test('pipelines: the check refuses what inventories or the registry could not ta
   assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { application: 'Taken-API' })), /already has an application called taken-api/)
   assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { newProject: { teams, namespaces: {} } })), /already has its project files/)
   assert.match(await reason(pipelineRequest('PipeLab', 'lab-api')), /new to inventories/)
-  assert.match(await reason(pipelineRequest('PipeLab', 'lab-api', { newProject: { teams, namespaces: { dev: { name: 'lab-dev', user: null } } } })), /Production namespace/)
+  assert.match(await reason(pipelineRequest('PipeLab', 'lab-api', { newProject: { teams, namespaces: { dev: { name: 'lab-dev', user: null } } } })), /Name the QC namespace/)
+  assert.match(await reason(pipelineRequest('PipeLab', 'lab-api', { newProject: { teams: { ...teams, automaticDeployToQc: null }, namespaces: {} } })), /deploy to QC automatically/)
+  assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { application: 'pipe api' })), /no spaces/)
+  assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { application: 'a'.repeat(51) })), /at most 50/)
   assert.equal(await reason(pipelineRequest('PipeHome', 'pipe-api')), 'ok')
 })
 
@@ -737,7 +741,7 @@ test('pipelines: approved, its files are pushed to inventories in one commit tha
 
   const preview = await json<{ files: { path: string }[]; errors: string[]; commit: string | null }>(await call('alice', 'GET', `/requests/${filed.id}/pipeline`))
   assert.deepEqual(preview.errors, [])
-  assert.deepEqual(preview.files.map((f) => f.path).sort(), ['PipeHome/group_vars/pipe-api/TestTech.yml', 'PipeHome/group_vars/pipe-api/cicd.yml'])
+  assert.deepEqual(preview.files.map((f) => f.path).sort(), ['PipeHome/group_vars/pipe-api/TestTech.yml', 'PipeHome/group_vars/pipe-api/cicd.yml', 'PipeHome/group_vars/pipe-api/resources.yml'])
   assert.equal(inventoriesFile('PipeHome/group_vars/pipe-api/cicd.yml'), null, 'a preview writes nothing')
 
   await call('alice', 'POST', `/requests/${filed.id}/approve`, {})
@@ -745,6 +749,7 @@ test('pipelines: approved, its files are pushed to inventories in one commit tha
   assert.equal(done.status, 'completed', done.error)
   assert.match(done.resultUrl!, /#[0-9a-f]{40}$/)
   assert.equal(inventoriesFile('PipeHome/group_vars/pipe-api/TestTech.yml'), 'artifact_id: pipe-api\nversion: "2"\n')
+  assert.equal(inventoriesFile('PipeHome/group_vars/pipe-api/resources.yml'), 'name: pipe-api\nreplicas: 1\n', 'copied from the reference and patched')
   const log = inventoriesLog()
   assert.match(log, /Add the pipe-api pipeline \(Test Tech on OCP\)/)
   assert.match(log, /Requested by .+ \(bob\); approved by .+ \(alice\)/)
@@ -759,7 +764,16 @@ test('pipelines: approved, its files are pushed to inventories in one commit tha
 
 test('pipelines: a new project also gets its team.yml and namespaces', async () => {
   const body = pipelineRequest('PipeLab', 'lab-api', {
-    newProject: { teams, namespaces: { dev: { name: 'lab-dev', user: null }, prd: { name: 'lab-prd', user: 'svc-lab' } } },
+    newProject: {
+      teams,
+      namespaces: {
+        dev: { name: 'lab-dev', user: null },
+        qc: { name: 'lab-qc', user: null },
+        uat: { name: 'lab-uat', user: null },
+        prd: { name: 'lab-prd', user: 'svc-lab' },
+        prd_dr: { name: 'lab-prd', user: 'svc-lab' },
+      },
+    },
   })
   const filed = await json<{ id: string }>(await call('bob', 'POST', '/requests', body))
   await call('alice', 'POST', `/requests/${filed.id}/approve`, {})
