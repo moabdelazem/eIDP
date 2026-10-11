@@ -189,7 +189,17 @@ stage that never ran is reached by a dashed line. A stage opens the log at its
 `[Pipeline] { (name)` heading (a branch's `Branch: name`, else its stage's).
 The sync's agent lookup still reads `wfapi` only — the tree is one more call
 per build it does not need. The fake serves the tree for the `payments`
-folder only, so both paths stay tested. Then parameters (each a
+folder only, so both paths stay tested. **Console notes are not text.** Jenkins
+threads hidden markup through a log as it writes it — the link on an agent's
+name, a step's annotation — each `ESC[8m ha:////<base64> ESC[0m`. The HTML
+console renders them; `consoleText` and `progressiveText` keep them verbatim,
+and an ANSI strip takes only the two escape codes, leaving the base64 in the
+line. "Running on <note>devops08" once stored the note as the agent's name
+and showed it in the log viewer. `stripNotes` (integrations/jenkins) takes
+them out wherever a log is read — before `agentsInLog`, before the tail is
+kept — and a note a progressive read cut in half is completed by the next
+read rather than shown. The fake writes notes as Jenkins does, so the tests
+see real logs; migration 0004 cleaned the names already stored. Then parameters (each a
 link to every build that had it), commits, agent, and the last 256 KB of the
 log in the log viewer — opened at the first error, with find, error-to-error
 jumps, errors-with-context, hiding `[Pipeline]` steps, and wrap. Find wins over

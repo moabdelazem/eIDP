@@ -322,6 +322,21 @@ async function buildStages(job: string, number: number): Promise<Stage[]> {
   }))
 }
 
+/**
+ * Jenkins' console notes: markup it threads through a log as it writes it —
+ * the link on an agent's name, a step's annotation — each a serialized Java
+ * object between "conceal" and "reset": ESC[8m ha:////<base64> ESC[0m. The
+ * HTML console renders them; the text log keeps them verbatim, and an ANSI
+ * strip removes only the two escape codes, leaving the base64 in the line —
+ * in "Running on <note>devops08", in the agent's name. Taken out wherever a
+ * log is read, before anything parses it.
+ */
+const CONSOLE_NOTE = /\x1b\[8mha:[A-Za-z0-9+/=]*\x1b\[0m/g
+/** A note a progressive read cut off at its end; the next read completes it. */
+const PARTIAL_NOTE = /\x1b\[8mha:[A-Za-z0-9+/=]*$/
+
+export const stripNotes = (log: string): string => log.replace(CONSOLE_NOTE, '')
+
 /** How the portal names Jenkins' own node, wherever Jenkins leaves it blank. */
 export const BUILT_IN = 'built-in'
 /** Enough of a log's start to hold its "Running on" lines. */
@@ -348,7 +363,7 @@ export async function pipelineAgents(job: string, number: number): Promise<strin
 
 /** "Running on linux-02 in /var/…" → linux-02; Jenkins' own node reads "Running on Jenkins". */
 export function agentsInLog(log: string): string[] {
-  const names = [...log.matchAll(/^Running on (.+?) in \S/gm)].map((m) => (m[1] === 'Jenkins' ? BUILT_IN : m[1]!.trim()))
+  const names = [...stripNotes(log).matchAll(/^Running on (.+?) in \S/gm)].map((m) => (m[1] === 'Jenkins' ? BUILT_IN : m[1]!.trim()))
   return [...new Set(names)]
 }
 
@@ -429,23 +444,24 @@ export async function logTail(job: string, number: number, maxBytes = LOG_TAIL_B
   if (known?.done) {
     tails.delete(key)
     tails.set(key, known)
-    return { text: known.text, truncated: known.truncated }
+    return { text: known.text.replace(PARTIAL_NOTE, ''), truncated: known.truncated }
   }
   const start = known?.size ?? 0
   const read = await jenkinsTail(`${jobPath(job)}/${number}/logText/progressiveText`, maxBytes, { start })
   const size = Number(read.headers.get('x-text-size'))
   // A Jenkins without the header: nothing to resume from, so nothing is kept.
-  if (!Number.isFinite(size) || read.headers.get('x-text-size') === null) return { text: read.text, truncated: read.truncated }
+  if (!Number.isFinite(size) || read.headers.get('x-text-size') === null) return { text: stripNotes(read.text), truncated: read.truncated }
 
   // A size below where we were means the log was replaced, and Jenkins sent it from 0.
   const fresh = !known || size < start
-  const joined = fresh ? read.text : known.text + read.text
+  // Notes go before the tail is cut; one cut off at the end stays, so the next read can complete it.
+  const joined = stripNotes(fresh ? read.text : known.text + read.text)
   const { text, cut } = lastBytes(Buffer.from(joined), maxBytes)
   const tail: Tail = { size, text, truncated: (fresh ? read.truncated : known.truncated || read.truncated) || cut, done: read.headers.get('x-more-data') !== 'true' }
   tails.delete(key)
   tails.set(key, tail)
   while (tails.size > TAILS_KEPT) tails.delete(tails.keys().next().value!)
-  return { text: tail.text, truncated: tail.truncated }
+  return { text: tail.text.replace(PARTIAL_NOTE, ''), truncated: tail.truncated }
 }
 
 /** Queues a build, with parameters when given. Returns the queue item Jenkins made, when it says. */
