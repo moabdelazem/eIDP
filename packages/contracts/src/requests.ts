@@ -85,8 +85,13 @@ export type PipelineProject = {
 /** One file a pipeline request writes, for the approver to read. */
 export type PipelineFile = { path: string; content: string }
 
-/** What approving would write, worked out from inventories as they are now. */
-export type PipelinePreview = { files: PipelineFile[]; errors: string[]; commit: string | null }
+/**
+ * What approving would write, worked out from the repositories as they are
+ * now: `files` to inventories, `manifests` to ocp-templates (none for a
+ * library or a technology without manifests). `commit` is the inventories
+ * commit, once the push has landed.
+ */
+export type PipelinePreview = { files: PipelineFile[]; manifests: PipelineFile[]; errors: string[]; commit: string | null }
 
 export type RiskLevel = 'low' | 'medium' | 'high'
 export type Fact = { level: 'caution' | 'info'; text: string }

@@ -61,12 +61,25 @@ export type Remote = { url: string; env: NodeJS.ProcessEnv }
  * local repository in tests, which needs no token.
  */
 export function inventoriesRemote(): Remote {
+  return remoteFor(config.INVENTORIES_PROJECT, config.INVENTORIES_REPO, config.INVENTORIES_GIT_URL, 'INVENTORIES_PROJECT')
+}
+
+/**
+ * The OpenShift/Kubernetes manifests repository a pipeline's deployment files
+ * are written to — in the inventories' project unless OCP_TEMPLATES_PROJECT
+ * says otherwise — or OCP_TEMPLATES_GIT_URL.
+ */
+export function ocpTemplatesRemote(): Remote {
+  return remoteFor(config.OCP_TEMPLATES_PROJECT ?? config.INVENTORIES_PROJECT, config.OCP_TEMPLATES_REPO, config.OCP_TEMPLATES_GIT_URL, 'OCP_TEMPLATES_PROJECT or INVENTORIES_PROJECT')
+}
+
+function remoteFor(project: string | undefined, repository: string, override: string | undefined, setting: string): Remote {
   const env: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0' }
-  if (config.INVENTORIES_GIT_URL) return { url: config.INVENTORIES_GIT_URL, env }
-  if (!config.INVENTORIES_PROJECT) throw new ApiError(503, 'inventories_not_configured', 'INVENTORIES_PROJECT is not set, so there is no repository to write to.')
+  if (override) return { url: override, env }
+  if (!project) throw new ApiError(503, 'repository_not_configured', `${setting} is not set, so there is no ${repository} repository to write to.`)
   const ado = adoConfig()
   return {
-    url: `${ado.baseUrl}/${encodeURIComponent(config.INVENTORIES_PROJECT)}/_git/${encodeURIComponent(config.INVENTORIES_REPO)}`,
+    url: `${ado.baseUrl}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repository)}`,
     env: { ...env, GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: ${authHeader(ado.pat)}` },
   }
 }

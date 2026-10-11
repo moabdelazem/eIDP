@@ -61,13 +61,39 @@ export async function planFiles(ctx: PipelineContext, inventories: Inventories):
     else if ((await inventories.read(localhost.path)) === null) errors.push(`${localhost.path} is there but is not a file.`)
   }
 
-  // Nothing is ever overwritten: every path written must be new.
+  await guard(files, system, inventories, errors)
+  return { files, errors: [...new Set(errors)] }
+}
+
+/**
+ * What a pipeline writes to ocp-templates: its manifests, under
+ * `<project>/<application>/` — nothing for a library or a technology without
+ * manifests on that target. A directory already there for the application
+ * is a conflict, as it was in the old portal.
+ */
+export async function planManifests(ctx: PipelineContext, repository: Inventories): Promise<Plan> {
+  const template = technology(ctx.spec.technology)
+  if (!template?.manifests?.needed(ctx.spec)) return { files: [], errors: [] }
+  const errors: string[] = []
+  const dir = `${ctx.manifestsDir}/${ctx.spec.application}`
+  if (await repository.exists(dir)) errors.push(`${ctx.spec.application} already has manifests in ocp-templates (${dir}).`)
+  let files: PipelineFile[] = []
+  try {
+    files = await template.manifests.files(ctx)
+  } catch (error) {
+    errors.push((error as Error).message)
+  }
+  await guard(files, dir, repository, errors)
+  return { files, errors: [...new Set(errors)] }
+}
+
+/** Nothing is ever overwritten, nothing lands outside where it belongs, and no credential is carried. */
+async function guard(files: PipelineFile[], root: string, repository: Inventories, errors: string[]): Promise<void> {
   for (const file of files) {
-    if (!file.path.startsWith(`${system}/`)) errors.push(`A template wrote outside ${system}: ${file.path}`)
-    else if (await exists(file.path)) errors.push(`${file.path} already exists.`)
+    if (!file.path.startsWith(`${root}/`)) errors.push(`A template wrote outside ${root}: ${file.path}`)
+    else if (await repository.exists(file.path)) errors.push(`${file.path} already exists.`)
     for (const key of credentialsIn(file.content)) errors.push(`${file.path} would carry a value for ${key}. A credential is never copied from another application; it is set from the vault.`)
   }
-  return { files, errors: [...new Set(errors)] }
 }
 
 /** An application name that inventories would read back as an environment's override of another. */

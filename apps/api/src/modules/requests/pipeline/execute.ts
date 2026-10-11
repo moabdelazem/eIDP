@@ -10,8 +10,8 @@ import { commitUrl, writePipeline } from './write.ts'
  * so the map shows the application at once rather than at the next sync.
  */
 export async function executePipeline(request: RequestRecord): Promise<void> {
-  const { commit, files } = await writePipeline(request)
-  log.info('pipeline written to inventories', { request: request.id, commit, files: files.map((f) => f.path) })
+  const { commit, manifestsCommit, files } = await writePipeline(request)
+  log.info('pipeline written', { request: request.id, commit, manifestsCommit, files: files.map((f) => f.path) })
   await recordCompleted(request.id, commitUrl(commit))
   void syncCatalog().catch(() => {})
 }

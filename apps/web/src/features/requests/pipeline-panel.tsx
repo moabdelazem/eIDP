@@ -41,7 +41,7 @@ function Files({ requestId }: { requestId: string }) {
       </p>
     )
   }
-  const { files, errors, commit } = preview.data!
+  const { files, manifests, errors, commit } = preview.data!
   if (commit) return <p className="mt-4 text-sm text-muted-foreground">Already in inventories, in commit <code>{commit.slice(0, 10)}</code>.</p>
   return (
     <div className="mt-4 space-y-3">
@@ -59,17 +59,27 @@ function Files({ requestId }: { requestId: string }) {
           ))}
         </ul>
       )}
-      {files.map((file) => (
-        <details key={file.path} className="rounded-md border">
-          <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm">
-            <FileCode2 className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-            <code className="break-words">{file.path}</code>
-          </summary>
-          <pre className="overflow-x-auto border-t bg-muted/40 p-3 text-xs">{file.content}</pre>
-        </details>
-      ))}
+      <FileList files={files} />
+      {manifests.length > 0 && (
+        <>
+          <h3 className="pt-2 text-sm font-semibold">…and its manifests to ocp-templates</h3>
+          <FileList files={manifests} />
+        </>
+      )}
     </div>
   )
+}
+
+function FileList({ files }: { files: { path: string; content: string }[] }) {
+  return files.map((file) => (
+    <details key={file.path} className="rounded-md border">
+      <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm">
+        <FileCode2 className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <code className="break-words">{file.path}</code>
+      </summary>
+      <pre className="overflow-x-auto border-t bg-muted/40 p-3 text-xs">{file.content}</pre>
+    </details>
+  ))
 }
 
 /**

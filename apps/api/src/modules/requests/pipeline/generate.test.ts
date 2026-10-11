@@ -12,6 +12,7 @@ import { setKey, setNested } from './yaml-edit.ts'
 const ctx = (spec: Partial<PipelineSpec>): PipelineContext => ({
   spec: { application: 'Billing_Api', deployTarget: 'OCP', technology: '', version: null, library: false, fields: {}, newProject: null, ...spec },
   system: 'Billing',
+  manifestsDir: 'Billing',
   collection: 'DefaultCollection',
   project: 'Billing',
   repository: 'billing-api',

@@ -160,6 +160,13 @@ export const schema = z.object({
   /** Who commits pipeline changes to inventories; the requester and approver are named in the message. */
   INVENTORIES_COMMITTER_NAME: z.string().min(1).default('e-IDP'),
   INVENTORIES_COMMITTER_EMAIL: z.string().min(3).default('e-idp@noreply.local'),
+  /** The OpenShift/Kubernetes manifests repository approved pipelines also write to, and its project (the inventories' by default). */
+  OCP_TEMPLATES_REPO: z.string().min(1).default('ocp-templates'),
+  OCP_TEMPLATES_PROJECT: z.string().min(1).optional(),
+  /** Its own writing copy, as the inventories have theirs. */
+  OCP_TEMPLATES_WRITE_CHECKOUT: z.string().min(1).default('.cache/ocp-templates-write'),
+  /** Push manifests here instead — a mirror, or a local repository in tests. */
+  OCP_TEMPLATES_GIT_URL: z.string().min(1).optional(),
   /** Where pipeline templates are read from instead of the ones bundled with the API — the tests' own. */
   PIPELINE_TEMPLATES_DIR: z.string().min(1).optional(),
 })

@@ -2,8 +2,8 @@ import type { DeployTarget, PipelineSpec, Technology, TechnologyField } from '@e
 import type { FileWrite } from '../../../integrations/ado/index.ts'
 import { config } from '../../../lib/config.ts'
 import { FIELD_RULES, NAMESPACE_ENVIRONMENTS, noNamespacesOf, TECHNOLOGIES, targetsOf, type TechnologyDefinition } from './definitions.ts'
-import { applicationFiles } from './generate.ts'
-import { BUNDLED_TEMPLATES, hasTemplate, readTemplate, variantFor, variantsOf } from './templates.ts'
+import { APPLICATION, applicationFiles } from './generate.ts'
+import { BUNDLED_TEMPLATES, hasTemplate, manifestVariantsOf, readTemplate, variantFor, variantsOf } from './templates.ts'
 
 /**
  * The build technologies a pipeline can be asked for: every one in
@@ -18,6 +18,8 @@ export type PipelineContext = {
   spec: PipelineSpec
   /** The project's directory in inventories. */
   system: string
+  /** The project's directory in ocp-templates. */
+  manifestsDir: string
   collection: string
   project: string
   repository: string
@@ -40,6 +42,15 @@ export type TechnologyTemplate = Technology & {
   database?: boolean
   /** The application's own files — `group_vars/<application>/…` — paths relative to the repository root. */
   files: (ctx: PipelineContext, inventories: Inventories) => FileWrite[] | Promise<FileWrite[]>
+  /**
+   * The deployment manifests written to ocp-templates, `<project>/<application>/…`
+   * — as the old portal copied its reference_template. Not for a library, and
+   * not for a technology without manifests on that target.
+   */
+  manifests?: {
+    needed: (spec: PipelineSpec) => boolean
+    files: (ctx: PipelineContext) => Promise<FileWrite[]>
+  }
 }
 
 const registered = new Map<string, TechnologyTemplate>()
@@ -61,7 +72,7 @@ export function listTechnologies(): Technology[] {
   return [...keys]
     .map((key) => technology(key))
     .filter((t): t is TechnologyTemplate => Boolean(t))
-    .map(({ files: _, database: __, ...technology }) => technology)
+    .map(({ files: _, database: __, manifests: ___, ...technology }) => technology)
     .sort((a, b) => a.label.localeCompare(b.label))
 }
 
@@ -76,7 +87,11 @@ function fromDefinition(key: string): TechnologyTemplate | undefined {
   if (!definition) return undefined
   const root = templatesRoot()
   const variants = variantsOf(key, definition)
-  const targets = targetsOf(definition).filter((target) => variants.filter((v) => v.target === target).every((v) => hasTemplate(root, v.dir)))
+  const manifests = manifestVariantsOf(key, definition)
+  // A target is offered once everything it writes is here: its group_vars and, when it has them, its manifests.
+  const targets = targetsOf(definition).filter((target) =>
+    [...variants.filter((v) => v.target === target), ...manifests.filter((m) => m.target === target)].every((v) => hasTemplate(root, v.dir)),
+  )
   if (!targets.length) return undefined
   return {
     key,
@@ -91,6 +106,16 @@ function fromDefinition(key: string): TechnologyTemplate | undefined {
       const templates = variant && (await readTemplate(root, variant.dir))
       if (!templates) throw new Error(`There is no ${definition.label} template for ${ctx.spec.deployTarget}${ctx.spec.fields.app_path ? ` (${ctx.spec.fields.app_path})` : ''}.`)
       return applicationFiles(key, definition, ctx, templates)
+    },
+    manifests: {
+      needed: (spec) => !spec.library && manifests.some((m) => m.target === spec.deployTarget),
+      files: async (ctx) => {
+        const variant = manifests.find((m) => m.target === ctx.spec.deployTarget)
+        const templates = variant && (await readTemplate(root, variant.dir))
+        if (!templates) throw new Error(`There are no ${definition.label} manifests for ${ctx.spec.deployTarget}.`)
+        // As the old portal: the name in paths is the application's; the contents are copied as they are.
+        return templates.map((t) => ({ path: `${ctx.manifestsDir}/${ctx.spec.application}/${t.path.replaceAll(APPLICATION, ctx.spec.application)}`, content: t.content }))
+      },
     },
   }
 }

@@ -13,6 +13,7 @@ import type { TemplateFile } from './generate.ts'
  *   templates/<Technology>/OCP/<app_path>/… Flutter: one per app_path
  *   templates/<Technology>/K8s/…            of the K8s reference
  *   templates/project/…                     group_vars/all/ of the new-project template
+ *   templates/manifests/<Technology>/<target>/…  the deployment manifests, from ocp-templates
  *
  * Each is extracted once from its reference application in inventories by
  * `scripts/pipeline-templates.ts`, reviewed, and committed. The old portal
@@ -45,6 +46,20 @@ export function variantsOf(key: string, definition: TechnologyDefinition): Varia
 /** The template a request is written from. */
 export function variantFor(key: string, definition: TechnologyDefinition, target: DeployTarget, fields: Record<string, string>): Variant | undefined {
   return variantsOf(key, definition).find((v) => v.target === target && (v.appPath === null || v.appPath === fields.app_path))
+}
+
+/**
+ * The deployment manifests for a technology on a target, from ocp-templates:
+ * `manifests/<Technology>/<target>/`, extracted from its reference_template
+ * folder. None when the technology has no reference for that target.
+ */
+export type ManifestVariant = { dir: string; target: DeployTarget; reference: string }
+
+export function manifestVariantsOf(key: string, definition: TechnologyDefinition): ManifestVariant[] {
+  const out: ManifestVariant[] = []
+  if (definition.referenceTemplate) out.push({ dir: `manifests/${key}/OCP`, target: 'OCP', reference: definition.referenceTemplate })
+  if (definition.k8sReferenceTemplate) out.push({ dir: `manifests/${key}/K8s`, target: 'K8s', reference: definition.k8sReferenceTemplate })
+  return out
 }
 
 export const hasTemplate = (root: string, dir: string): boolean => existsSync(join(root, dir))

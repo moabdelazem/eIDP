@@ -1,10 +1,10 @@
 import type { PipelinePreview, RequestRecord } from '@eidp/contracts/requests'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, relative } from 'node:path'
-import { commitAndPush, findCommit, freshCopy, inventoriesRemote, webUrlFor } from '../../../integrations/ado/index.ts'
+import { commitAndPush, findCommit, freshCopy, inventoriesRemote, ocpTemplatesRemote, webUrlFor, type Remote } from '../../../integrations/ado/index.ts'
 import { config } from '../../../lib/config.ts'
 import { inTurn } from '../../../lib/locks.ts'
-import { planFiles, type Plan } from './files.ts'
+import { planFiles, planManifests, type Plan } from './files.ts'
 import { technology, type Inventories, type PipelineContext } from './technologies.ts'
 
 /**
@@ -29,42 +29,70 @@ const PUSH_ATTEMPTS = 3
 
 export const marker = (id: string) => `e-IDP-Request: ${id}`
 
-/** Writes the request's files and returns the commit that holds them — an earlier one, when it already landed. */
-export async function writePipeline(request: RequestRecord): Promise<{ commit: string; files: Plan['files'] }> {
-  const remote = inventoriesRemote()
-  const checkout = config.INVENTORIES_WRITE_CHECKOUT
+/**
+ * Writes the request's files and returns the inventories commit that holds
+ * them — an earlier one, when it already landed.
+ *
+ * Two repositories: the manifests to ocp-templates, then the application to
+ * inventories, so the application never appears without its deployment. Both
+ * are planned before either is pushed, so a conflict in one writes nothing to
+ * the other. Each push carries the marker and is looked for first, so a retry
+ * after only the first landed finishes the second instead of repeating it —
+ * the old portal pushed the two separately and could leave one without the other.
+ */
+export async function writePipeline(request: RequestRecord): Promise<{ commit: string; manifestsCommit: string | null; files: Plan['files'] }> {
+  const inventories = side(inventoriesRemote(), config.INVENTORIES_WRITE_CHECKOUT)
+  const needsManifests = Boolean(technology(request.pipeline!.technology)?.manifests?.needed(request.pipeline!))
+  const templates = needsManifests ? side(ocpTemplatesRemote(), config.OCP_TEMPLATES_WRITE_CHECKOUT) : null
+  const committer = { name: config.INVENTORIES_COMMITTER_NAME, email: config.INVENTORIES_COMMITTER_EMAIL }
   return inTurn(LOCK, async () => {
     for (let attempt = 1; attempt <= PUSH_ATTEMPTS; attempt++) {
-      const { branch } = await freshCopy(remote, checkout)
-      const landed = await findCommit(checkout, marker(request.id))
-      if (landed) return { commit: landed, files: [] }
-      const plan = await planFiles(await contextFor(request, checkout), inventoriesAt(checkout))
-      if (plan.errors.length) throw new Error(plan.errors.join(' '))
-      const pushed = await commitAndPush(remote, checkout, branch, plan.files, message(request), {
-        name: config.INVENTORIES_COMMITTER_NAME,
-        email: config.INVENTORIES_COMMITTER_EMAIL,
-      })
-      if (pushed.pushed) return { commit: pushed.commit, files: plan.files }
+      const branch = await freshCopy(inventories.remote, inventories.checkout).then((c) => c.branch)
+      const templatesBranch = templates && (await freshCopy(templates.remote, templates.checkout)).branch
+      const landed = await findCommit(inventories.checkout, marker(request.id))
+      let manifestsCommit = templates && (await findCommit(templates.checkout, marker(request.id)))
+      if (landed) return { commit: landed, manifestsCommit, files: [] }
+
+      const ctx = await contextFor(request, inventories.checkout, templates?.checkout ?? null)
+      const plan = await planFiles(ctx, readerAt(inventories.checkout))
+      const manifests = templates && !manifestsCommit ? await planManifests(ctx, readerAt(templates.checkout)) : { files: [], errors: [] }
+      const errors = [...plan.errors, ...manifests.errors]
+      if (errors.length) throw new Error(errors.join(' '))
+
+      if (templates && !manifestsCommit) {
+        const pushed = await commitAndPush(templates.remote, templates.checkout, templatesBranch!, manifests.files, message(request, 'manifests'), committer)
+        if (!pushed.pushed) continue
+        manifestsCommit = pushed.commit
+      }
+      const pushed = await commitAndPush(inventories.remote, inventories.checkout, branch, plan.files, message(request, 'inventories'), committer)
+      if (pushed.pushed) return { commit: pushed.commit, manifestsCommit, files: [...manifests.files, ...plan.files] }
     }
-    throw new Error(`Inventories kept moving: ${PUSH_ATTEMPTS} pushes in a row were overtaken by someone else's. Retry.`)
+    throw new Error(`The repositories kept moving: ${PUSH_ATTEMPTS} pushes in a row were overtaken by someone else's. Retry.`)
   })
 }
 
 /**
- * What approving would write, against inventories as they are now — for the
- * approver, who reads the files before deciding. Never written; `commit` is
- * set when the request's push already landed.
+ * What approving would write, against the repositories as they are now — for
+ * the approver, who reads the files before deciding. Never written; `commit`
+ * is set when the request's push already landed.
  */
 export async function previewPipeline(request: RequestRecord): Promise<PipelinePreview> {
-  const checkout = config.INVENTORIES_WRITE_CHECKOUT
+  const inventories = side(inventoriesRemote(), config.INVENTORIES_WRITE_CHECKOUT)
+  const needsManifests = Boolean(technology(request.pipeline!.technology)?.manifests?.needed(request.pipeline!))
+  const templates = needsManifests ? side(ocpTemplatesRemote(), config.OCP_TEMPLATES_WRITE_CHECKOUT) : null
   return inTurn(LOCK, async () => {
-    await freshCopy(inventoriesRemote(), checkout)
-    const landed = await findCommit(checkout, marker(request.id))
-    if (landed) return { files: [], errors: [], commit: landed }
-    const plan = await planFiles(await contextFor(request, checkout), inventoriesAt(checkout))
-    return { ...plan, commit: null }
+    await freshCopy(inventories.remote, inventories.checkout)
+    const landed = await findCommit(inventories.checkout, marker(request.id))
+    if (landed) return { files: [], manifests: [], errors: [], commit: landed }
+    if (templates) await freshCopy(templates.remote, templates.checkout)
+    const ctx = await contextFor(request, inventories.checkout, templates?.checkout ?? null)
+    const plan = await planFiles(ctx, readerAt(inventories.checkout))
+    const manifests = templates ? await planManifests(ctx, readerAt(templates.checkout)) : { files: [], errors: [] }
+    return { files: plan.files, manifests: manifests.files, errors: [...new Set([...plan.errors, ...manifests.errors])], commit: null }
   })
 }
+
+const side = (remote: Remote, checkout: string) => ({ remote, checkout })
 
 /** Where people see the commit: ADO's page for it, or the override remote's URL with the commit. */
 export function commitUrl(commit: string): string {
@@ -77,11 +105,12 @@ function adoCollection(): string {
   return decodeURIComponent(new URL(config.ADO_BASE_URL!).pathname.split('/').filter(Boolean).at(-1)!)
 }
 
-async function contextFor(request: RequestRecord, checkout: string): Promise<PipelineContext> {
+async function contextFor(request: RequestRecord, checkout: string, templatesCheckout: string | null): Promise<PipelineContext> {
   const spec = request.pipeline!
   return {
     spec,
     system: await systemDir(checkout, request.project),
+    manifestsDir: templatesCheckout ? await systemDir(templatesCheckout, request.project) : request.project,
     collection: request.collection!,
     project: request.project,
     repository: request.repository!,
@@ -91,8 +120,8 @@ async function contextFor(request: RequestRecord, checkout: string): Promise<Pip
 }
 
 /**
- * The project's directory in inventories: the existing one whatever its case,
- * or the project's name for a new one.
+ * The project's directory in a repository: the existing one whatever its
+ * case, or the project's name for a new one.
  */
 export async function systemDir(checkout: string, project: string): Promise<string> {
   const dirs = await readdir(checkout, { withFileTypes: true }).catch(() => [])
@@ -100,7 +129,7 @@ export async function systemDir(checkout: string, project: string): Promise<stri
 }
 
 /** The working copy, read-only, as the templates see it. */
-function inventoriesAt(checkout: string): Inventories {
+function readerAt(checkout: string): Inventories {
   const inside = (path: string) => {
     const full = join(checkout, path)
     if (relative(checkout, full).startsWith('..')) throw new Error(`${path} is outside the repository`)
@@ -123,11 +152,11 @@ function inventoriesAt(checkout: string): Inventories {
   }
 }
 
-function message(request: RequestRecord): string {
+function message(request: RequestRecord, part: 'inventories' | 'manifests'): string {
   const spec = request.pipeline!
   const label = technology(spec.technology)?.label ?? spec.technology
   return [
-    `Add the ${spec.application} pipeline (${label} on ${spec.deployTarget})`,
+    part === 'manifests' ? `Add the ${spec.application} manifests (${label} on ${spec.deployTarget})` : `Add the ${spec.application} pipeline (${label} on ${spec.deployTarget})`,
     '',
     `For ${request.collection}/${request.project}/${request.repository}${spec.newProject ? ', a new project' : ''}.`,
     `Requested by ${request.requestedByName} (${request.requestedBy}); approved by ${request.decidedByName ?? request.decidedBy} (${request.decidedBy}).`,

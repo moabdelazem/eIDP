@@ -84,8 +84,26 @@ const pipelineTemplates = mkdtempSync(join(tmpdir(), 'eidp-templates-'))
     ].join('\n'),
   )
   put('DotNetCore/OCP/__APPLICATION__.env.yml', 'service: __APPLICATION__\n')
+  put('manifests/DotNetCore/OCP/deployment-__APPLICATION__.yml', 'kind: Deployment\nname: "{{ app_name }}"\n')
 }
 process.env.PIPELINE_TEMPLATES_DIR = pipelineTemplates
+
+// ocp-templates, which approved pipelines write their manifests to.
+const ocpTemplatesRemote = mkdtempSync(join(tmpdir(), 'eidp-ocp-templates-'))
+{
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, stdio: 'pipe' })
+  git(ocpTemplatesRemote, 'init', '-q', '--bare', '-b', 'main')
+  const seed = mkdtempSync(join(tmpdir(), 'eidp-ocp-seed-'))
+  mkdirSync(join(seed, 'PipeHome'), { recursive: true })
+  writeFileSync(join(seed, 'PipeHome/README'), 'manifests\n')
+  git(seed, 'init', '-q', '-b', 'main')
+  git(seed, 'add', '.')
+  git(seed, '-c', 'user.name=seed', '-c', 'user.email=seed@x', 'commit', '-q', '-m', 'seed')
+  git(seed, 'push', '-q', ocpTemplatesRemote, 'main')
+  rmSync(seed, { recursive: true, force: true })
+}
+process.env.OCP_TEMPLATES_GIT_URL = `file://${ocpTemplatesRemote}`
+process.env.OCP_TEMPLATES_WRITE_CHECKOUT = mkdtempSync(join(tmpdir(), 'eidp-ocp-write-'))
 
 const { createApp } = await import('../../app.ts')
 const { registerTechnology } = await import('./pipeline/technologies.ts')
@@ -847,6 +865,21 @@ test('pipelines: a technology from its template — the reference copied with th
     ].join('\n'),
   )
   assert.equal(inventoriesFile('PipeHome/group_vars/pipe-web/pipe-web.env.yml'), 'service: pipe-web\n', 'the name in paths too')
+  const manifest = execFileSync('git', ['--git-dir', ocpTemplatesRemote, 'show', 'main:PipeHome/pipe-web/deployment-pipe-web.yml']).toString()
+  assert.equal(manifest, 'kind: Deployment\nname: "{{ app_name }}"\n', 'the manifests to ocp-templates: the name in paths, the contents as they are')
+  assert.match(execFileSync('git', ['--git-dir', ocpTemplatesRemote, 'log', '-1', '--format=%B', 'main']).toString(), /Add the pipe-web manifests[\s\S]*e-IDP-Request: /)
+})
+
+test('pipelines: a library gets no manifests, and a test technology without them never touches ocp-templates', async () => {
+  const before = execFileSync('git', ['--git-dir', ocpTemplatesRemote, 'rev-parse', 'main']).toString()
+  const body = pipelineRequest('PipeHome', 'pipe-api', { application: 'pipe-lib', technology: 'DotNetCore', version: '6.0', library: true, fields: { nuget_name: 'Pipe.Lib' } })
+  const filed = await json<{ id: string }>(await call('bob', 'POST', '/requests', body))
+  const preview = await json<{ manifests: unknown[] }>(await call('alice', 'GET', `/requests/${filed.id}/pipeline`))
+  assert.deepEqual(preview.manifests, [])
+  await call('alice', 'POST', `/requests/${filed.id}/approve`, {})
+  assert.equal((await settled(filed.id)).status, 'completed')
+  assert.ok(inventoriesFile('PipeHome/group_vars/pipe-lib/cicd.yml'), 'inventories written')
+  assert.equal(execFileSync('git', ['--git-dir', ocpTemplatesRemote, 'rev-parse', 'main']).toString(), before)
 })
 
 test('pipelines: what appeared in inventories while it waited is a conflict at approval, and nothing is pushed', async () => {

@@ -120,10 +120,10 @@ and namespaces); `requests_pipeline_check` keeps that column to this kind.
   one per technology and deploy target (Flutter on OCP: one per `app_path`),
   plus `project/` for a new project's `group_vars/all`. They are extracted
   from the reference applications by
-  `pnpm --filter @eidp/api pipeline:templates extract <inventories checkout>`.
+  `pnpm --filter @eidp/api pipeline:templates extract <inventories> <ocp-templates>` (two checkouts).
   The script replaces the reference's name with `__APPLICATION__` (`__PROJECT__`
   for the project), writes any literal credential as `changeme` and lists it,
-  and is read as a diff before committing. `… check <checkout>` reports drift
+  and is read as a diff before committing. `… check <inventories> <ocp-templates>` reports drift
   and exits 1; the portal never follows a reference on its own. **A
   technology is on the form only once its templates are committed**, and only
   for the targets they cover, so nobody can file what cannot be written.
@@ -143,8 +143,7 @@ and namespaces); `requests_pipeline_check` keeps that column to this kind.
   (*Still to do by hand*): each namespace's token, and its user when left
   empty — written as placeholders, never real — and the provisioning command
   the old portal printed. Not yet ported: the old approval's automatic
-  provisioning and test builds, and its copy of the reference's OpenShift
-  manifests into the templates repository (`reference_template`).
+  provisioning and test builds (`jenkins_client.py`).
 - **`check()`** refuses an application name inventories would misread — one
   starting with an environment prefix (`prd_api` is read as the `prd`
   override of `api`), or `all` — an unknown technology, a missing version or
@@ -168,7 +167,18 @@ and namespaces); `requests_pipeline_check` keeps that column to this kind.
   than made twice. The commit is the request's result, and the catalog is
   synced at once. `INVENTORIES_GIT_URL` points the writer elsewhere — a
   mirror, or the local repository the tests push to. The ADO service
-  account's PAT needs Code (read & write) on the inventories repository.
+  account's PAT needs Code (read & write) on inventories and ocp-templates.
+- **The manifests go to ocp-templates** (`OCP_TEMPLATES_REPO`, in the
+  inventories' project unless `OCP_TEMPLATES_PROJECT` says otherwise), under
+  `<project>/<application>/`, from `templates/manifests/<Technology>/<target>/`
+  — the old `reference_template` copy, the name replaced in paths only, as it
+  was. Not for a library, nor a technology without a reference on that
+  target. Both repositories are planned before either is pushed, so a
+  conflict in one writes nothing; ocp-templates is pushed first, then
+  inventories, each with the marker, so a retry after only the first landed
+  finishes the second. The old portal pushed them separately and could leave
+  an application without its manifests. The request's result is the
+  inventories commit.
 - `team.yml` is written the way the repository spells it, in the old order —
   the auto-deploy flag quoted, an empty list as one empty item, and the ops,
   approver, prd-only and manager lists DEVOPS when left empty (the form says
@@ -194,7 +204,7 @@ the old generator's output, not its traps:
 | Copied GAFI_Digital_Network's project files changing only `project_name`, and wrote `team.yml` only if that project had one | `__PROJECT__` in the template; `team.yml` always written |
 | Ignored the auto-deploy answer: "false" for DEVdotNET, "true" for everyone else | The requester's answer is written, and the approver sees it |
 | "Leave empty — default user will be used", then wrote `changeme` | The form says `changeme`, and the request lists it to set |
-| Pushed inventories and the templates repository separately, cleaning up local files on failure | One commit to inventories, found again by its marker on retry (the templates repository is not written yet) |
+| Pushed inventories and ocp-templates separately, cleaning up local files on failure; one could land without the other | Both planned before either is pushed; each push carries the marker and a retry completes what is missing |
 | Audit, history and ELK in files and best-effort calls | The request itself: who, what, when, the decision, the commit |
 | Auto-deploy to QC as a string; a failed submit could pass silently | An explicit yes/no, and a request is filed in one transaction or not at all |
 
