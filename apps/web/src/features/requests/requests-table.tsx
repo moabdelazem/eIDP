@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { whereOf, type PortalRequest, type RequestKind, type RequestStatus } from './api.ts'
 import { STATUS_NAME } from './request-stats.tsx'
 import { RequestPreview } from './request-preview.tsx'
-import { KIND_ICON, KIND_LABEL, StatusBadge } from './status.tsx'
+import { kindIcon, kindLabel, StatusBadge } from './status.tsx'
 
 const PAGE_SIZE = 20
 
@@ -56,9 +56,9 @@ export function RequestsTable({
       sort.key === 'name'
         ? (r.repository ?? r.project).toLowerCase()
         : sort.key === 'kind'
-          ? KIND_LABEL[r.kind]
+          ? kindLabel(r.kind)
           : sort.key === 'status'
-            ? STATUS_NAME[r.status]
+            ? (STATUS_NAME[r.status] ?? r.status)
             : sort.key === 'requester'
               ? r.requestedByName.toLowerCase()
               : sort.key === 'requested'
@@ -113,7 +113,7 @@ export function RequestsTable({
               <SelectItem value="all">Any type</SelectItem>
               {kinds.map((k) => (
                 <SelectItem key={k} value={k}>
-                  {KIND_LABEL[k]}
+                  {kindLabel(k)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -144,7 +144,7 @@ export function RequestsTable({
             </TableRow>
           ) : (
             shown.map((r) => {
-              const Icon = KIND_ICON[r.kind]
+              const Icon = kindIcon(r.kind)
               return (
                 <TableRow key={r.id}>
                   <TableCell className="max-w-72">
@@ -158,7 +158,7 @@ export function RequestsTable({
                       </span>
                     </Link>
                   </TableCell>
-                  <TableCell className="hidden text-muted-foreground md:table-cell">{KIND_LABEL[r.kind]}</TableCell>
+                  <TableCell className="hidden text-muted-foreground md:table-cell">{kindLabel(r.kind)}</TableCell>
                   <TableCell>
                     <StatusBadge status={r.status} kind={r.kind} />
                   </TableCell>

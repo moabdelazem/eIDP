@@ -1,32 +1,31 @@
-import { lazy, Suspense, useMemo } from 'react'
-import { AppWindow, ArrowRight, Boxes, ChevronDown, Inbox, ListChecks, Plus, TriangleAlert, type LucideIcon } from 'lucide-react'
-import { Link, Navigate, useNavigate, useSearchParams } from 'react-router'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import { Skeleton } from '@/components/ui/skeleton'
-import { useProfile } from '@/features/auth/profile-context.tsx'
-import { useCatalog } from '@/features/projects/catalog-context.tsx'
-import { isInFlight, requestsApi } from '@/features/requests/api.ts'
-import { NewRequestMenuContent } from '@/features/requests/new-request-menu.tsx'
-import { RequestRow } from '@/features/requests/request-row.tsx'
-import { since } from '@/features/requests/status.tsx'
-import { usePageTitle } from '@/lib/use-page-title.ts'
+import { useState, type ReactNode } from 'react'
+import { ArrowDown, ArrowUp, Check, Eye, EyeOff, LayoutGrid, RotateCcw } from 'lucide-react'
+import { Navigate, useSearchParams } from 'react-router'
+import { toast } from 'sonner'
+import { ErrorBoundary } from '@/components/error-boundary.tsx'
 import { PAGE } from '@/components/page-layout.tsx'
+import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
+import { useProfile } from '@/features/auth/profile-context.tsx'
+import { ApiError } from '@/lib/api-client.ts'
+import { queryClient } from '@/lib/query-client.ts'
+import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
-import type { Datum } from './charts.tsx'
-import { BarsSkeleton, Loading, RowsSkeleton } from '@/components/skeletons.tsx'
-
-// Recharts is most of the weight of this page and none of the others, so it
-// loads with the charts rather than with the app.
-const RankedBars = lazy(() => import('./charts.tsx').then((module) => ({ default: module.RankedBars })))
+import { preferencesApi } from './api.ts'
+import { CARDS, cardsFor, type CardId, type Viewer } from './card-list.ts'
+import { ApprovalsCard, CatalogCard, JenkinsCard, NeedsYouCard, PipelinesCard, ProjectsCard, RequestsCard, useNeeds } from './cards.tsx'
+import { arrange, greeting, move } from './layout.ts'
 
 /**
- * The home page: what exists, what you are waiting on, and — for DevOps —
- * what is waiting on them. A composition of other features, so it reads their
- * public pieces rather than owning data of its own.
+ * The home page, made for whoever signs in: what needs them first, then the
+ * parts of the portal that are theirs — their requests and pipelines, their
+ * teams' projects, and, for those who decide or run Jenkins, what waits on
+ * them there. Which cards there are follows what someone may do; their order
+ * and which are hidden is theirs to choose (Customize), kept with their
+ * account so it follows them (apps/api modules/preferences).
+ *
+ * Every card draws inside its own error boundary: one that cannot draw says
+ * so, and the rest of the page stays.
  */
 export function OverviewPage() {
   usePageTitle('Overview')
@@ -37,287 +36,180 @@ export function OverviewPage() {
 }
 
 function Overview() {
-  const navigate = useNavigate()
-  const { status, systems, sync, error } = useCatalog()
   const { can, canSomewhere, profile } = useProfile()
-  // DevOps, or a team lead: anyone with a queue of their own. Its contents are
-  // already only what they may decide.
-  const decider = canSomewhere('requests.decide_access')
-  const syncs = can('catalog.sync')
-  const mine = useResource(['requests', 'mine'], () => requestsApi.mine(), { pollMs: 30_000 })
-  // The sidebar's and the Approvals page's answer when you decide; nothing to ask for otherwise.
-  const pool = useResource(decider ? ['requests', 'pool'] : ['requests', 'pool', 'none'], () => (decider ? requestsApi.pool() : Promise.resolve(null)), {
-    pollMs: 30_000,
-  })
+  const viewer: Viewer = {
+    profile,
+    decider: canSomewhere('requests.decide_access'),
+    jenkins: can('jenkins.view'),
+    pipelines: can('pipelines.view'),
+    catalog: can('catalog.view'),
+    syncs: can('catalog.sync'),
+  }
+  const { available, hiddenByDefault } = cardsFor(viewer)
+  const saved = useResource(['preferences', 'overview'], () => preferencesApi.overview())
+  const { shown, hidden } = arrange(available, hiddenByDefault, saved.data?.layout ?? null)
+  const { needs, loading } = useNeeds(viewer)
 
-  const stats = useMemo(() => {
-    const byTechnology = new Map<string, number>()
-    const bySystem = new Map<string, number>()
-    let applications = 0
-    for (const system of systems) {
-      bySystem.set(system.projectName, system.applications.length)
-      for (const app of system.applications) {
-        applications++
-        const tech = app.buildTechnology ?? 'Not set'
-        byTechnology.set(tech, (byTechnology.get(tech) ?? 0) + 1)
-      }
-    }
-    return {
-      applications,
-      technologies: topWithOther(byTechnology, 8),
-      largest: topWithOther(bySystem, 8).filter((row) => row.name !== 'Other'),
-    }
-  }, [systems])
+  // Customizing works on a draft; Done saves it, Cancel drops it.
+  const [draft, setDraft] = useState<{ shown: string[]; hidden: string[] } | null>(null)
+  const [saving, setSaving] = useState(false)
+  const editing = draft !== null
 
-  const openRequests = mine.error ? null : mine.data?.filter((r) => isInFlight(r.status) || r.status === 'failed').length
-  const waiting = pool.error ? null : pool.data?.open.filter((r) => r.status === 'pending').length
-  const failed = pool.error ? null : pool.data?.open.filter((r) => r.status === 'failed').length
+  const save = async (next: { shown: string[]; hidden: string[] } | 'reset') => {
+    setSaving(true)
+    try {
+      if (next === 'reset') await preferencesApi.resetOverview()
+      else await preferencesApi.saveOverview({ order: [...next.shown, ...next.hidden], hidden: next.hidden })
+      await queryClient.invalidateQueries({ queryKey: ['preferences', 'overview'] })
+      setDraft(null)
+      toast.success(next === 'reset' ? 'Back to the portal’s own Overview for you.' : 'Saved. Your Overview looks like this wherever you sign in.')
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not save your Overview. Try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const first = profile?.name?.split(' ')[0]
+  const summary = loading ? 'Looking at what is yours…' : needs.length === 0 ? 'Nothing needs you right now.' : `${needs.length} ${needs.length === 1 ? 'thing needs' : 'things need'} you.`
 
   return (
     <div className={PAGE}>
-      <h1 className="text-lg font-semibold tracking-tight">Overview</h1>
-      <p className="mt-1 text-muted-foreground">
-        {profile?.name ? `Signed in as ${profile.name}` : 'Signed in'}
-        {sync?.finishedAt && `. The catalog was built ${since(sync.finishedAt)}.`}
-      </p>
-
-      {/* Headline counts are tiles, not charts: one number each, and every
-          tile goes somewhere. */}
-      <div className={`mt-6 grid gap-3 sm:grid-cols-2 ${decider ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
-        <Tile label="Systems" icon={Boxes} value={catalogCount(status, systems.length)} to="/map" />
-        <Tile label="Applications" icon={AppWindow} value={catalogCount(status, stats.applications)} to="/map" />
-        <Tile label="Your open requests" icon={Inbox} value={openRequests} to="/requests" />
-        {decider && (
-          <Tile
-            label="Waiting for a decision"
-            icon={ListChecks}
-            value={waiting}
-            to="/approvals"
-            // The one number on the page that asks something of the reader.
-            attention={(waiting ?? 0) > 0}
-          />
-        )}
-      </div>
-
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        {status === 'error' ? (
-          <Alert variant="destructive" className="lg:col-span-2">
-            <TriangleAlert />
-            <AlertTitle>Can’t reach the projects right now</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : (
-          <>
-            <ChartCard title="Applications by technology" description="From each application’s build_technology.">
-              {status === 'loading' ? <BarsSkeleton /> : <RankedBars data={stats.technologies} label="Applications by technology" />}
-            </ChartCard>
-            <ChartCard title="Largest systems" description="By number of applications. Select one to open it on the map.">
-              {status === 'loading' ? (
-                <BarsSkeleton />
-              ) : (
-                <RankedBars
-                  data={stats.largest}
-                  label="Largest systems"
-                  onSelect={(name) => navigate(`/map?q=${encodeURIComponent(name)}`)}
-                />
-              )}
-            </ChartCard>
-          </>
-        )}
-      </div>
-
-      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <Card className="gap-0 py-0">
-          <CardHeader className="flex flex-row items-center justify-between py-4">
-            <CardTitle className="text-sm">Your recent requests</CardTitle>
-            {(mine.data?.length ?? 0) > 0 && (
-              <Button asChild variant="ghost" size="sm">
-                <Link to="/requests">
-                  All requests <ArrowRight />
-                </Link>
-              </Button>
-            )}
-          </CardHeader>
-          {!mine.data ? (
-            <Loading label="Loading your requests…">
-              <RowsSkeleton bordered={false} />
-            </Loading>
-          ) : mine.data.length === 0 ? (
-            <Empty className="rounded-none border-t border-solid py-10">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <Inbox />
-                </EmptyMedia>
-                <EmptyTitle>You haven’t asked for anything yet</EmptyTitle>
-                <EmptyDescription>Ask DevOps for a repository or a project and follow it here.</EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button size="sm">
-                      <Plus /> New request <ChevronDown />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <NewRequestMenuContent align="center" />
-                </DropdownMenu>
-              </EmptyContent>
-            </Empty>
-          ) : (
-            <ul className="divide-y border-t">
-              {mine.data.slice(0, 5).map((request) => (
-                <li key={request.id}>
-                  <RequestRow request={request} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-
-        <div className="space-y-6">
-          {decider && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Waiting on you</CardTitle>
-                <CardDescription>Requests you can decide.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <Line label="Waiting for a decision" value={waiting} to="/approvals" attention={(waiting ?? 0) > 0} />
-                <Line label="Failed, needs a retry" value={failed} to="/approvals" attention={(failed ?? 0) > 0} />
-                {syncs && (
-                  <Line
-                    label="Files the last sync skipped"
-                    value={status === 'loading' ? undefined : (sync?.warnings.length ?? null)}
-                    to="/map"
-                    attention={(sync?.warnings.length ?? 0) > 0}
-                  />
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Catalog</CardTitle>
-              <CardDescription>
-                Built from <code>inventories</code>
-                {sync?.commit && (
-                  <>
-                    {' '}at <code>{sync.commit.slice(0, 8)}</code>
-                  </>
-                )}
-                {sync?.finishedAt ? `, ${since(sync.finishedAt)}.` : '.'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">
-              Refreshes every 30 minutes from Azure DevOps. The map shows what the last successful
-              build found, even if a later one failed.
-            </CardContent>
-          </Card>
+      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold tracking-tight">
+            {greeting(new Date().getHours())}
+            {first ? `, ${first}` : ''}
+          </h1>
+          <p className="mt-1 text-muted-foreground">
+            {summary}
+            {profile?.title || profile?.division ? <span className="hidden sm:inline"> · {[profile.title, profile.division].filter(Boolean).join(', ')}</span> : null}
+          </p>
         </div>
-      </div>
+        {editing ? (
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="ghost" onClick={() => void save('reset')} disabled={saving}>
+              <RotateCcw /> Reset to default
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setDraft(null)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={() => void save(draft)} disabled={saving}>
+              {saving ? <Spinner /> : <Check />} Done
+            </Button>
+          </div>
+        ) : (
+          <Button size="sm" variant="outline" onClick={() => setDraft({ shown, hidden })} disabled={!saved.data && !saved.error}>
+            <LayoutGrid /> Customize
+          </Button>
+        )}
+      </header>
+
+      {editing ? (
+        <Customize draft={draft} onChange={setDraft} />
+      ) : (
+        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+          {shown.map((id) => (
+            <div key={id} className={CARDS[id as CardId].wide ? 'lg:col-span-2' : ''}>
+              <ErrorBoundary variant="card" title={CARDS[id as CardId].title}>
+                {card(id as CardId, viewer)}
+              </ErrorBoundary>
+            </div>
+          ))}
+          {shown.length === 0 && (
+            <p className="rounded-xl border border-dashed px-4 py-8 text-sm text-muted-foreground lg:col-span-2">
+              Every card is hidden. Customize to show some again.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
 
-/** A catalog count: a skeleton while loading, a dash when it cannot be built. */
-function catalogCount(status: 'loading' | 'ready' | 'error', count: number): number | null | undefined {
-  return status === 'ready' ? count : status === 'error' ? null : undefined
+function card(id: CardId, viewer: Viewer): ReactNode {
+  switch (id) {
+    case 'needs-you':
+      return <NeedsYouCard viewer={viewer} />
+    case 'approvals':
+      return <ApprovalsCard />
+    case 'jenkins':
+      return <JenkinsCard />
+    case 'pipelines':
+      return <PipelinesCard />
+    case 'requests':
+      return <RequestsCard />
+    case 'projects':
+      return <ProjectsCard profile={viewer.profile} />
+    case 'catalog':
+      return <CatalogCard />
+  }
 }
 
-function Tile({
-  label,
-  icon: Icon,
-  value,
-  to,
-  attention = false,
-}: {
-  label: string
-  icon: LucideIcon
-  /** undefined while loading; null when it could not be counted. */
-  value: number | null | undefined
-  to: string
-  attention?: boolean
-}) {
+/** Arranging the cards: each with its move and hide buttons, and the hidden ones to bring back. */
+function Customize({ draft, onChange }: { draft: { shown: string[]; hidden: string[] }; onChange: (next: { shown: string[]; hidden: string[] }) => void }) {
+  const info = (id: string) => CARDS[id as CardId]
   return (
-    <Link
-      to={to}
-      className="group rounded-xl border bg-card p-4 shadow-sm transition-colors hover:border-ring/40 hover:bg-muted/30 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">{label}</p>
-        {/* Eggplant, not red: the icon says what the number is, it asks nothing. */}
-        <span
-          className={`flex size-8 items-center justify-center rounded-lg ${
-            attention ? 'bg-primary/10 text-primary' : 'bg-secondary text-secondary-foreground'
-          }`}
-        >
-          <Icon className="size-4" aria-hidden />
-        </span>
-      </div>
-      {value === undefined ? (
-        <Skeleton className="mt-2 h-8 w-16" />
-      ) : value === null ? (
-        <p className="mt-1 text-3xl font-semibold text-muted-foreground">—</p>
-      ) : (
-        <p className={`mt-1 text-3xl font-semibold tabular-nums ${attention ? 'text-primary' : ''}`}>
-          {value.toLocaleString()}
-        </p>
-      )}
-    </Link>
+    <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+      <section aria-labelledby="shown-cards" className="rounded-xl border bg-card">
+        <h2 id="shown-cards" className="border-b px-4 py-3 text-sm font-semibold">
+          On your Overview, in this order
+        </h2>
+        {draft.shown.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-muted-foreground">Nothing — show a card from the right.</p>
+        ) : (
+          <ol className="divide-y">
+            {draft.shown.map((id, i) => (
+              <li key={id} className="flex items-center gap-3 px-4 py-3">
+                <span className="w-5 text-right text-xs text-muted-foreground tabular-nums">{i + 1}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{info(id).title}</span>
+                  <span className="block text-xs text-muted-foreground">{info(id).description}</span>
+                </span>
+                <Button size="icon" variant="ghost" className="size-8" onClick={() => onChange({ ...draft, shown: move(draft.shown, id, -1) })} disabled={i === 0} aria-label={`Move ${info(id).title} up`}>
+                  <ArrowUp />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-8"
+                  onClick={() => onChange({ ...draft, shown: move(draft.shown, id, 1) })}
+                  disabled={i === draft.shown.length - 1}
+                  aria-label={`Move ${info(id).title} down`}
+                >
+                  <ArrowDown />
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => onChange({ shown: draft.shown.filter((x) => x !== id), hidden: [...draft.hidden, id] })} aria-label={`Hide ${info(id).title}`}>
+                  <EyeOff /> <span className="hidden sm:inline">Hide</span>
+                </Button>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+      <section aria-labelledby="hidden-cards" className="rounded-xl border bg-card">
+        <h2 id="hidden-cards" className="border-b px-4 py-3 text-sm font-semibold">
+          Hidden
+        </h2>
+        {draft.hidden.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-muted-foreground">Every card you can have is on your Overview.</p>
+        ) : (
+          <ul className="divide-y">
+            {draft.hidden.map((id) => (
+              <li key={id} className="flex items-center gap-3 px-4 py-3">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{info(id).title}</span>
+                  <span className="block text-xs text-muted-foreground">{info(id).description}</span>
+                </span>
+                <Button size="sm" variant="outline" onClick={() => onChange({ shown: [...draft.shown, id], hidden: draft.hidden.filter((x) => x !== id) })} aria-label={`Show ${info(id).title}`}>
+                  <Eye /> Show
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="border-t px-4 py-3 text-xs text-muted-foreground">Kept with your account: your Overview looks the same wherever you sign in. Which cards there are follows what you may do in the portal.</p>
+      </section>
+    </div>
   )
-}
-
-function ChartCard({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-sm">{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Suspense fallback={<BarsSkeleton />}>{children}</Suspense>
-      </CardContent>
-    </Card>
-  )
-}
-
-function Line({
-  label,
-  value,
-  to,
-  attention,
-}: {
-  label: string
-  value: number | null | undefined
-  to: string
-  attention: boolean
-}) {
-  return (
-    <Link to={to} className="-mx-2 flex items-center justify-between rounded-md px-2 py-1.5 hover:bg-muted/50">
-      <span>{label}</span>
-      {value === undefined ? (
-        <Skeleton className="h-4 w-6" />
-      ) : value === null ? (
-        <span className="text-muted-foreground">—</span>
-      ) : (
-        <span className={`tabular-nums font-medium ${attention ? 'text-primary' : 'text-muted-foreground'}`}>
-          {value}
-        </span>
-      )}
-    </Link>
-  )
-}
-
-/**
- * The top `limit` by count, and everything past it folded into one "Other"
- * bar. A long tail gets a single bar, never more colours or more bars than
- * anyone can read.
- */
-export function topWithOther(counts: Map<string, number>, limit: number): Datum[] {
-  const ranked = [...counts.entries()]
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-  if (ranked.length <= limit + 1) return ranked
-  const rest = ranked.slice(limit).reduce((total, row) => total + row.count, 0)
-  return [...ranked.slice(0, limit), { name: 'Other', count: rest }]
 }

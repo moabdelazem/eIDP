@@ -41,14 +41,49 @@ back cannot bring it back. `rememberOpened`/`lastOpened` mark the item
 someone opened last (the build lists show "Opened last"). All of it is per
 browser tab, and degrades to memory without storage.
 
-`/` is the Overview (`features/overview/`): headline tiles, two charts and
-what is waiting on you. The map lives at `/map`; the old `/?q=` links
-redirect there. Overview composes other features' public pieces and owns no
-data. Its charts follow three rules: one series, one hue (`--chart-1`,
-eggplant — never red), top 8 plus "Other"; every chart has an sr-only table;
-and `charts.tsx` is lazy-loaded, because recharts is ~330 KB that only this
-page needs — import nothing else from it statically, or it rejoins the main
-bundle.
+`/` is the Overview (`features/overview/`), made for whoever signs in. It
+greets them by name and counts what needs them (pending decisions, failed
+approved requests, their own requests rejected or failed this week, broken
+pipelines, Jenkins failing, agents offline). Below that is a grid of cards.
+`card-list.ts` decides which cards someone gets from what they may do:
+Waiting on you needs `requests.decide_access` somewhere, Jenkins now needs
+`jenkins.view`, and so on. The catalog charts start hidden for anyone without
+`catalog.sync`. Your teams' projects matches the person's groups against the
+inventories' `teams`. The order of the cards, and which are hidden, belong to
+the person: Customize edits a draft, and Done saves it with the account
+(`PUT /preferences/overview`, module `preferences`), so the Overview follows
+them across browsers. `layout.ts` (`arrange`, tested) merges a saved layout
+with the cards available today:
+- a card new since saving goes in after the one it follows by default;
+- a card no longer theirs drops out;
+- Reset deletes the saved layout.
+
+Each card reads under the same cache key as its full page
+(`['requests','mine']`, `['pipelines','mine','7d']`, …), so the two share one
+request. Each card draws inside its own `ErrorBoundary`.
+
+The map lives at `/map`; the old `/?q=` links redirect there. The catalog
+card's charts follow three rules:
+- one series, one hue (`--chart-1`, eggplant, never red), top 8 plus "Other";
+- every chart has an sr-only table;
+- `charts.tsx` is lazy-loaded, because recharts is ~330 KB that only this page
+  needs. Import nothing else from it statically, or it rejoins the main
+  bundle (`import type` is fine).
+
+**A render error must never blank the app.** React unmounts the whole tree
+on an uncaught render error, so one unexpected value once took the portal
+down from the Overview: a request kind this build did not know, written by a
+newer branch sharing the database, made `KIND_ICON[kind]` undefined. Three
+`ErrorBoundary`s (`components/error-boundary.tsx`) now contain such errors:
+- one at the root, in `main.tsx`;
+- one around the routed page in `AppShell`, which resets when the path
+  changes, so the sidebar stays;
+- one around each Overview card.
+
+Lookups keyed by data from the API go through the safe helpers in
+`features/requests/status.tsx` (`kindLabel`, `kindIcon`, `statusLabel`,
+`statusTone`), which fall back instead of returning undefined. Index a
+`Record<Kind, …>` directly only with a value you produced yourself.
 
 Motion explains a change and nothing more, and all of it lives inside
 `prefers-reduced-motion: no-preference` (`index.css`), so reduced motion is
