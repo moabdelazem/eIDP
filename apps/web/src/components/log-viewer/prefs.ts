@@ -1,10 +1,21 @@
 import { useState } from 'react'
 
 /** How someone likes to read logs, kept per browser — a convenience, so it degrades to the defaults when storage is not there. */
-export type LogPrefs = { wrap: boolean; hideSteps: boolean; times: boolean; size: 'sm' | 'md' | 'lg' }
+export type LogPrefs = {
+  wrap: boolean
+  hideSteps: boolean
+  times: boolean
+  size: 'sm' | 'md' | 'lg'
+  /** The log's own ANSI colours. */
+  colours: boolean
+  /** Syntax highlighting of what no tool coloured. */
+  highlight: boolean
+  /** The stage tree beside the log, on a wide screen. */
+  tree: boolean
+}
 
 const KEY = 'eidp.log'
-const DEFAULTS: LogPrefs = { wrap: true, hideSteps: true, times: true, size: 'md' }
+const DEFAULTS: LogPrefs = { wrap: true, hideSteps: true, times: true, size: 'md', colours: true, highlight: true, tree: true }
 
 /** Text and row height per size; the row height is what `content-visibility` assumes for lines not drawn yet. */
 export const SIZES = {

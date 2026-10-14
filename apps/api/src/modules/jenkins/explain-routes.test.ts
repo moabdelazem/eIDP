@@ -29,6 +29,7 @@ process.env.OLLAMA_NUM_CTX = '8192'
 
 const { createApp } = await import('../../app.ts')
 const { closeDb, migrate, query } = await import('../../lib/db.ts')
+const { logLines } = await import('./explainer.ts')
 const app = createApp()
 const tokens: Record<string, string> = {}
 
@@ -96,9 +97,10 @@ test('a failed build is explained, citing the log lines that show why', async ()
   assert.ok(answer.evidence.length > 0)
 
   // Cited lines are numbered as the build page numbers the same log, and
-  // their text is the log's own.
+  // their text is the log's own, as the page shows it: without its colours.
   const run = await json(await call('alice', 'GET', `/jenkins/run?job=${encodeURIComponent(LOAN.job)}&number=${LOAN.number}`))
-  const lines = run.log.replace(/\n$/, '').split('\n')
+  const lines = logLines(run.log)
+  assert.ok(/\x1b\[/.test(run.log), 'the fake colours its log, as AnsiColor does')
   for (const { line, text } of answer.evidence) assert.equal(text, lines[line - 1])
   assert.ok(answer.evidence.some((e: any) => /script returned exit code 1/.test(e.text)))
 })

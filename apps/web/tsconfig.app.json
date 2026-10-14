@@ -23,5 +23,7 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Tests run under Node (`node --test`) and are checked with its types, in tsconfig.node.json.
+  "exclude": ["src/**/*.test.ts"]
 }

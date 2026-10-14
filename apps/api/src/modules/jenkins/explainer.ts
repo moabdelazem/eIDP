@@ -55,17 +55,29 @@ export const _allCategories: _AllCategories = true
 
 // ---- the log ---------------------------------------------------------------
 
+// The escape codes the log viewer reads past (apps/web components/log-viewer/ansi.ts):
+// colours, cursor movement, character sets. The same set, or the model reads
+// text the page does not show.
 // eslint-disable-next-line no-control-regex
-const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g
+const ANSI = /\x1b\[[0-9;:?]*[A-Za-z]|\x1b[()][A-Za-z0-9]|\x1b[=>78DEHMc]/g
 const STAGE = /^\[Pipeline\] \{ \((.+)\)$/
 // The same rules as the log viewer (apps/web components/log-viewer/parse.ts), so
 // "an error line" means the same thing on both sides. Case-sensitive: ERROR is
 // a log level, "error" is often prose.
 const ERROR = /(^|[\s[])(ERROR|FATAL|SEVERE)\b|\bBUILD FAILURE\b|Finished: FAILURE|\b(Failures|Errors): [1-9]|exit code [1-9]|Exception\b|^\s+at [\w$.]+\(/
 
-/** The log as the build page numbers it: ANSI stripped, one entry per line, from 1. */
+/** The log as the build page numbers and shows it: ANSI stripped, each progress line at its last frame, one entry per line, from 1. */
 export function logLines(log: string): string[] {
-  return log.replace(ANSI, '').replace(/\n$/, '').split('\n')
+  return log.replace(/\r?\n$/, '').split('\n').map(lastFrame)
+}
+
+/** What a terminal shows of a line redrawn with carriage returns — as the viewer's `lastFrame`. */
+function lastFrame(line: string): string {
+  const raw = (line.endsWith('\r') ? line.slice(0, -1) : line).replace(ANSI, '')
+  if (!raw.includes('\r')) return raw
+  let shown = ''
+  for (const frame of raw.split('\r')) shown = frame + shown.slice(frame.length)
+  return shown
 }
 
 /**

@@ -219,8 +219,45 @@ log box itself, never `scrollIntoView`, which also scrolled the page and
 shifted the sidebar rail.
 
 **The log viewer is the app's one** (`components/log-viewer/`: `parse.ts`
-reads lines, `prefs.ts` keeps wrap, step hiding, timestamps and text size per
-browser in `eidp.log`). The build page uses it, and so does the chatbot:
+reads lines, `prefs.ts` keeps wrap, step hiding, timestamps, text size,
+colours, highlighting and the tree per browser in `eidp.log`).
+
+**Colours, highlighting and the stage tree.** A log's ANSI colours are drawn
+as Jenkins' AnsiColor draws them (`ansi.ts`). A colour runs on from line to
+line until something resets it, as in a terminal: Maven turns red, prints a
+stack, resets. 256-colour and true-colour codes work. Every other escape
+(cursor movement, erasing, character sets) is dropped. A progress line
+redrawn with `\r` shows its last frame. Each `Line` keeps its text without
+codes, which is what find, the error rules, copy and download read, plus its
+styled `segments`. What no tool coloured is highlighted (`highlight.ts`), a
+line at a time, in the way tree-sitter labels code:
+- a `+ …` command's program, flags, strings, variables and pipes;
+- a Java, .NET or Python stack frame's method, file and line, with its
+  package quieter;
+- a JSON line's keys and values;
+- elsewhere: log levels, exception classes, paths, versions, hashes,
+  durations, `key=` and URLs. A number joined to a name (`linux-01`) is the
+  name.
+
+A coloured line is the tool's and is not highlighted over. Find marks sit over
+both, so a match that crosses two colours is still one mark. Stages nest as
+Jenkins nests them. `[Pipeline] {` and `}` open and close blocks, so a
+parallel stage's branches sit under it (`stageTree`). Each heading folds its
+lines and says how many are folded and what went wrong in them. A pinned
+heading reads its whole path, `Tests › Branch: unit`. Nested headings all pin
+at the top: a stale child pinned under a new parent would lie, because sticky
+siblings never unstick. Beside the log, on a wide screen and not in a chat
+answer, is the tree Jenkins' Pipeline Graph View shows (`stage-tree.tsx`):
+- each stage and branch with its errors or warnings;
+- a dot on the one a running build is in;
+- folding, fold-all `[` and unfold-all `]`;
+- `t` to hide or show it.
+
+A jump to a line (an error, a stage, a link, the explanation's evidence)
+unfolds what is around it. Find wins over folding as over the other filters.
+The explainer reads the log the same way (same escapes, same last frame),
+so the lines it cites are the lines the page shows. The fake Jenkins colours
+its log as Maven does under AnsiColor. The build page uses it, and so does the chatbot:
 a ` ```log ` or ` ```console ` fence in an answer renders as a `compact`
 viewer, and the system prompt asks the model to quote log lines that way.
 **Expand** (or `f`) opens the same viewer in a Radix `Dialog` nearly the
