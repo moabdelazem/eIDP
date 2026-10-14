@@ -65,7 +65,7 @@ export function Section({
   flush?: boolean
 }) {
   return (
-    <Card className={flush ? 'gap-0 overflow-hidden py-0' : 'gap-4'}>
+    <Card className={flush ? 'gap-0 overflow-clip py-0' : 'gap-4'}>
       <CardHeader className={flush ? 'border-b py-4' : ''}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

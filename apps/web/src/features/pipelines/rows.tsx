@@ -2,8 +2,8 @@ import { Link } from 'react-router'
 import { ExternalLink, GitCommitHorizontal, KeyRound, Play, ShieldCheck, Sparkles, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { Pending } from '@/features/jenkins/actions.tsx'
-import { buildPath, duration } from '@/features/jenkins/api.ts'
-import { JobName, RESULT, ResultBadge } from '@/features/jenkins/result.tsx'
+import { buildKey, buildPath, duration } from '@/features/jenkins/api.ts'
+import { JobName, OpenedLast, RESULT, ResultBadge } from '@/features/jenkins/result.tsx'
 import { since } from '@/features/requests/status.tsx'
 import { RUN_WINDOW_LABEL, type MyPipeline, type MyRun, type Reason, type RunWindow } from './api.ts'
 
@@ -32,14 +32,15 @@ function JobAndApp({ job, applications, to }: { job: string; applications: strin
 }
 
 /** One run: what, for whom, why it is yours, and what you may do. */
-export function RunRow({ run: r, onAct }: { run: MyRun; onAct: (pending: Pending) => void }) {
+export function RunRow({ run: r, opened = false, onAct }: { run: MyRun; opened?: boolean; onAct: (pending: Pending) => void }) {
   const shared = r.matchedBy === 'parameters'
   const shown = r.parameters.filter((p) => !p.hidden && p.value).slice(0, 4)
   return (
-    <li className="@container px-4 py-4 sm:px-6">
+    <li className={`@container px-4 py-4 sm:px-6 ${opened ? 'bg-secondary/40' : ''}`} data-build={buildKey(r)}>
       <div className="flex flex-col gap-3 @lg:flex-row @lg:items-start @lg:justify-between">
         <div className="min-w-0 space-y-1.5">
           <JobAndApp job={r.job} applications={shared ? r.applications : []} to={buildPath(r, '/pipelines')} />
+          {opened && <OpenedLast />}
           <p className="text-xs text-muted-foreground">
             <span className="font-mono">#{r.number}</span> · {r.causes[0] ?? 'Started'} · {since(r.startedAt)}
             {r.result !== 'running' && <> · took {duration(r.durationMs)}</>}
@@ -71,13 +72,14 @@ export function RunRow({ run: r, onAct }: { run: MyRun; onAct: (pending: Pending
 }
 
 /** One job (one project, on a shared job), over the runs you may see. */
-export function PipelineRow({ pipeline: p, window, onAct }: { pipeline: MyPipeline; window: RunWindow; onAct: (pending: Pending) => void }) {
+export function PipelineRow({ pipeline: p, window, opened = false, onAct }: { pipeline: MyPipeline; window: RunWindow; opened?: boolean; onAct: (pending: Pending) => void }) {
   const last = p.last
   return (
-    <li className="@container px-4 py-4 sm:px-6">
+    <li className={`@container px-4 py-4 sm:px-6 ${opened ? 'bg-secondary/40' : ''}`}>
       <div className="flex flex-col gap-3 @lg:flex-row @lg:items-start @lg:justify-between">
         <div className="min-w-0 space-y-1.5">
           <JobAndApp job={p.job} applications={p.applications} to={buildPath(last, '/pipelines')} />
+          {opened && <OpenedLast />}
           {p.owners.length > 0 && <p className="text-xs text-muted-foreground">{[...new Set(p.owners.map((o) => o.project))].join(', ')}</p>}
           <Reasons reasons={p.reasons} />
         </div>
