@@ -11,6 +11,7 @@ import { ViewingAsBanner } from './viewing-as-banner.tsx'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { PageVisits } from './page-visits.tsx'
 import { useScrollMemory } from '@/lib/places.ts'
+import { ErrorBoundary } from '@/components/error-boundary.tsx'
 import { HeaderSkeleton, Loading, RowsSkeleton } from '@/components/skeletons.tsx'
 
 export function AppShell() {
@@ -38,9 +39,12 @@ export function AppShell() {
                 main: SidebarInset is already the page's one <main>. */}
             <div key={pathname} className="page-enter p-8">
               {/* A page's own chunk is fetched the first time it opens (app/lazy-page.ts). */}
-              <Suspense fallback={<PageLoading />}>
-                <Outlet />
-              </Suspense>
+              {/* A page that fails to draw says so; the sidebar and every other page keep working. */}
+              <ErrorBoundary resetKey={pathname}>
+                <Suspense fallback={<PageLoading />}>
+                  <Outlet />
+                </Suspense>
+              </ErrorBoundary>
             </div>
           </SidebarInset>
           <ChatbotDock />

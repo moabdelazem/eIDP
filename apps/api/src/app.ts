@@ -14,6 +14,7 @@ import { requestRoutes } from './modules/requests/routes.ts'
 import { rbacRoutes } from './modules/access/routes.ts'
 import { digestRoutes } from './modules/digest/routes.ts'
 import { healthRoutes } from './modules/health/routes.ts'
+import { preferenceRoutes } from './modules/preferences/routes.ts'
 
 /**
  * Builds the app without listening, so tests can drive it through
@@ -37,6 +38,7 @@ export function createApp() {
   app.route('/rbac', rbacRoutes)
   app.route('/digests', digestRoutes)
   app.route('/activity', activityRoutes)
+  app.route('/preferences', preferenceRoutes)
 
   return app
 }

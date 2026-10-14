@@ -12,7 +12,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { duration, percent } from '@/features/jenkins/api.ts'
 import { JobName, ResultBadge } from '@/features/jenkins/result.tsx'
-import { KIND_ICON, KIND_LABEL, since, TargetPath } from '@/features/requests/status.tsx'
+import { KIND_LABEL, kindIcon, kindLabel, since, TargetPath } from '@/features/requests/status.tsx'
 import { ApiError } from '@/lib/api-client.ts'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
@@ -348,7 +348,7 @@ function Requests({ digest: d, linked }: { digest: Digest; linked: boolean }) {
       description={
         r.filed === 0
           ? 'Nothing was filed for this team or its projects this week.'
-          : `${r.filed} filed — ${kinds.map(([k, n]) => `${n} ${KIND_LABEL[k].toLowerCase()}`).join(', ')}. ${r.completed} done, ${r.rejected} rejected.`
+          : `${r.filed} filed — ${kinds.map(([k, n]) => `${n} ${kindLabel(k).toLowerCase()}`).join(', ')}. ${r.completed} done, ${r.rejected} rejected.`
       }
     >
       {r.failed.length === 0 && r.waiting.length === 0 ? (
@@ -371,11 +371,11 @@ function RequestList({ title, icon: Icon, tone, items, linked }: { title: string
       </h2>
       <ul className="space-y-2.5">
         {items.map((x) => {
-          const KindIcon = KIND_ICON[x.kind]
+          const KindIcon = kindIcon(x.kind)
           const name = <TargetPath parts={x.target.split('/')} className="text-sm" />
           return (
             <li key={x.id} className="flex items-start gap-2.5">
-              <KindIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-label={KIND_LABEL[x.kind]} />
+              <KindIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-label={kindLabel(x.kind)} />
               <div className="min-w-0">
                 {linked ? (
                   <Link to={`/requests/${x.id}`} className="hover:underline">

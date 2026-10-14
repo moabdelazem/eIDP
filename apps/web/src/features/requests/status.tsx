@@ -1,4 +1,4 @@
-import { Check, CircleDashed, ClipboardList, FolderGit2, FolderKanban, KeyRound, Loader2, TriangleAlert, X, type LucideIcon } from 'lucide-react'
+import { Check, CircleDashed, ClipboardList, FileQuestion, FolderGit2, FolderKanban, KeyRound, Loader2, TriangleAlert, X, type LucideIcon } from 'lucide-react'
 import { isJira, whereOf, type PortalRequest, type RequestKind, type RequestStatus } from './api.ts'
 
 /** What each status is called in a badge. Access requests say Granting/Granted instead. */
@@ -24,6 +24,17 @@ export const KIND_ICON: Record<RequestKind, LucideIcon> = {
   grant_access: KeyRound,
   create_jira_project: ClipboardList,
 }
+
+/**
+ * The lookups to use: a kind or status this build does not know — one a newer
+ * version of the portal wrote to the same database — reads as its own name
+ * with a plain icon, never as `undefined`, which React cannot render and which
+ * once blanked the whole app from the Overview's request list.
+ */
+export const kindLabel = (kind: string): string => KIND_LABEL[kind as RequestKind] ?? kind.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase())
+export const kindIcon = (kind: string): LucideIcon => KIND_ICON[kind as RequestKind] ?? FileQuestion
+export const statusTone = (status: string): { badge: string; dot: string } => STATUS_TONE[status as RequestStatus] ?? STATUS_TONE.cancelled
+export const statusLabel = (status: string): string => STATUS_LABEL[status as RequestStatus] ?? status.replaceAll('_', ' ')
 
 /** Nothing is created by an access request, so its badge says what it does. */
 const GRANT_LABEL: Partial<Record<RequestStatus, string>> = { approved: 'Granting', completed: 'Granted' }
@@ -58,10 +69,10 @@ export function StatusBadge({ status, kind }: { status: RequestStatus; kind?: Re
 
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${STATUS_TONE[status].badge}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${statusTone(status).badge}`}
     >
       <Icon className={`size-3.5 ${status === 'approved' ? 'animate-spin motion-reduce:animate-none' : ''}`} />
-      {(kind === 'grant_access' && GRANT_LABEL[status]) || STATUS_LABEL[status]}
+      {(kind === 'grant_access' && GRANT_LABEL[status]) || statusLabel(status)}
     </span>
   )
 }

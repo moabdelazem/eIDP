@@ -15,7 +15,7 @@ import { decide, rejectRequest } from './decisions.ts'
 import { RejectDialog } from './reject-dialog.tsx'
 import { ApproveDialog } from './decision-dialogs.tsx'
 import { RequestRow } from './request-row.tsx'
-import { AccessLine, KIND_ICON, RequestName, since } from './status.tsx'
+import { AccessLine, kindIcon, RequestName, since } from './status.tsx'
 import { RiskLine } from './risk.tsx'
 import { CardSkeleton, HeaderSkeleton, Loading, RowsSkeleton } from '@/components/skeletons.tsx'
 
@@ -200,7 +200,7 @@ export function ApprovalsPage() {
 function PendingCard({ request: r, onDecided }: { request: PortalRequest; onDecided: () => void }) {
   const [approving, setApproving] = useState(false)
   const [rejecting, setRejecting] = useState(false)
-  const Icon = KIND_ICON[r.kind]
+  const Icon = kindIcon(r.kind)
 
   return (
     <article className="h-full rounded-xl border bg-card p-5 shadow-sm">

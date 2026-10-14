@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { targetPath, type PortalRequest } from './api.ts'
-import { AccessLine, KIND_LABEL, StatusBadge, TargetPath } from './status.tsx'
+import { AccessLine, kindLabel, StatusBadge, TargetPath } from './status.tsx'
 
 /**
  * A request at a glance, over the table it was picked from — so reading
@@ -51,7 +51,7 @@ export function RequestPreview({ request: r, onClose }: { request: PortalRequest
             <Facts
               empty="—"
               items={[
-                ['Type', r.kind === 'grant_access' ? 'Access to a project' : KIND_LABEL[r.kind]],
+                ['Type', r.kind === 'grant_access' ? 'Access to a project' : kindLabel(r.kind)],
                 ['Access', <AccessLine request={r} />],
                 ['Requested by', r.requestedByName],
                 ['Requested', at(r.requestedAt)],

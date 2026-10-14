@@ -16,7 +16,7 @@ import { REQUEST_TYPES } from './kinds.ts'
 import { RejectDialog } from './reject-dialog.tsx'
 import { RiskPanel } from './risk.tsx'
 import { ApproveDialog, WithdrawDialog } from './decision-dialogs.tsx'
-import { AccessLine, KIND_ICON, KIND_LABEL, since, StatusBadge, TargetPath, WrappingUrl } from './status.tsx'
+import { AccessLine, kindIcon, kindLabel, since, StatusBadge, TargetPath, WrappingUrl } from './status.tsx'
 import { HeaderSkeleton, Loading, TimelineSkeleton } from '@/components/skeletons.tsx'
 import { Facts, PAGE, Section, Split } from '@/components/page-layout.tsx'
 
@@ -102,10 +102,10 @@ export function RequestPage() {
  */
 function RequestHeader({ request: r, own, onChanged }: { request: PortalRequest; own: boolean; onChanged: () => void }) {
   const [withdrawing, setWithdrawing] = useState(false)
-  const KindIcon = KIND_ICON[r.kind]
+  const KindIcon = kindIcon(r.kind)
   const Mark = isJira(r) ? JiraIcon : AzureDevOpsIcon
   // The registry's short label: the provider is already said beside it ("Jira · Project", not "Jira · Jira project").
-  const kind = REQUEST_TYPES.find((t) => t.kind === r.kind)?.label ?? KIND_LABEL[r.kind]
+  const kind = REQUEST_TYPES.find((t) => t.kind === r.kind)?.label ?? kindLabel(r.kind)
   return (
     <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
       <div className="flex min-w-0 items-start gap-4">
@@ -226,7 +226,7 @@ function Details({ request: r, own }: { request: PortalRequest; own: boolean }) 
       <Facts
         empty="—"
         items={[
-          ['Type', r.kind === 'grant_access' ? 'Access to a project' : KIND_LABEL[r.kind]],
+          ['Type', r.kind === 'grant_access' ? 'Access to a project' : kindLabel(r.kind)],
           ...((r.collection
             ? [['Collection', <code>{r.collection}</code>]]
             : [['Key', <code>{r.projectKey}</code>]]) as [string, React.ReactNode][]),

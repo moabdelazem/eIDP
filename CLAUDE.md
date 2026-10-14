@@ -14,7 +14,7 @@ pnpm workspace. `apps/*` and `packages/*`.
 
   | Folder | Holds | Rule |
   |---|---|---|
-  | `modules/<name>/` | One area: `access`, `activity`, `auth`, `catalog`, `chatbot`, `digest`, `health`, `jenkins`, `pipelines`, `requests` | Other modules import its `index.ts` and nothing else |
+  | `modules/<name>/` | One area: `access`, `activity`, `auth`, `catalog`, `chatbot`, `digest`, `health`, `jenkins`, `pipelines`, `preferences`, `requests` | Other modules import its `index.ts` and nothing else |
   | `modules/<name>/routes.ts` | HTTP shape: paths, validation, status codes | Mounted by `app.ts` alone; no business logic |
   | `modules/<name>/service.ts` (and its parts) | The area's logic | Knows nothing about HTTP |
   | `modules/<name>/jobs.ts` | The area's background jobs | Scheduled by `server.ts` from the index |
