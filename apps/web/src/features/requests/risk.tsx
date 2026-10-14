@@ -23,7 +23,7 @@ const LEVEL: Record<Assessment['level'], { label: string; icon: LucideIcon; tone
 
 export function RiskBadge({ level }: { level: Assessment['level'] }) {
   // A level this build does not know (a newer API) is named as sent, in the neutral style.
-  const { label, icon: Icon, tone } = LEVEL[level] ?? { label: `${String(level).replaceAll("_", " ")} risk`, icon: ShieldAlert, tone: 'text-muted-foreground' }
+  const { label, icon: Icon, tone } = LEVEL[level] ?? { label: `${String(level).replaceAll('_', ' ')} risk`, icon: ShieldAlert, tone: 'text-muted-foreground' }
   return (
     <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${tone}`}>
       <Icon className="size-3.5" />
