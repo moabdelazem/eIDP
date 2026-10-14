@@ -1,4 +1,5 @@
 import { api } from '@/lib/api-client.ts'
+import { lastOpened } from '@/lib/places.ts'
 
 // The JSON's shapes are the API's, from @eidp/contracts — one definition, so the two cannot drift.
 import type { AuditEntry, Category, Explanation, IgnoreFor, Overview, ParameterFacet, Run, RunDetail, RunQuery, Stats, SyncState, Window } from '@eidp/contracts/jenkins'
@@ -82,3 +83,7 @@ export function duration(ms: number): string {
 export function percent(rate: number | null): string {
   return rate === null ? '—' : `${Math.round(rate * 100)}%`
 }
+
+/** The build someone opened last, by `job#number` — kept per tab (lib/places.ts), so a list shows where they were. */
+export const lastOpenedBuild = (): string | null => lastOpened('build')
+export const buildKey = (b: { job: string; number: number }) => `${b.job}#${b.number}`

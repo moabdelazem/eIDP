@@ -17,6 +17,19 @@ is the same Jenkins for everyone else, a browse item behind `pipelines.view`
 (a `member` permission) — and it lists **runs**, not jobs, because a job is
 often shared: one build job and one deploy job for every project. A run is:
 
+**Coming back to the lists.** From a build, the breadcrumb (or Back) returns
+to the list as it was left: the tab, window, search, page and scroll, with the
+build marked *Opened last* (`lib/places.ts`, docs/web.md). For that, the
+Builds tab's page is in the URL (`page`), as is how many runs My pipelines
+lists (`n`). It lists 30 at a time under day headings (Today, Yesterday, then
+the weekday), which pin to the top while their runs scroll under them. A
+`Section` is `flush` with `overflow-clip`, not `overflow-hidden`: hidden would
+stop sticky headings from sticking to the window. A Builds row opens the build
+anywhere you click it, because the job's link is stretched over the row; the
+parameter chips and the actions sit above that link. A Dashboard with nothing
+finished in 24 hours says so and offers the 7 days, rather than a page of
+empty charts.
+
 - **yours** when you started it (`Started by user <uid or display name>`), or
   when it built a commit you wrote — whoever started it. Pushes are built by
   the service account maika, so the commit author is the person a push run is

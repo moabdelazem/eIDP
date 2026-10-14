@@ -1,6 +1,7 @@
 import { Fragment } from 'react'
 import { Link, useLocation } from 'react-router'
 import { crumbsFor } from '@/app/breadcrumbs.ts'
+import { BACK, placeFor } from '@/lib/places.ts'
 import { useCatalog } from '@/features/projects/catalog-context.tsx'
 import {
   Breadcrumb,
@@ -24,7 +25,10 @@ export function PageBreadcrumbs() {
             <BreadcrumbItem>
               {crumb.path ? (
                 <BreadcrumbLink asChild>
-                  <Link to={crumb.path}>{crumb.label}</Link>
+                  {/* Up a level is a way back: to the list as it was left — its filters, page and scroll. */}
+                  <Link to={placeFor(crumb.path)} state={BACK}>
+                    {crumb.label}
+                  </Link>
                 </BreadcrumbLink>
               ) : (
                 <BreadcrumbPage>{crumb.label}</BreadcrumbPage>

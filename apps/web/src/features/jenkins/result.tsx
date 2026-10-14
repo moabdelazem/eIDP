@@ -1,4 +1,4 @@
-import { Ban, Check, CircleAlert, Loader2, Minus, TriangleAlert, type LucideIcon } from 'lucide-react'
+import { Ban, Check, CircleAlert, History, Loader2, Minus, TriangleAlert, type LucideIcon } from 'lucide-react'
 import type { Result } from './api.ts'
 
 /**
@@ -55,4 +55,14 @@ function decodeName(part: string): string {
   } catch {
     return part
   }
+}
+
+/** "You opened this last", on the row someone comes back to — a word and an icon, and no meaning colour. */
+export function OpenedLast() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-1.5 py-0.5 text-[11px] font-normal text-secondary-foreground">
+      <History className="size-3" aria-hidden />
+      Opened last
+    </span>
+  )
 }

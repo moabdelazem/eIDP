@@ -10,10 +10,13 @@ import { Separator } from '@/components/ui/separator'
 import { ViewingAsBanner } from './viewing-as-banner.tsx'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { PageVisits } from './page-visits.tsx'
+import { useScrollMemory } from '@/lib/places.ts'
 import { HeaderSkeleton, Loading, RowsSkeleton } from '@/components/skeletons.tsx'
 
 export function AppShell() {
   const { pathname } = useLocation()
+  // A new page opens at the top; Back and a way-back link open where it was left (lib/places.ts).
+  useScrollMemory()
   return (
     // SidebarProvider writes sidebar_state but only reads it back server-side
     // in Next, so a plain SPA has to hand the saved value in itself.

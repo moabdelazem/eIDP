@@ -13,14 +13,15 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { since } from '@/features/requests/status.tsx'
 import { ApiError } from '@/lib/api-client.ts'
+import { useRememberPlace } from '@/lib/places.ts'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
 import { toast } from 'sonner'
 import { ActionDialog, type Pending } from './actions.tsx'
-import { buildPath, jenkinsApi, WINDOW_LABEL, type AuditEntry, type Failure, type Overview, type Result, type Window } from './api.ts'
+import { buildKey, buildPath, jenkinsApi, lastOpenedBuild, WINDOW_LABEL, type AuditEntry, type Failure, type Overview, type Result, type Window } from './api.ts'
 import { Dashboard } from './dashboard.tsx'
 import { IgnoreDialog, IgnoredList } from './ignore.tsx'
-import { JobName, RESULT, ResultBadge } from './result.tsx'
+import { JobName, OpenedLast, RESULT, ResultBadge } from './result.tsx'
 import { ParameterChips, RunAction, Runs } from './runs.tsx'
 
 type Tab = 'dashboard' | 'failures' | 'runs' | 'queue' | 'agents' | 'activity'
@@ -50,10 +51,13 @@ export function JenkinsPage() {
   const window: Window = params.get('window') === '7d' ? '7d' : '24h'
   const q = params.get('q') ?? ''
   const result: Result | 'all' = RESULTS.includes(params.get('result') as Result) ? (params.get('result') as Result) : 'all'
+  const page = Math.max(1, Math.floor(Number(params.get('page'))) || 1)
+  // Up from a build lands back here, as it was left (lib/places.ts).
+  useRememberPlace()
 
   /** Changes the view in the URL; `undefined` leaves a key alone, a default removes it. */
   const setView = useCallback(
-    (next: { tab?: Tab; window?: Window; q?: string; result?: Result | 'all' }) =>
+    (next: { tab?: Tab; window?: Window; q?: string; result?: Result | 'all'; page?: number }) =>
       setParams(
         (current) => {
           const copy = new URLSearchParams(current)
@@ -66,6 +70,9 @@ export function JenkinsPage() {
           put('window', next.window, '24h')
           put('q', next.q, '')
           put('result', next.result, 'all')
+          // A new search, window or tab starts again at the newest builds.
+          if (next.page !== undefined) put('page', String(next.page), '1')
+          else if (next.q !== undefined || next.result !== undefined || next.window !== undefined || next.tab !== undefined) copy.delete('page')
           return copy
         },
         { replace: true },
@@ -182,7 +189,7 @@ export function JenkinsPage() {
         </div>
 
         <TabsContent value="dashboard" className="mt-4">
-          <Dashboard window={window} version={version} onJob={(job) => setView({ tab: 'runs', q: job, result: 'all' })} />
+          <Dashboard window={window} version={version} onJob={(job) => setView({ tab: 'runs', q: job, result: 'all' })} onWindow={(w) => setView({ window: w })} />
         </TabsContent>
         <TabsContent value="failures" className="mt-4">
           <FailuresTable
@@ -196,7 +203,7 @@ export function JenkinsPage() {
           <IgnoredList failures={o.ignored} canOperate={canOperate} onDone={() => setVersion((v) => v + 1)} />
         </TabsContent>
         <TabsContent value="runs" className="mt-4">
-          <Runs window={window} version={version} q={q} result={result} onChange={setView} canOperate={canOperate} onAct={setPending} />
+          <Runs window={window} version={version} q={q} result={result} page={page} onChange={setView} canOperate={canOperate} onAct={setPending} />
         </TabsContent>
         <TabsContent value="queue" className="mt-4">
           <QueueTable overview={o} canOperate={canOperate} onAct={setPending} />
@@ -292,6 +299,7 @@ function FailuresTable({
   onIgnore: (job: string) => void
   onPick: (term: string) => void
 }) {
+  const [opened] = useState(lastOpenedBuild)
   if (failures.length === 0) {
     return (
       <div className="flex items-center gap-2 rounded-xl border border-dashed px-4 py-8 text-sm text-muted-foreground">
@@ -317,11 +325,16 @@ function FailuresTable({
         </TableHeader>
         <TableBody>
           {failures.map((f) => (
-            <TableRow key={f.job}>
+            <TableRow key={f.job} className={buildKey(f.last) === opened ? 'bg-secondary/40' : ''}>
               <TableCell className="max-w-md">
                 <Link to={buildPath(f.last)} className="hover:underline">
                   <JobName name={f.job} className="text-sm" />
                 </Link>
+                {buildKey(f.last) === opened && (
+                  <span className="ml-2">
+                    <OpenedLast />
+                  </span>
+                )}
                 {/* The model's one line on why, made when the build failed — the full answer is on the build page. */}
                 {f.explanation && (
                   <p className="mt-1 flex items-start gap-1.5 text-xs whitespace-normal text-muted-foreground" title={f.explanation.summary}>

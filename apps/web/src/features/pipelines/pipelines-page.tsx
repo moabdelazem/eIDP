@@ -10,8 +10,10 @@ import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { ActionDialog, type Pending } from '@/features/jenkins/actions.tsx'
+import { buildKey, lastOpenedBuild } from '@/features/jenkins/api.ts'
 import { RESULT } from '@/features/jenkins/result.tsx'
 import { since } from '@/features/requests/status.tsx'
+import { useRememberPlace } from '@/lib/places.ts'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
 import { groupsOf, isBroken, isPersonal, pipelinesApi, RUN_WINDOW_LABEL, type MyRun, type Reason, type RunWindow } from './api.ts'
@@ -54,6 +56,11 @@ export function PipelinesPage() {
   const q = params.get('q') ?? ''
   /** A group's name, `me` for just yours, or empty for everything. */
   const group = params.get('group') ?? ''
+  /** How many runs are listed: a page at a time, in the URL so coming back lists as many again. */
+  const listed = Math.max(BATCH, Math.floor(Number(params.get('n'))) || BATCH)
+  // Up from a run lands back here, as it was left (lib/places.ts); the run opened is marked.
+  useRememberPlace()
+  const [opened] = useState(lastOpenedBuild)
 
   const [watching, setWatching] = useState(false)
   // While something runs or waits, look again every 15 seconds; otherwise only on Refresh.
@@ -64,12 +71,14 @@ export function PipelinesPage() {
 
   const [pending, setPending] = useState<Pending | null>(null)
 
-  const set = (key: 'show' | 'q' | 'group' | 'view' | 'window', value: string, fallback = '') =>
+  const set = (key: 'show' | 'q' | 'group' | 'view' | 'window' | 'n', value: string, fallback = '') =>
     setParams(
       (prev) => {
         const next = new URLSearchParams(prev)
         if (!value || value === fallback) next.delete(key)
         else next.set(key, value)
+        // Anything else changed lists from the newest again.
+        if (key !== 'n') next.delete('n')
         return next
       },
       { replace: true },
@@ -154,6 +163,7 @@ export function PipelinesPage() {
   // A pipeline is shown when one of the runs the filters leave is in it.
   const kept = new Set(runs.map((r) => `${r.job}#${r.number}`))
   const pipelines = data.pipelines.filter((p) => inGroup(p) && data.runs.some((r) => kept.has(`${r.job}#${r.number}`) && sameRow(p, r)))
+  const openedRun = opened ? data.runs.find((r) => buildKey(r) === opened) : undefined
   const groupLabel = group === 'me' ? ' — just yours' : group ? ` — ${groups.find((g) => g.name.toLowerCase() === group.toLowerCase())?.name ?? group}` : ''
 
   return (
@@ -279,15 +289,34 @@ export function PipelinesPage() {
               {show !== 'all' && <> among {tile.label.toLowerCase()} runs</>}.
             </p>
           ) : view === 'runs' ? (
-            <ul className="divide-y">
-              {runs.map((r) => (
-                <RunRow key={`${r.job}#${r.number}`} run={r} onAct={setPending} />
-              ))}
-            </ul>
+            <>
+              <ul>
+                {byDay(runs.slice(0, listed)).map(({ day, runs: dayRuns }) => (
+                  <li key={day}>
+                    {/* The day stays at the top of the window while its runs scroll under it; opaque, or they show through. */}
+                    <h3 className="sticky top-0 z-[2] border-y bg-card px-4 py-1.5 text-xs font-medium text-muted-foreground sm:px-6">
+                      {day} <span className="font-normal tabular-nums">· {dayRuns.length}</span>
+                    </h3>
+                    <ul className="divide-y">
+                      {dayRuns.map((r) => (
+                        <RunRow key={buildKey(r)} run={r} opened={buildKey(r) === opened} onAct={setPending} />
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+              {runs.length > listed && (
+                <div className="border-t px-4 py-3 text-center sm:px-6">
+                  <Button variant="outline" size="sm" onClick={() => set('n', String(listed + BATCH))}>
+                    Show {Math.min(BATCH, runs.length - listed)} more <span className="text-muted-foreground tabular-nums">· {runs.length - listed} left</span>
+                  </Button>
+                </div>
+              )}
+            </>
           ) : (
             <ul className="divide-y">
               {pipelines.map((p) => (
-                <PipelineRow key={p.key} pipeline={p} window={window} onAct={setPending} />
+                <PipelineRow key={p.key} pipeline={p} window={window} opened={!!openedRun && sameRow(p, openedRun)} onAct={setPending} />
               ))}
             </ul>
           )}
@@ -302,7 +331,27 @@ export function PipelinesPage() {
   )
 }
 
-/** Whether a run is one of a pipeline row's: same job, and same project on a shared job. */
+/** Runs listed at a time. */
+const BATCH = 30
+
+/** Runs under the day they started — Today, Yesterday, then the weekday and date — newest first, as they come. */
+function byDay(runs: MyRun[]): { day: string; runs: MyRun[] }[] {
+  const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const today = startOf(new Date())
+  const label = (iso: string) => {
+    const day = startOf(new Date(iso))
+    if (day === today) return 'Today'
+    if (day === today - 86_400_000) return 'Yesterday'
+    return new Date(iso).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })
+  }
+  const out: { day: string; runs: MyRun[] }[] = []
+  for (const r of runs) {
+    const day = label(r.startedAt)
+    if (out.at(-1)?.day === day) out.at(-1)!.runs.push(r)
+    else out.push({ day, runs: [r] })
+  }
+  return out
+}
 
 function groupCounts(runs: MyRun[]): { name: string; n: number }[] {
   const counts = new Map<string, { name: string; n: number }>()

@@ -20,6 +20,27 @@ pathname rather than route handles — `useMatches` needs a data router and we
 use the declarative one. Each page renders exactly one `h1` in its content;
 the header is the trail, not a heading.
 
+**Coming back lands where you left** (`lib/places.ts`). The declarative router
+restores no scroll, so the shell does it (`useScrollMemory`):
+- a new page opens at the top; before this, a build opened from far down a
+  list opened scrolled down;
+- Back, Forward and a way-back link (state `BACK`) open where that address was
+  left;
+- a page's own filter change (a replace on the same path) does not move it.
+
+Positions are kept per address in sessionStorage, the last 50. A restore waits
+for a loading page to grow tall enough, up to two seconds, and stops the
+moment someone scrolls. The current address is a ref, set before any scroll,
+so the jump to a new page's top is never saved as the old page's position.
+
+A list page calls `useRememberPlace()`, and the breadcrumb's way up goes to
+`placeFor(path)`: that list as it was left. So "Jenkins" from a build lands on
+the Builds tab, its window, search and page, not on a fresh Dashboard. Keep a
+list's state (tab, filters, page, how many are listed) in its URL, or the way
+back cannot bring it back. `rememberOpened`/`lastOpened` mark the item
+someone opened last (the build lists show "Opened last"). All of it is per
+browser tab, and degrades to memory without storage.
+
 `/` is the Overview (`features/overview/`): headline tiles, two charts and
 what is waiting on you. The map lives at `/map`; the old `/?q=` links
 redirect there. Overview composes other features' public pieces and owns no

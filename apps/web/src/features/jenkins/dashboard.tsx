@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
-import { EyeOff, Sparkles } from 'lucide-react'
+import { CalendarRange, EyeOff, Sparkles } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { Kpi, signed } from '@/components/kpi.tsx'
 import { Section } from '@/components/page-layout.tsx'
 import { BarsSkeleton, Loading } from '@/components/skeletons.tsx'
@@ -24,7 +25,18 @@ const RankedBars = lazy(() => import('./charts.tsx').then((m) => ({ default: m.R
  * filter, above everything it scopes. Every chart is one question, one series
  * in one hue unless the series is the point (results), never two y-axes.
  */
-export function Dashboard({ window, version, onJob }: { window: Window; version: number; onJob: (job: string) => void }) {
+export function Dashboard({
+  window,
+  version,
+  onJob,
+  onWindow,
+}: {
+  window: Window
+  version: number
+  onJob: (job: string) => void
+  /** Offered when a quiet day leaves the charts empty. */
+  onWindow: (window: Window) => void
+}) {
   const stats = useResource(['jenkins', 'stats', window, version], () => jenkinsApi.stats(window), { pollMs: 60_000 })
 
   if (stats.error && !stats.data) return <p className="text-sm text-destructive">{stats.error}</p>
@@ -42,6 +54,18 @@ export function Dashboard({ window, version, onJob }: { window: Window; version:
   return (
     <div className={`space-y-6 transition-opacity ${stale ? 'opacity-60' : ''}`}>
       <Kpis stats={s} />
+      {/* A quiet day draws a page of empty charts; the week has something to show. */}
+      {s.window === '24h' && s.current.builds === 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
+          <span className="flex items-center gap-2">
+            <CalendarRange className="size-4" aria-hidden />
+            No build finished in the last 24 hours{s.running > 0 ? `, and ${s.running} ${s.running === 1 ? 'is' : 'are'} running now` : ''}.
+          </span>
+          <Button size="sm" variant="outline" onClick={() => onWindow('7d')}>
+            Show the last 7 days
+          </Button>
+        </div>
+      )}
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Section title="Builds by result" description={`${WINDOW_LABEL[s.window]}, ${s.window === '24h' ? 'per hour' : 'per six hours'}.`}>

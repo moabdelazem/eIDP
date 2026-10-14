@@ -12,8 +12,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { since } from '@/features/requests/status.tsx'
 import { useResource } from '@/lib/use-resource.ts'
 import type { Pending } from './actions.tsx'
-import { buildPath, duration, jenkinsApi, WINDOW_LABEL, type Parameter, type Result, type Run, type Window } from './api.ts'
-import { JobName, RESULT, ResultBadge } from './result.tsx'
+import { buildKey, buildPath, duration, jenkinsApi, lastOpenedBuild, WINDOW_LABEL, type Parameter, type Result, type Run, type Window } from './api.ts'
+import { JobName, OpenedLast, RESULT, ResultBadge } from './result.tsx'
 
 const PAGE_SIZE = 50
 /** Parameters shown in a row before the rest fold into "+N". */
@@ -33,6 +33,7 @@ export function Runs({
   version,
   q,
   result,
+  page: pageNumber,
   onChange,
   canOperate,
   onAct,
@@ -42,7 +43,9 @@ export function Runs({
   version: number
   q: string
   result: Result | 'all'
-  onChange: (next: { q?: string; result?: Result | 'all' }) => void
+  /** Which page of builds, from 1 — in the URL, so coming back from a build lands on the same one. */
+  page: number
+  onChange: (next: { q?: string; result?: Result | 'all'; page?: number }) => void
   canOperate: boolean
   onAct: (pending: Pending) => void
 }) {
@@ -60,14 +63,11 @@ export function Runs({
     return () => clearTimeout(timer)
   }, [text, q, onChange])
 
-  // A new search starts at the newest builds.
-  const [offset, setOffset] = useState(0)
-  const filterKey = `${q}\n${result}\n${window}`
-  const [shownFilter, setShownFilter] = useState(filterKey)
-  if (filterKey !== shownFilter) {
-    setShownFilter(filterKey)
-    setOffset(0)
-  }
+  // A new search starts at the newest builds: the page (jenkins-page.tsx) drops `page` when the filters change.
+  const offset = (pageNumber - 1) * PAGE_SIZE
+  // Read once: the build someone comes back from.
+  const [opened] = useState(lastOpenedBuild)
+  const setOffset = (next: number) => onChange({ page: Math.floor(next / PAGE_SIZE) + 1 })
 
   const page = useResource(['jenkins', 'runs', window, q, result, offset, version], () => jenkinsApi.runs({ window, q, result: result === 'all' ? undefined : result, limit: PAGE_SIZE, offset }), { pollMs: 30_000 })
   const terms = q.toLowerCase().split(/\s+/).filter(Boolean)
@@ -147,17 +147,23 @@ export function Runs({
                   </TableRow>
                 ) : (
                   page.data.runs.map((run) => (
-                    <TableRow key={`${run.job}#${run.number}`}>
+                    // The whole row opens the build (the job's link stretched over it); chips and actions sit above it.
+                    <TableRow key={buildKey(run)} className={`relative ${buildKey(run) === opened ? 'bg-secondary/40' : ''}`}>
                       <TableCell className="max-w-72">
-                        <Link to={buildPath(run)} className="hover:underline">
+                        <Link to={buildPath(run)} className="hover:underline after:absolute after:inset-0 after:content-['']">
                           <JobName name={run.job} className="text-sm" /> <span className="font-mono text-xs text-muted-foreground">#{run.number}</span>
                         </Link>
+                        {buildKey(run) === opened && (
+                          <span className="ml-2">
+                            <OpenedLast />
+                          </span>
+                        )}
                         {run.causes[0] && <p className="mt-0.5 truncate text-xs text-muted-foreground">{run.causes[0]}</p>}
                       </TableCell>
                       <TableCell>
                         <ResultBadge result={run.result} />
                       </TableCell>
-                      <TableCell className="hidden max-w-96 md:table-cell">
+                      <TableCell className="relative z-[1] hidden max-w-96 md:table-cell">
                         <ParameterChips parameters={run.parameters} terms={terms} onPick={addTerm} />
                       </TableCell>
                       <TableCell className="hidden text-muted-foreground sm:table-cell" title={new Date(run.startedAt).toLocaleString()}>
@@ -167,7 +173,7 @@ export function Runs({
                         {run.result === 'running' ? '—' : duration(run.durationMs)}
                       </TableCell>
                       <TableCell className="hidden font-mono text-xs text-muted-foreground xl:table-cell">{run.builtOn ?? '—'}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="relative z-[1] text-right">
                         {canOperate && <RunAction run={run} onAct={onAct} />}
                       </TableCell>
                     </TableRow>

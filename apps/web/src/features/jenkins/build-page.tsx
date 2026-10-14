@@ -1,4 +1,4 @@
-import { lazy, Suspense, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router'
 import { Copy, ExternalLink, GitCommitHorizontal, List, Maximize2, Workflow } from 'lucide-react'
 import { toast } from 'sonner'
@@ -13,10 +13,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { since } from '@/features/requests/status.tsx'
+import { rememberOpened } from '@/lib/places.ts'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
 import { ActionDialog, type Pending } from './actions.tsx'
-import { duration, jenkinsApi, type RunDetail, type Stage } from './api.ts'
+import { buildKey, duration, jenkinsApi, type RunDetail, type Stage } from './api.ts'
 import { ExplainPanel } from './explain-panel.tsx'
 import { JobName, RESULT, ResultBadge } from './result.tsx'
 import { RunAction } from './runs.tsx'
@@ -42,6 +43,10 @@ export function BuildPage() {
   const job = params.get('job') ?? ''
   const number = Number(params.get('number'))
   const fromPipelines = useLocation().pathname.startsWith('/pipelines')
+  // The lists mark it when you come back to them.
+  useEffect(() => {
+    if (job && number > 0) rememberOpened('build', buildKey({ job, number }))
+  }, [job, number])
   usePageTitle(job ? `${job.split('/').pop()} #${number} — ${fromPipelines ? 'My pipelines' : 'Jenkins'}` : 'Build — Jenkins')
 
   const [following, setFollowing] = useState(true)
