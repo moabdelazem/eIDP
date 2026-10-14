@@ -97,6 +97,21 @@ const SECTIONS: [RegExp, string][] = [
   [/^\/me(\/|$)/, 'Your profile'],
 ]
 
+type SectionRow = { label: string | null; value: number; people: number }
+
+/**
+ * The parts of the portal people opened, ranked (as they come), the top eight
+ * by name and the rest folded into one "Other". Visits outside every known
+ * section are "Other" already: they join the fold rather than ranking as a
+ * second "Other" beside it — the chart keys its rows by label.
+ */
+export function foldSections(rows: SectionRow[]): { label: string; value: number; people: number }[] {
+  const named = rows.flatMap((r) => (r.label !== null && r.label !== 'Other' ? [{ ...r, label: r.label }] : []))
+  const top = named.slice(0, 8)
+  const rest = [...named.slice(8), ...rows.filter((r) => r.label === null || r.label === 'Other')]
+  return rest.length ? [...top, { label: 'Other', value: rest.reduce((n, r) => n + r.value, 0), people: Math.max(...rest.map((r) => r.people)) }] : top
+}
+
 /** The part of the portal a path is in, as the sidebar names it. */
 export function sectionOf(path: string): string {
   return SECTIONS.find(([pattern]) => pattern.test(path))?.[1] ?? 'Other'
@@ -306,16 +321,11 @@ export async function overview(window: Window = '7d'): Promise<Overview> {
   const beforeRow = totals.find((r) => !r.now) ?? zero
   const keys = Object.keys(zero) as (keyof typeof zero)[]
 
-  const visited = sections.map((r) => ({ ...r, label: r.label ?? 'Other' }))
-  const top = visited.slice(0, 8)
-  const rest = visited.slice(8)
   return {
     window,
     totals: Object.fromEntries(keys.map((k) => [k, { now: Number(nowRow[k] ?? 0), before: Number(beforeRow[k] ?? 0) }])) as Overview['totals'],
     series: series.map((r) => ({ at: r.at.toISOString(), people: r.people, events: r.events })),
-    sections: rest.length
-      ? [...top, { label: 'Other', value: rest.reduce((n, r) => n + r.value, 0), people: Math.max(...rest.map((r) => r.people)) }]
-      : top,
+    sections: foldSections(sections),
     people,
     refused: refused.map((r) => ({ uid: r.uid, count: r.count, reasons: r.reasons.map((x) => SIGN_IN_REASON[x] ?? x.replaceAll('_', ' ')), last: r.last.toISOString() })),
     retentionDays: config.ACTIVITY_RETENTION_DAYS,
