@@ -41,6 +41,7 @@ const BOOLEAN = 'hudson.model.BooleanParameterValue'
 const PASSWORD = 'hudson.model.PasswordParameterValue'
 const HOUR = 3_600_000
 /** A console note as Jenkins writes one (the payload is a serialized Java object, base64). */
+const ESC = '\x1b'
 const NOTE = '\x1b[8mha:////4LHZjdXBWyMtpg/9Z+p6P2xuWoE2i6y8iqqhl5UwObq/AAAAnx+LCAAAAAAAAP9b85aBtbiIQTGjNKU4P08vOT+vOD8nVc83PyU1x6OyILUoJzMv2y+/JJUBAhiZGBgqihhk0NSjKDWzXb3RdlLBUSYGJk8GtpzUvPSSDB8G5tKinBIGIZ+sxLJE/ZzEvHT94JKizLx0a6BxUmjGOUNodHsLgAyOEgZh/eT83ILSktQi/ZTUsvyCYgMLfQDLH8HIyAAAAA==\x1b[0m'
 
 const AGENTS = ['linux-01', 'linux-02', 'linux-03']
@@ -84,12 +85,15 @@ function history(
         '+ export DB_PASSWORD=hunter2',
         '[Pipeline] }',
         '[Pipeline] { (Build)',
-        ...Array.from({ length: 40 }, (_, n) => `[INFO] Compiling module ${n + 1} of 40`),
-        'WARNING: deprecated API used in ScoreCalculator.java',
+        // Coloured as Maven colours them under Jenkins' AnsiColor plugin: the log viewer draws them, everything else reads past them.
+        ...Array.from({ length: 40 }, (_, n) => `[${ESC}[1;34mINFO${ESC}[m] Compiling module ${n + 1} of 40`),
+        `${ESC}[33mWARNING:${ESC}[0m deprecated API used in ScoreCalculator.java`,
         '[Pipeline] }',
         '[Pipeline] { (Test)',
         failed ? 'Tests run: 42, Failures: 3, Errors: 0' : 'Tests run: 42, Failures: 0, Errors: 0',
-        ...(failed ? ['[ERROR] ScoreCalculatorTest.rejectsNegativeIncome: expected <false> but was <true>', 'ERROR: script returned exit code 1'] : []),
+        ...(failed
+          ? [`[${ESC}[1;31mERROR${ESC}[m] ScoreCalculatorTest.rejectsNegativeIncome: expected <false> but was <true>`, `${ESC}[31mERROR: script returned exit code 1${ESC}[0m`]
+          : []),
         '[Pipeline] }',
         '[Pipeline] End of Pipeline',
         `Finished: ${result ?? 'running'}`,

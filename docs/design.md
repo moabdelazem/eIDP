@@ -17,6 +17,16 @@ status gets its colour — badges, the stat tiles' dots and the timeline's last
 step all read it. They never carry meaning alone: every one comes with an
 icon and a word. Red still means only "act on this".
 
+**A console log's colours are the tool's, not ours.** The 16 ANSI colours a
+log asks for (Jenkins' AnsiColor) are tokens, `--ansi-0` … `--ansi-15`, each
+re-read for its theme — a terminal's white would vanish on a white card, its
+black on a dark one — and each 4.5:1 or better against the card. Beyond the
+16, the xterm palette and true colour are drawn as the tool wrote them. A
+tool's red is whatever it printed red; the viewer's own marks (an error
+line's icon and tint) still follow the rule above. Syntax highlighting in the
+log viewer uses DataView's `--shiki-token-*` colours, and the meaning colours
+only for meanings: a log level, a result.
+
 **Light and dark.** `next-themes` (already a shadcn dependency, for the
 Toaster) puts `dark` on `<html>` — Light, Dark or Same as the system, from the
 user menu at the foot of the rail, kept per browser in `eidp.theme`, the

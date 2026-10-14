@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
 import { Toggle } from '@/components/ui/toggle'
 import { parseLog, parseRange, rangeHash, stagesOf, stripAnsi } from './parse.ts'
+import { StageTree } from './stage-tree.tsx'
 import { useLogPrefs, SIZES } from './prefs.ts'
 import { LogLine } from './log-line.tsx'
 import { StageMenu, ViewMenu } from './menus.tsx'
@@ -30,7 +31,10 @@ import { StageMenu, ViewMenu } from './menus.tsx'
  *
  * Numbered lines, errors and warnings marked (with an icon, not colour
  * alone), pipeline stages as headings pinned while their lines scroll under
- * them, shell commands as `$ …`, `timestamps {}` prefixes as a column. Find
+ * them, shell commands as `$ …`, `timestamps {}` prefixes as a column. The
+ * log's own ANSI colours are drawn, and what no tool coloured is highlighted
+ * (`highlight.ts`). Stages nest as Jenkins nests them; each folds, and on a
+ * wide screen a tree of them sits beside the log (`stage-tree.tsx`). Find
  * with next/previous; jump error to error or to a stage; "errors with
  * context" and "hide steps" for reading a failure without Jenkins' own
  * bookkeeping — find wins over both, and a run of hidden lines opens with a
@@ -82,7 +86,27 @@ export function LogViewer({
   const errors = useMemo(() => lines.filter((l) => l.kind === 'error').map((l) => l.n), [lines])
   const stages = useMemo(() => stagesOf(lines), [lines])
   const [prefs, setPref] = useLogPrefs()
-  const { wrap, hideSteps, times, size } = prefs
+  const { wrap, hideSteps, times, size, colours, highlight, tree } = prefs
+  const coloured = useMemo(() => lines.some((l) => l.segments), [lines])
+
+  // Stages folded away, by heading line. A jump into one unfolds what is around it.
+  const [folded, setFolded] = useState<Set<number>>(() => new Set())
+  const unfoldTo = (n: number) => {
+    const line = lines.find((l) => l.n === n)
+    if (!line || !line.within.some((h) => folded.has(h))) return
+    setFolded((f) => {
+      const next = new Set(f)
+      for (const h of line.within) next.delete(h)
+      return next
+    })
+  }
+  const toggleFold = (heading: number) =>
+    setFolded((f) => {
+      const next = new Set(f)
+      if (!next.delete(heading)) next.add(heading)
+      return next
+    })
+  const isFolded = (l: (typeof lines)[number]) => l.within.some((h) => folded.has(h))
 
   const [expanded, setExpanded] = useState(false)
   const [errorsOnly, setErrorsOnly] = useState(false)
@@ -114,6 +138,7 @@ export function LogViewer({
     setShownJump(jump)
     setFind('')
     setFocusLine(jump.line)
+    unfoldTo(jump.line)
   }
   const outer = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -145,8 +170,13 @@ export function LogViewer({
       l.n === focusLine ||
       revealed.has(l.n) ||
       (selection !== null && l.n >= selection[0] && l.n <= selection[1]) ||
-      ((!hideSteps || l.kind !== 'step') && (!errorsOnly || nearError.has(l.n) || l.kind === 'stage')),
+      (!isFolded(l) && (!hideSteps || l.kind !== 'step') && (!errorsOnly || nearError.has(l.n) || l.kind === 'stage')),
   )
+  // Folded lines are counted on their heading, not as a run of hidden ones.
+  const foldedAway = (n: number) => {
+    const l = lines[n - (lines[0]?.n ?? 1)]
+    return l !== undefined && isFolded(l)
+  }
 
   // Where to look: the find result being stepped through, else a jumped-to line.
   const target = needle && matches.length ? matches[current % matches.length]! : focusLine
@@ -229,6 +259,7 @@ export function LogViewer({
   const goTo = (line: number) => {
     setFind('')
     setFollow(false)
+    unfoldTo(line)
     setFocusLine(line)
   }
   const nextError = (by: number) => {
@@ -289,6 +320,9 @@ export function LogViewer({
       E: () => nextError(-1),
       f: toggleExpanded,
       w: () => setPref('wrap', !wrap),
+      t: () => setPref('tree', !tree),
+      '[': () => setFolded(new Set(stages.map((s) => s.line))),
+      ']': () => setFolded(new Set()),
     }
     if (keys[e.key]) {
       e.preventDefault()
@@ -297,6 +331,15 @@ export function LogViewer({
   }
 
   const gapFrom = (i: number) => (i > 0 ? visible[i - 1]!.n : 0)
+  // A heading's fold: its lines, and what went wrong in them.
+  const stageAt = useMemo(() => new Map(stages.map((st) => [st.line, st])), [stages])
+  const foldOf = (heading: number) => {
+    const st = stageAt.get(heading)
+    return st && { folded: folded.has(heading), lines: st.end - st.line, errors: st.errors, warnings: st.warnings, onToggle: () => toggleFold(heading) }
+  }
+  const showTree = !compact && tree && stages.length > 0
+  const focused = lines.find((l) => l.n === target)
+  const currentStage = focused ? (focused.kind === 'stage' ? focused.n : (focused.within.at(-1) ?? null)) : null
   const sizing = SIZES[size]
 
   const frame = (
@@ -360,7 +403,7 @@ export function LogViewer({
         )}
 
         <div className="ml-auto flex gap-1">
-          <ViewMenu prefs={prefs} setPref={setPref} timed={lines.some((l) => l.time)} />
+          <ViewMenu prefs={prefs} setPref={setPref} timed={lines.some((l) => l.time)} coloured={coloured} staged={stages.length > 0} />
           <Button size="icon" variant="ghost" className="size-8" aria-label="Copy the log" onClick={() => void copy(stripAnsi(log), 'Log')}>
             <Copy />
           </Button>
@@ -434,7 +477,22 @@ export function LogViewer({
         </div>
       )}
 
-      <div className={expanded ? 'relative min-h-0 flex-1' : 'relative'}>
+      <div className={`flex ${expanded ? 'min-h-0 flex-1' : ''}`}>
+      {showTree && (
+        <div className={`hidden w-60 shrink-0 border-r lg:flex ${expanded ? '' : 'max-h-[70vh]'}`}>
+          <StageTree
+            stages={stages}
+            folded={folded}
+            running={live ? (stages.findLast((st) => st.end === last)?.line ?? null) : null}
+            current={currentStage}
+            onGo={goTo}
+            onToggle={toggleFold}
+            onFoldAll={() => setFolded(new Set(stages.map((st) => st.line)))}
+            onUnfoldAll={() => setFolded(new Set())}
+          />
+        </div>
+      )}
+      <div className={expanded ? 'relative min-h-0 min-w-0 flex-1' : 'relative min-w-0 flex-1'}>
         <div
           ref={box}
           onScroll={onScroll}
@@ -450,7 +508,9 @@ export function LogViewer({
               <p className="px-4 py-6 text-muted-foreground">{live ? 'Waiting for the first lines…' : 'The log is empty.'}</p>
             ) : (
               visible.map((line, i) => {
-                const hidden = i > 0 ? line.n - gapFrom(i) - 1 : 0
+                // Lines a filter hid, not ones folded under a heading: those are counted there.
+                let hidden = 0
+                for (let k = gapFrom(i) + 1; i > 0 && k < line.n; k++) if (!foldedAway(k)) hidden++
                 return (
                   // Siblings, not wrapped: a pinned heading sticks only within its parent, and that must be the whole log.
                   <Fragment key={line.n}>
@@ -461,7 +521,7 @@ export function LogViewer({
                         onClick={() =>
                           setRevealed((r) => {
                             const next = new Set(r)
-                            for (let k = gapFrom(i) + 1; k < line.n; k++) next.add(k)
+                            for (let k = gapFrom(i) + 1; k < line.n; k++) if (!foldedAway(k)) next.add(k)
                             return next
                           })
                         }
@@ -478,6 +538,9 @@ export function LogViewer({
                       timed={timed}
                       fresh={live && line.n > seen.upTo}
                       rowHeight={sizing.row}
+                      colours={colours}
+                      highlighting={highlight}
+                      fold={line.kind === 'stage' ? foldOf(line.n) : undefined}
                       onSelect={select}
                     />
                   </Fragment>
@@ -501,6 +564,7 @@ export function LogViewer({
             {unseen > 0 && <span className="text-muted-foreground tabular-nums">· {unseen} new {unseen === 1 ? 'line' : 'lines'}</span>}
           </Button>
         )}
+      </div>
       </div>
     </div>
   )

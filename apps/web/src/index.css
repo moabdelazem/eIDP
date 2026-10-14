@@ -497,6 +497,51 @@
   --shiki-token-punctuation: #8f7d96;
 }
 
+/*
+ * The 16 colours a console log asks for with ANSI codes (AnsiColor in
+ * Jenkins), for the log viewer. A terminal's "white" on a white card would
+ * vanish, and its "black" on a dark one, so they are this theme's readings of
+ * them: each at least 4.5:1 against the card in its theme. They are the
+ * tool's colours, not ours — a log's red is whatever the tool printed red.
+ */
+:root {
+  --ansi-0: #2b2230; /* black */
+  --ansi-1: #b4232c; /* red */
+  --ansi-2: #2d7a3e; /* green */
+  --ansi-3: #8a6400; /* yellow */
+  --ansi-4: #2f5bb3; /* blue */
+  --ansi-5: #8a3a9c; /* magenta */
+  --ansi-6: #1f7373; /* cyan */
+  --ansi-7: #6e6573; /* white */
+  --ansi-8: #6f6675; /* bright black */
+  --ansi-9: #c42d36; /* bright red */
+  --ansi-10: #2f8445; /* bright green */
+  --ansi-11: #946c00; /* bright yellow */
+  --ansi-12: #3f69c4; /* bright blue */
+  --ansi-13: #9c45ae; /* bright magenta */
+  --ansi-14: #237f7f; /* bright cyan */
+  --ansi-15: #3d3442; /* bright white */
+}
+
+.dark {
+  --ansi-0: #8a8190; /* black */
+  --ansi-1: #ff7a7a; /* red */
+  --ansi-2: #6fd38a; /* green */
+  --ansi-3: #e8c25a; /* yellow */
+  --ansi-4: #82a8ff; /* blue */
+  --ansi-5: #d08cf0; /* magenta */
+  --ansi-6: #5fd0d0; /* cyan */
+  --ansi-7: #d8d2dc; /* white */
+  --ansi-8: #a59cab; /* bright black */
+  --ansi-9: #ff9c9c; /* bright red */
+  --ansi-10: #8fe3a5; /* bright green */
+  --ansi-11: #f5d67a; /* bright yellow */
+  --ansi-12: #a6c0ff; /* bright blue */
+  --ansi-13: #e0a8f5; /* bright magenta */
+  --ansi-14: #8ae3e3; /* bright cyan */
+  --ansi-15: #f4f0f6; /* bright white */
+}
+
 .data-view pre {
   @apply m-0 bg-transparent py-3 font-mono;
   counter-reset: line;
