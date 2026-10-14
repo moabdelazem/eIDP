@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
 import { createApp } from '../../app.ts'
 import { closeDb, migrate, query } from '../../lib/db.ts'
-import { cleanPath, sectionOf } from './service.ts'
+import { cleanPath, foldSections, sectionOf } from './service.ts'
 
 const app = createApp()
 const tokens: Record<string, string> = {}
@@ -85,6 +85,7 @@ test('a page opened is kept as its path alone, once per half minute, in its part
 
   const { sections } = await json<{ sections: any[] }>(await call(tokens.alice!, 'GET', '/activity/overview?window=24h'))
   assert.ok(sections.find((s) => s.label === 'My pipelines')?.value >= 1)
+  assert.equal(new Set(sections.map((s) => s.label)).size, sections.length, 'each section once — the chart keys rows by label')
   // Visits count, but are not lines in the feed.
   assert.ok((await json<{ items: any[] }>(await call(tokens.alice!, 'GET', '/activity/feed?window=24h&who=bob'))).items.every((e) => e.kind !== 'visit'))
 
@@ -152,4 +153,14 @@ test('paths are cleaned and put in their part of the portal', () => {
   assert.equal(sectionOf('/projects/loan-api'), 'Projects map')
   assert.equal(sectionOf('/'), 'Overview')
   assert.equal(sectionOf('/nowhere'), 'Other')
+})
+
+test('the ranked parts of the portal are the top eight and one "Other", even when "Other" ranks among them', () => {
+  const named = ['Jenkins', 'My pipelines', 'Overview', 'Access', 'Approvals', 'Chatbot', 'My requests', 'Weekly digest', 'Your profile', 'Platform activity']
+  // Pages outside every section ("Other") visited more than most named parts.
+  const rows = [{ label: named[0]!, value: 40, people: 3 }, { label: 'Other', value: 30, people: 5 }, ...named.slice(1).map((label, i) => ({ label, value: 20 - i, people: 1 }))]
+  const folded = foldSections(rows)
+  assert.deepEqual(folded.map((r) => r.label), [...named.slice(0, 8), 'Other'])
+  assert.deepEqual(folded.at(-1), { label: 'Other', value: 30 + 13 + 12, people: 5 }, 'the unnamed visits and the two past the top eight')
+  assert.deepEqual(foldSections([{ label: 'Jenkins', value: 2, people: 1 }]), [{ label: 'Jenkins', value: 2, people: 1 }], 'nothing to fold, no "Other"')
 })

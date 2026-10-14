@@ -104,7 +104,11 @@ export function useScrollMemory(): void {
       return
     }
     const target = scrolls()[address]
-    if (!target) return window.scrollTo(0, 0)
+    // An effect returns nothing or its clean-up, never scrollTo's result.
+    if (!target) {
+      window.scrollTo(0, 0)
+      return
+    }
     const until = performance.now() + 2000
     let frame = 0
     // Someone scrolling while the page loads has taken over: stop putting it back.
