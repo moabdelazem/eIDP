@@ -500,7 +500,7 @@ function ActivityTable({ entries }: { entries: AuditEntry[] }) {
               </TableCell>
               <TableCell>{e.actorName}</TableCell>
               <TableCell>
-                {ACTION_LABEL[e.action]}
+                {ACTION_LABEL[e.action] ?? e.action}
                 {e.note && <p className="max-w-80 text-xs whitespace-normal text-muted-foreground">{e.note}</p>}
                 {!e.ok && <p className="max-w-80 text-xs whitespace-normal text-destructive">Refused: {e.error}</p>}
               </TableCell>

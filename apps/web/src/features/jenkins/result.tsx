@@ -16,8 +16,17 @@ export const RESULT: Record<Result, { label: string; icon: LucideIcon; badge: st
   not_built: { label: 'Not built', icon: Minus, badge: 'text-muted-foreground', dot: 'bg-muted-foreground/50' },
 }
 
+/**
+ * A result's look, safe for any value the API sends. A result this build does
+ * not know (Jenkins or a newer API added one) is shown by its own name in a
+ * neutral style — never undefined, which would take the page down.
+ */
+export function resultOf(result: string): (typeof RESULT)[Result] {
+  return RESULT[result as Result] ?? { ...RESULT.not_built, label: result ? result.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase()) : 'Unknown' }
+}
+
 export function ResultBadge({ result }: { result: Result }) {
-  const { label, icon: Icon, badge } = RESULT[result]
+  const { label, icon: Icon, badge } = resultOf(result)
   return (
     <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${badge}`}>
       <Icon className={`size-3.5 ${result === 'running' ? 'animate-spin motion-reduce:animate-none' : ''}`} />

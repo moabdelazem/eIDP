@@ -147,7 +147,7 @@ function Answer({ explanation: e, onJump }: { explanation: Explanation; onJump: 
       <div>
         <p className="text-base font-medium">{e.summary}</p>
         <p className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-          <span className="rounded-full border bg-muted/40 px-2 py-0.5">{CATEGORY[e.category]}</span>
+          <span className="rounded-full border bg-muted/40 px-2 py-0.5">{CATEGORY[e.category] ?? e.category}</span>
           {e.confidence === 'low' ? (
             <span className="inline-flex items-center gap-1 rounded-full border border-warning/25 bg-warning-soft px-2 py-0.5 text-warning">
               <TriangleAlert className="size-3" /> Unsure — the log does not show it clearly

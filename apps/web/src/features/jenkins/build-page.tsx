@@ -19,7 +19,7 @@ import { useResource } from '@/lib/use-resource.ts'
 import { ActionDialog, type Pending } from './actions.tsx'
 import { buildKey, duration, jenkinsApi, type RunDetail, type Stage } from './api.ts'
 import { ExplainPanel } from './explain-panel.tsx'
-import { JobName, RESULT, ResultBadge } from './result.tsx'
+import { JobName, ResultBadge, resultOf } from './result.tsx'
 import { RunAction } from './runs.tsx'
 
 // React Flow is the graph's canvas — ~50 KB that only a build page needs, so it loads with the graph.
@@ -141,7 +141,7 @@ export function BuildPage() {
               <Facts
                 empty="—"
                 items={[
-                  ['Result', <span className="inline-flex items-center gap-1.5">{RESULT[r.result].label}</span>],
+                  ['Result', <span className="inline-flex items-center gap-1.5">{resultOf(r.result).label}</span>],
                   ['Started', new Date(r.startedAt).toLocaleString()],
                   ['Took', r.result === 'running' ? 'Still running' : duration(r.durationMs)],
                   ['Agent', r.builtOn ? <code>{r.builtOn}</code> : null],
@@ -324,7 +324,7 @@ function StagesDialog({
 function StageList({ stages, open }: { stages: Stage[]; open: (stage: Stage, parent: Stage | null) => (() => void) | null }) {
   const total = stages.reduce((n, s) => n + s.durationMs, 0) || 1
   const item = (stage: Stage, parent: Stage | null) => {
-    const { icon: Icon, label } = RESULT[stage.result]
+    const { icon: Icon, label } = resultOf(stage.result)
     const go = open(stage, parent)
     const text = (
       <>
@@ -354,7 +354,7 @@ function StageList({ stages, open }: { stages: Stage[]; open: (stage: Stage, par
       <ol className="flex gap-0.5 overflow-hidden rounded-md" aria-hidden>
         {stages.map((stage) => (
           <li key={stage.name} className="h-2 min-w-2" style={{ flexGrow: Math.max(stage.durationMs / total, 0.04) }}>
-            <span className={`block h-full ${RESULT[stage.result].dot} ${stage.result === 'not_built' ? 'opacity-40' : ''}`} />
+            <span className={`block h-full ${resultOf(stage.result).dot} ${stage.result === 'not_built' ? 'opacity-40' : ''}`} />
           </li>
         ))}
       </ol>

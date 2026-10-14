@@ -16,7 +16,7 @@ import { REQUEST_TYPES } from './kinds.ts'
 import { RejectDialog } from './reject-dialog.tsx'
 import { RiskPanel } from './risk.tsx'
 import { ApproveDialog, WithdrawDialog } from './decision-dialogs.tsx'
-import { AccessLine, kindIcon, kindLabel, since, StatusBadge, TargetPath, WrappingUrl } from './status.tsx'
+import { AccessLine, kindIcon, kindLabel, since, statusLabel, StatusBadge, TargetPath, WrappingUrl } from './status.tsx'
 import { HeaderSkeleton, Loading, TimelineSkeleton } from '@/components/skeletons.tsx'
 import { Facts, PAGE, Section, Split } from '@/components/page-layout.tsx'
 
@@ -172,6 +172,9 @@ function stagesOf(r: PortalRequest): Stage[] {
       return [submitted, { label: 'Approved', detail: r.decidedByName, state: 'done' }, { label: 'Failed', detail: 'DevOps can retry', state: 'failed' }, { label: end, detail: null, state: 'upcoming' }]
     case 'completed':
       return [submitted, { label: 'Approved', detail: r.decidedByName, state: 'done' }, { label: worked, detail: `In ${systemOf(r)}`, state: 'done' }, { label: end, detail: at(r.completedAt), state: 'done' }]
+    default:
+      // A status this build does not know yet (a newer API): say what it is rather than guess the stages.
+      return [submitted, { label: statusLabel(r.status), detail: null, state: 'current' }, { label: work, detail: null, state: 'upcoming' }, { label: end, detail: null, state: 'upcoming' }]
   }
 }
 
@@ -199,7 +202,7 @@ function Tracker({ request: r }: { request: PortalRequest }) {
                 className={`absolute top-3.5 left-[calc(50%+1.25rem)] hidden h-0.5 w-[calc(100%-2.5rem)] rounded-full sm:block ${stage.state === 'done' ? 'bg-success' : 'bg-border'}`}
               />
             )}
-            <span className={`relative flex size-7 items-center justify-center rounded-full border-2 ${STAGE_DOT[stage.state]}`}>
+            <span className={`relative flex size-7 items-center justify-center rounded-full border-2 ${STAGE_DOT[stage.state] ?? STAGE_DOT.upcoming}`}>
               {Icon ? (
                 <Icon className={`size-3.5 ${stage.state === 'current' ? 'animate-spin motion-reduce:animate-none' : ''}`} strokeWidth={3} aria-hidden />
               ) : (
