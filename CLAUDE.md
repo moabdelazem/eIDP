@@ -119,6 +119,7 @@ The ones that have broken something before, or would quietly. Each doc says why.
 - **Secrets never leave the parser or the integration** (`[hidden]`), and values are never logged — names only. (`docs/integrations.md`, `docs/jenkins.md`)
 - **Every colour is a token with a value in `:root` and `.dark`**; red only ever means "act on this"; meaning colours always come with an icon and a word. (`docs/design.md`)
 - **All motion sits inside `prefers-reduced-motion: no-preference`.** (`docs/web.md`)
+- **A value from the API never indexes a table without a fallback** (`KIND_ICON[r.kind]`): a newer API or Jenkins sends values this build has never seen, and an undefined component or a destructured `undefined` blanks the page. Use the safe helpers (`kindLabel`, `kindIcon`, `statusLabel`, `statusTone`, `resultOf`) or `?? fallback`, and give every `switch` on one a `default`. (`docs/web.md`)
 - **One `h1` per page, and `usePageTitle`.** Identifiers wrap at `/`, never `break-all`. (`docs/ui.md`)
 - **Don't "fix"** the Ansible code-point sort, the doubly encoded multibranch names, or the error regex being the same on both sides of the log viewer. (`docs/integrations.md`, `docs/jenkins.md`)
 - **Tests share the dev database**: delete only your own rows (ids past a floor, names made for the run), and take advisory lock 4202 around the catalog. (`docs/requests.md`, `docs/jenkins.md`)

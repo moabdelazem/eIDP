@@ -31,10 +31,10 @@ export const KIND_ICON: Record<RequestKind, LucideIcon> = {
  * with a plain icon, never as `undefined`, which React cannot render and which
  * once blanked the whole app from the Overview's request list.
  */
-export const kindLabel = (kind: string): string => KIND_LABEL[kind as RequestKind] ?? kind.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase())
+export const kindLabel = (kind: string): string => KIND_LABEL[kind as RequestKind] ?? String(kind ?? 'request').replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase())
 export const kindIcon = (kind: string): LucideIcon => KIND_ICON[kind as RequestKind] ?? FileQuestion
 export const statusTone = (status: string): { badge: string; dot: string } => STATUS_TONE[status as RequestStatus] ?? STATUS_TONE.cancelled
-export const statusLabel = (status: string): string => STATUS_LABEL[status as RequestStatus] ?? status.replaceAll('_', ' ')
+export const statusLabel = (status: string): string => STATUS_LABEL[status as RequestStatus] ?? String(status ?? 'unknown').replaceAll('_', ' ')
 
 /** Nothing is created by an access request, so its badge says what it does. */
 const GRANT_LABEL: Partial<Record<RequestStatus, string>> = { approved: 'Granting', completed: 'Granted' }
@@ -128,7 +128,7 @@ export function RequestName({
   const name = request.repository ?? request.project
   const where = whereOf(request)
   const label =
-    request.kind === 'grant_access' ? `Access to the ${request.repository ? 'repository' : 'project'}` : KIND_LABEL[request.kind]
+    request.kind === 'grant_access' ? `Access to the ${request.repository ? 'repository' : 'project'}` : kindLabel(request.kind)
   return (
     <div className={`min-w-0 ${className}`}>
       <Tag className={`font-mono font-medium break-words ${Tag === 'h1' ? 'text-lg' : ''}`}>{name}</Tag>

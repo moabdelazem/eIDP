@@ -81,7 +81,8 @@ export function AuditTab({ entries, catalogue }: { entries: AuditEntry[]; catalo
 }
 
 function Entry({ entry: e, catalogue }: { entry: AuditEntry; catalogue: Catalogue }) {
-  const { label, icon: Icon, tone } = ACTION[e.action]
+  // An action this build does not know yet (a newer API) is shown by its name, in the neutral style.
+  const { label, icon: Icon, tone } = ACTION[e.action] ?? { label: String(e.action).replaceAll('_', ' '), icon: Pencil, tone: 'bg-muted text-muted-foreground' }
   return (
     <li className="flex gap-3 px-4 py-3">
       <span className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full ${tone}`} aria-label={label}>

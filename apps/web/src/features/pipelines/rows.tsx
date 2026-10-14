@@ -3,7 +3,7 @@ import { ExternalLink, GitCommitHorizontal, KeyRound, Play, ShieldCheck, Sparkle
 import { Button } from '@/components/ui/button'
 import type { Pending } from '@/features/jenkins/actions.tsx'
 import { buildKey, buildPath, duration } from '@/features/jenkins/api.ts'
-import { JobName, OpenedLast, RESULT, ResultBadge } from '@/features/jenkins/result.tsx'
+import { JobName, OpenedLast, ResultBadge, resultOf } from '@/features/jenkins/result.tsx'
 import { since } from '@/features/requests/status.tsx'
 import { RUN_WINDOW_LABEL, type MyPipeline, type MyRun, type Reason, type RunWindow } from './api.ts'
 
@@ -105,11 +105,11 @@ export function PipelineRow({ pipeline: p, window, opened = false, onAct }: { pi
               <Link
                 to={buildPath({ job: p.job, number: b.number }, '/pipelines')}
                 className="block rounded-full p-0.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                title={`#${b.number} · ${RESULT[b.result].label} · ${since(b.startedAt)}`}
+                title={`#${b.number} · ${resultOf(b.result).label} · ${since(b.startedAt)}`}
               >
-                <span className={`block size-2.5 rounded-full ${RESULT[b.result].dot}`} />
+                <span className={`block size-2.5 rounded-full ${resultOf(b.result).dot}`} />
                 <span className="sr-only">
-                  #{b.number} {RESULT[b.result].label}
+                  #{b.number} {resultOf(b.result).label}
                 </span>
               </Link>
             </li>
