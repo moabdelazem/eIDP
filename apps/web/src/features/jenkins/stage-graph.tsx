@@ -13,7 +13,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { Ban, Check, Loader2, X } from 'lucide-react'
 import { duration, type Stage } from './api.ts'
-import { RESULT } from './result.tsx'
+import { resultOf } from './result.tsx'
 
 /**
  * A pipeline drawn the way Jenkins' Pipeline Graph View draws it: a track
@@ -222,7 +222,7 @@ const CIRCLE: Record<Stage['result'], string> = {
 
 function StageNode({ data }: NodeProps<Node<StageData>>) {
   const { stage, parent, column, s, open, selected, onSelect } = data
-  const { label } = RESULT[stage.result]
+  const { label } = resultOf(stage.result)
   const skipped = stage.result === 'not_built'
   const time = skipped ? 'Did not run' : stage.durationMs ? duration(stage.durationMs) : label
   const name = parent ? `${parent.name} › ${stage.name}` : stage.name
@@ -233,7 +233,7 @@ function StageNode({ data }: NodeProps<Node<StageData>>) {
   const Glyph = stage.result === 'success' ? Check : stage.result === 'failure' ? X : stage.result === 'aborted' ? Ban : stage.result === 'running' ? Loader2 : null
   const circle = (
     <span
-      className={`flex shrink-0 items-center justify-center rounded-full border-2 transition-shadow ${CIRCLE[stage.result]} ${selected ? 'ring-[3px] ring-ring/60 ring-offset-2 ring-offset-background' : ''}`}
+      className={`flex shrink-0 items-center justify-center rounded-full border-2 transition-shadow ${CIRCLE[stage.result] ?? CIRCLE.not_built} ${selected ? 'ring-[3px] ring-ring/60 ring-offset-2 ring-offset-background' : ''}`}
       style={{ width: s.circle, height: s.circle }}
       aria-hidden
     >

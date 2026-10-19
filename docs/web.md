@@ -80,10 +80,26 @@ newer branch sharing the database, made `KIND_ICON[kind]` undefined. Three
   changes, so the sidebar stays;
 - one around each Overview card.
 
-Lookups keyed by data from the API go through the safe helpers in
-`features/requests/status.tsx` (`kindLabel`, `kindIcon`, `statusLabel`,
-`statusTone`), which fall back instead of returning undefined. Index a
-`Record<Kind, …>` directly only with a value you produced yourself.
+Boundaries keep the portal up, but a page that shows its error box is still
+broken. The underlying rule is that a value from the API never indexes a
+table without a fallback. TypeScript cannot catch this: the contract says
+`kind` is one of four values, while the database or a newer API may hold a
+fifth. The safe helpers fall back instead of returning undefined:
+- `kindLabel`, `kindIcon`, `statusLabel` and `statusTone` in
+  `features/requests/status.tsx`;
+- `resultOf` in `features/jenkins/result.tsx`.
+
+Anywhere else, use `?? fallback`, and give every `switch` on such a value a
+`default` (the request page's tracker has one). An unknown value is shown by
+its own name in the neutral style: never red, and never guessed as
+something it is not. Index a `Record` directly only with a key you produced
+yourself (`Object.keys(TABLE)`, a URL value already parsed to a known one).
+
+The check for this: serve every page with each enum-like field in the API's
+JSON rewritten to a value the build has never seen (a Playwright route over
+`/api/**`). No page may show its error box. Nulls need no such check:
+strict null checks already make the code handle every field the contracts
+declare nullable.
 
 Motion explains a change and nothing more, and all of it lives inside
 `prefers-reduced-motion: no-preference` (`index.css`), so reduced motion is

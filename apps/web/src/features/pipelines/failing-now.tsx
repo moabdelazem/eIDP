@@ -122,7 +122,7 @@ function FailingRow({ failing: { pipeline: p, run, streak } }: { failing: Failin
             <div className="reveal space-y-2">
               <p className="text-sm font-medium">{brief.summary}</p>
               <p className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="rounded-full border bg-muted/40 px-2 py-0.5">{CATEGORY[brief.category]}</span>
+                <span className="rounded-full border bg-muted/40 px-2 py-0.5">{CATEGORY[brief.category] ?? brief.category}</span>
                 {brief.confidence === 'low' && (
                   <span className="inline-flex items-center gap-1 rounded-full border border-warning/25 bg-warning-soft px-2 py-0.5 text-warning">
                     <TriangleAlert className="size-3" aria-hidden /> Unsure
