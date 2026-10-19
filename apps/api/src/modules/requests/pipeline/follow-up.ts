@@ -28,6 +28,14 @@ import { pipelineProject } from './check.ts'
  * values. A step whose job is not set is skipped, with what to do by hand.
  */
 
+/** How a build that did not pass ended, in words. */
+const ENDED: Record<string, string> = {
+  failure: 'The build failed.',
+  unstable: 'The build was unstable: it ran, but its tests or checks did not all pass.',
+  aborted: 'The build was aborted.',
+  not_built: 'The build was not built.',
+}
+
 /** A queue item Jenkins has let go of, with no build found for it, is given this long before it is called lost. */
 const LOST_AFTER_MS = 10 * 60_000
 
@@ -189,7 +197,7 @@ async function advance(row: Row): Promise<boolean> {
   const state = await buildState(row.job!, row.number!)
   if (state.result === 'running') return false
   if (state.result !== 'success') {
-    await fail(row, `The build ended ${state.result.replace('_', ' ')}.`)
+    await fail(row, ENDED[state.result] ?? `The build ended ${state.result}.`)
     return true
   }
   const [done] = await update(row, { status: 'succeeded', note: null, finishedAt: sql`now()` })

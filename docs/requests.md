@@ -157,11 +157,44 @@ and namespaces); `requests_pipeline_check` keeps that column to this kind.
   project's files, `team.yml` and one namespace per environment
   (`cluster_type` DR for `prd_dr`); for a database, `host_vars/localhost`
   when the project has none.
+- **After the push, Jenkins** (`pipeline/follow-up.ts`): provisioning, then a
+  first test build, as the old approval ran them right after its push. Each
+  is a row in `request_steps`, moved along by the `pipeline-steps` job every
+  ten seconds, one process at a time:
+  - `pending` → `queued` (Jenkins' queue item) → `running` (its build) →
+    `succeeded` or `failed`;
+  - the test build is `waiting` until provisioning succeeds;
+  - a step not configured is `skipped`, with what to run by hand (the old
+    printed command, for provisioning).
+
+  The state is in the database, never in memory, so a restart or a second
+  replica carries on. Claiming a step is the lock that sends its build once.
+  A queue item Jenkins has let go of is found among the job's builds by its
+  `queueId`. A step with no result after `PIPELINE_STEP_TIMEOUT_MINUTES` fails.
+
+  **The request is complete with the push, whatever Jenkins does next.** Its
+  files are in inventories either way, so a failed step is the step's to
+  retry, by a decider on the request page (`POST
+  /requests/:id/steps/:step/retry`), never a reason to push again. Running
+  provisioning again puts the test build back to waiting. The test build can
+  also be started by hand while provisioning is failed or skipped (done
+  outside the portal). A failed step shows under "Needs you" on deciders'
+  Overview.
+
+  The jobs are settings, templates over the request's values `{collection}`,
+  `{project}`, `{system}`, `{application}`, `{repository}`, `{newProject}`,
+  `{deployTarget}` and `{technology}`:
+  - `PIPELINE_PROVISION_JOB` and `PIPELINE_PROVISION_PARAMETERS` (a query
+    string; by default `COLLECTION`, `PROJECT`, `APP_NAME`, `NEW_PROJECT`);
+  - `PIPELINE_TEST_JOB` (e.g. `{project}/{application}/develop`) and
+    `PIPELINE_TEST_PARAMETERS`.
+
+  The old `jenkins_client.py` was not available when this was written. Check
+  the job names and parameter names against the real provisioning job before
+  turning it on.
 - **What approval leaves to a person** is listed on the completed request
   (*Still to do by hand*): each namespace's token, and its user when left
-  empty — written as placeholders, never real — and the provisioning command
-  the old portal printed. Not yet ported: the old approval's automatic
-  provisioning and test builds (`jenkins_client.py`).
+  empty, written as placeholders, never real.
 - **`check()`** refuses an application name inventories would misread — one
   starting with an environment prefix (`prd_api` is read as the `prd`
   override of `api`), or `all` — an unknown technology, a missing version or
@@ -202,6 +235,38 @@ and namespaces); `requests_pipeline_check` keeps that column to this kind.
   approver, prd-only and manager lists DEVOPS when left empty (the form says
   so).
 
+**Deciders adjust a waiting request instead of rejecting it to be filed
+again** (`adjust.ts`, `PATCH /requests/:id`, the request page's *Adjust*).
+What they may change depends on the kind:
+- a repository: its collection, project and name;
+- a project: its collection and name;
+- a Jira project: its name and key;
+- a pipeline: its application name and version, and the files it writes.
+
+Access requests change nothing: who gets access is the requester's to ask.
+
+Each change is checked as filing it would be (`check(target, except)`, which
+leaves the request itself out of the duplicate search) and recorded in
+`requests.adjustments` with who made it and the value asked for. The
+requester sees each change in the activity timeline as asked → as it will be
+done, and the request is assessed again.
+
+A pipeline's files are edited under *What approving writes*. The rules:
+- only the content of a file approving writes, never a new path;
+- only edits that differ from what the templates write are kept
+  (`requests.pipeline_edits`);
+- never a credential.
+
+The preview and the push lay the edits over the templates' output
+(`applyEdits`). An edit to a file approving no longer writes stops the push
+instead of being dropped. Renaming the application sets the edits aside,
+and says so. The requester sees which files were edited, not what they say:
+reading files is the approver's job.
+
+The old portal let approvers override names (`override_params`) and the
+generated YAML (`override_file_changes`) at approval, with no trace of what
+had been asked for.
+
 **What it does differently from the old portal, on purpose.** The port keeps
 the old generator's output, not its traps:
 
@@ -225,6 +290,8 @@ the old generator's output, not its traps:
 | Pushed inventories and ocp-templates separately, cleaning up local files on failure; one could land without the other | Both planned before either is pushed; each push carries the marker and a retry completes what is missing |
 | Audit, history and ELK in files and best-effort calls | The request itself: who, what, when, the decision, the commit |
 | Auto-deploy to QC as a string; a failed submit could pass silently | An explicit yes/no, and a request is filed in one transaction or not at all |
+| Provisioning and the test build ran inside the approval call; a Jenkins hiccup there was a warning in a returned dict | Steps of their own, in the database, followed to a result, retried on their own; the request page shows each with its build |
+| Approvers overrode names and YAML at approval, silently | Changes made before approving, each checked and recorded; the requester sees what was changed, by whom, from what |
 
 **Every request is assessed for its approver** (`modules/requests/risk.ts`),
 in the background the moment it is filed, and shown only to people who may

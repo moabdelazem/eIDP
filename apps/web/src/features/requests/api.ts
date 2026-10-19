@@ -1,8 +1,8 @@
 import { api } from '@/lib/api-client.ts'
 
 // The JSON's shapes are the API's, from @eidp/contracts — one definition, so the two cannot drift.
-import type { Assessment, Check, PipelinePreview, PipelineProject, RequestStatus, RequestView, Target, Technology } from '@eidp/contracts/requests'
-export type { AccessLevel, Assessment, Check, DeployTarget, Namespace, PipelinePreview, PipelineProject, PipelineSpec, ProjectTeams, RequestKind, RequestStatus, Target, Technology } from '@eidp/contracts/requests'
+import type { Assessment, Check, PipelinePreview, PipelineProject, RequestChanges, RequestStatus, RequestStep, RequestView, StepName, Target, Technology } from '@eidp/contracts/requests'
+export type { AccessLevel, Adjustment, Assessment, Check, DeployTarget, Namespace, PipelineFile, PipelinePreview, PipelineProject, PipelineSpec, ProjectTeams, RequestChanges, RequestKind, RequestStatus, RequestStep, StepName, StepStatus, Target, Technology } from '@eidp/contracts/requests'
 
 /** A request as the web holds it: the record, and on a single one whether the viewer may decide it. */
 export type PortalRequest = RequestView
@@ -46,7 +46,18 @@ export const requestsApi = {
   retry: (id: string) => api<PortalRequest>(`/requests/${id}/retry`, { method: 'POST' }),
   /** Assess again — the directory and the catalog may have changed since it was filed. */
   assess: (id: string) => api<Assessment>(`/requests/${id}/assess`, { method: 'POST' }),
+  /** A decider's changes to a waiting request — each checked as a new request would be, and recorded. */
+  adjust: (id: string, changes: RequestChanges) => api<PortalRequest>(`/requests/${id}`, { method: 'PATCH', body: JSON.stringify(changes) }),
+  /** Runs a pushed pipeline's provisioning or test build again. */
+  retryStep: (id: string, step: StepName) => api<RequestStep[]>(`/requests/${id}/steps/${step}/retry`, { method: 'POST' }),
 }
+
+/** Whether a step is still on its way in Jenkins — the page keeps watching until none is. */
+export const stepMoving = (step: Pick<RequestStep, 'status'>) => step.status === 'pending' || step.status === 'queued' || step.status === 'running'
+
+/** Where the pipeline form opens for a repository that exists, filled in. */
+export const pipelineFormFor = (r: Pick<PortalRequest, 'collection' | 'project' | 'repository'>) =>
+  `/requests/new/jenkins/pipeline?${new URLSearchParams({ collection: r.collection ?? '', project: r.project, repository: r.repository ?? '' })}`
 
 /** Jira's requests act in Jira; everything else is Azure DevOps. */
 export function isJira(request: Pick<PortalRequest, 'kind'>): boolean {

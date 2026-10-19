@@ -1017,7 +1017,7 @@ test('pipelines: provisioning failing leaves the request complete; DevOps run it
   await advanceSteps()
   const [provision, testBuild] = await stepsOf(filed.id)
   assert.equal(provision!.status, 'failed')
-  assert.match(provision!.note!, /ended failure/)
+  assert.equal(provision!.note, 'The build failed.')
   assert.equal(testBuild!.status, 'waiting', 'no test build without provisioning')
   assert.equal((await json<{ status: string }>(await call('alice', 'GET', `/requests/${filed.id}`))).status, 'completed', 'the files are in inventories either way')
 

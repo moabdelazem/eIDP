@@ -21,3 +21,43 @@ when the lockfile changes — a pull that added a package used to leave a stale
 image that could not import it. It also
 installs `git`, which the catalog sync shells out to and the base image lacks.
 `.containerignore` keeps `.env` out of the image layers.
+
+## Trying pipeline requests locally
+
+Pipeline requests can be tried end to end with no real Azure DevOps,
+Jenkins or inventories:
+
+```sh
+pnpm --filter @eidp/api ado:fake        # Azure DevOps on :4010
+pnpm --filter @eidp/api jenkins:fake    # Jenkins on :4030, with devops/provisioning
+pnpm --filter @eidp/api pipelines:dev   # once; add what it prints to .env, then start the API
+```
+
+`pipelines:dev` (`apps/api/scripts/pipelines-dev.ts`) makes two local git
+repositories under `apps/api/.cache/dev-git`:
+- **inventories:** the parser's fixtures, plus the reference applications the
+  .NET and new-project templates come from;
+- **ocp-templates:** the .NET manifests' reference.
+
+It then saves the .NET-on-OpenShift, manifests and new-project templates by
+importing them, as DevOps would on the Pipeline templates page. The catalog
+sync reads `INVENTORIES_GIT_URL` when it is set, so the map shows what
+approvals push.
+
+The fake Jenkins starts what the portal queues after a few seconds and ends
+it a little later. Provisioning that succeeds creates
+`<PROJECT>/<APP_NAME>/develop`, where the first test build runs.
+
+To try a failure, put "fail" in the application's name (provisioning fails)
+or "flaky" in a job's (its build fails).
+
+A walk-through:
+1. As bob, ask for a repository in AgriLand.
+2. As alice, approve it.
+3. As bob, open the repository request and choose **Set up its pipeline**,
+   then file a .NET Core pipeline.
+4. As alice, **Adjust** it, or edit a file under *What approving writes*,
+   then approve.
+5. Follow provisioning and the test build on the request page.
+
+Delete `apps/api/.cache/dev-git` to start over.

@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Check, ExternalLink, Gavel, Loader2, TriangleAlert, Undo2, X } from 'lucide-react'
-import { useParams } from 'react-router'
+import { Check, ExternalLink, Gavel, Loader2, TriangleAlert, Undo2, Workflow, X } from 'lucide-react'
+import { Link, useParams } from 'react-router'
 import { DataDialog } from '@/components/data-dialog.tsx'
 import { EmptyState } from '@/components/empty-state.tsx'
 import { AzureDevOpsIcon, JenkinsIcon, JiraIcon } from '@/components/brand-icons.tsx'
@@ -10,7 +10,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useSession } from '@/features/auth/session-context.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
-import { isInFlight, isJira, isPipeline, requestsApi, systemOf, targetPath, type PortalRequest } from './api.ts'
+import { isInFlight, isJira, isPipeline, pipelineFormFor, requestsApi, stepMoving, systemOf, targetPath, type PortalRequest } from './api.ts'
+import { AdjustDialog, canAdjust } from './adjust-dialog.tsx'
 import { decide, rejectRequest } from './decisions.ts'
 import { REQUEST_TYPES } from './kinds.ts'
 import { RejectDialog } from './reject-dialog.tsx'
@@ -27,8 +28,8 @@ export function RequestPage() {
   const [pollMs, setPollMs] = useState<number | null>(3000)
   const request = useResource(['requests', 'get', requestId], async () => {
       const found = await requestsApi.get(requestId)
-      // Watch it while it is moving; stop once it has settled.
-      setPollMs(isInFlight(found.status) ? 3000 : null)
+      // Watch it while it is moving — or its pipeline's steps are, in Jenkins — and stop once all have settled.
+      setPollMs(isInFlight(found.status) || found.steps.some(stepMoving) ? 3000 : null)
       return found
     }, { pollMs })
   usePageTitle(request.data ? (request.data.repository ?? request.data.project) : 'Request')
@@ -75,7 +76,7 @@ export function RequestPage() {
         }
       >
         <DecisionCard request={r} onChanged={request.reload} />
-        {r.kind === 'create_pipeline' && <PipelinePanel request={r} />}
+        {r.kind === 'create_pipeline' && <PipelinePanel request={r} onChanged={request.reload} />}
         <Section title="Activity">
           <ol>
             <Step title={own ? 'You asked for it' : `${r.requestedByName} asked for it`} when={r.requestedAt} done>
@@ -88,6 +89,7 @@ export function RequestPage() {
               )}
             </Step>
 
+            {r.adjustments.length > 0 && <AdjustedStep request={r} own={own} />}
             <DecisionStep request={r} own={own} />
             <OutcomeStep request={r} />
           </ol>
@@ -138,6 +140,7 @@ function RequestHeader({ request: r, own, onChanged }: { request: PortalRequest;
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <StatusBadge status={r.status} kind={r.kind} />
+        {canAdjust(r) && <AdjustDialog request={r} onChanged={onChanged} />}
         {own && r.status === 'pending' && (
           <Button variant="outline" size="sm" onClick={() => setWithdrawing(true)}>
             <Undo2 /> Withdraw
@@ -249,6 +252,37 @@ function Details({ request: r, own }: { request: PortalRequest; own: boolean }) 
   )
 }
 
+/**
+ * What deciders changed before approving, as asked → as it will be done: the
+ * requester sees their request was changed, by whom, and from what — nothing
+ * is quietly replaced. Grouped by who made them.
+ */
+function AdjustedStep({ request: r, own }: { request: PortalRequest; own: boolean }) {
+  const byWho = new Map<string, PortalRequest['adjustments']>()
+  for (const a of r.adjustments) byWho.set(a.byName, [...(byWho.get(a.byName) ?? []), a])
+  return [...byWho.entries()].map(([name, changes]) => (
+    <Step key={name} title={`Changed by ${name} before deciding`} when={changes.at(-1)!.at} done>
+      <ul className="mt-2 space-y-1 text-sm">
+        {changes.map((c, i) => (
+          <li key={i} className="flex flex-wrap items-baseline gap-x-1.5">
+            <span className="text-muted-foreground">{c.label}:</span>
+            {c.field === 'files' ? (
+              <span>{c.to}</span>
+            ) : (
+              <>
+                <code className="break-words text-muted-foreground line-through decoration-muted-foreground/60">{c.from ?? '—'}</code>
+                <span aria-label="changed to">→</span>
+                <code className="break-words">{c.to}</code>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+      {own && <p className="mt-2 text-xs text-muted-foreground">What you asked for is kept on the request.</p>}
+    </Step>
+  ))
+}
+
 function DecisionStep({ request: r, own }: { request: PortalRequest; own: boolean }) {
   if (r.status === 'pending') {
     return <Step title="Waiting for DevOps to decide" current />
@@ -297,6 +331,14 @@ function OutcomeStep({ request: r }: { request: PortalRequest }) {
               git clone <WrappingUrl url={cloneUrl} />
             </code>
           </div>
+        )}
+        {/* The old portal's ➕ beside a repository: its pipeline next, with the repository filled in. */}
+        {r.kind === 'create_repository' && (
+          <Button asChild size="sm" className="mt-3">
+            <Link to={pipelineFormFor(r)}>
+              <Workflow /> Set up its pipeline
+            </Link>
+          </Button>
         )}
       </Step>
     )

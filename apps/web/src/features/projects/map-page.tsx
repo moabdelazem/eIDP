@@ -197,7 +197,13 @@ function CatalogList({ systems }: { systems: System[] }) {
     <div className="max-w-3xl space-y-8">
       {systems.map((system) => (
         <section key={system.id}>
-          <h2 className="font-medium">{system.projectName}</h2>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="font-medium">{system.projectName}</h2>
+            {/* The old portal's ➕: a pipeline for one of the project's repositories, the project filled in. */}
+            <Link to={`/requests/new/jenkins/pipeline?${new URLSearchParams({ project: system.projectName })}`} className="text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+              Add an application
+            </Link>
+          </div>
           <ul className="mt-2 divide-y border-y">
             {system.applications.map((app) => (
               <li key={app.id}>

@@ -4,7 +4,7 @@ import { config } from '../../lib/config.ts'
 import { asc, eq, sql } from 'drizzle-orm'
 import type { PgUpdateSetSource } from 'drizzle-orm/pg-core'
 import { db } from '../../lib/db.ts'
-import { cloneOrUpdate, headCommit } from '../../integrations/ado/index.ts'
+import { cloneOrUpdate, freshCopy, headCommit, inventoriesRemote } from '../../integrations/ado/index.ts'
 import { parseInventories, type InventorySystem } from '../../integrations/inventories/parse.ts'
 import { ApiError } from '../../lib/errors.ts'
 import { exclusive } from '../../lib/locks.ts'
@@ -45,7 +45,7 @@ async function finished(): Promise<SyncState> {
 }
 
 async function runSync(): Promise<SyncState> {
-  if (!config.INVENTORIES_PROJECT) {
+  if (!config.INVENTORIES_PROJECT && !config.INVENTORIES_GIT_URL) {
     throw new ApiError(
       503,
       'inventories_not_configured',
@@ -59,7 +59,10 @@ async function runSync(): Promise<SyncState> {
 
   try {
     const checkout = config.INVENTORIES_CHECKOUT
-    await cloneOrUpdate(config.INVENTORIES_PROJECT, config.INVENTORIES_REPO, checkout)
+    // Read from where approved pipelines are written when that is set — a mirror, or a local repository —
+    // so the map shows what the portal wrote.
+    if (config.INVENTORIES_GIT_URL) await freshCopy(inventoriesRemote(), checkout)
+    else await cloneOrUpdate(config.INVENTORIES_PROJECT!, config.INVENTORIES_REPO, checkout)
     const commit = await headCommit(checkout)
     const { systems, warnings } = await parseInventories(checkout)
     if (warnings.length > 0) {
