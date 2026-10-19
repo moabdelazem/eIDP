@@ -1,8 +1,9 @@
 import type { CatalogResponse } from '@eidp/contracts/catalog'
 import { Hono } from 'hono'
 import { ApiError } from '../../lib/errors.ts'
-import { requireAuth, requirePermission, type AppEnv } from '../../middleware/auth.ts'
-import { readApplication, readCatalog, readSyncState, syncCatalog } from './service.ts'
+import { accessFrom, requireAuth, requirePermission, type AppEnv } from '../../middleware/auth.ts'
+import { catalogReach } from '../access/index.ts'
+import { readApplication, readCatalog, readSystem, readSyncState, syncCatalog } from './service.ts'
 
 export const catalogRoutes = new Hono<AppEnv>()
   .use('*', requireAuth)
@@ -15,9 +16,12 @@ export const catalogRoutes = new Hono<AppEnv>()
    * Stale data still gets served: knowing the map is from this morning beats
    * an error page. Only an empty catalog is a failure, and then the message
    * says why the last attempt failed rather than just that there is nothing.
+   *
+   * Each person gets the projects their teams own (`catalogReach`), not the
+   * whole map; `catalog.view_all` gets every one.
    */
   .get('/', async (c) => {
-    const [systems, sync] = await Promise.all([readCatalog(), readSyncState()])
+    const [systems, sync, access] = await Promise.all([readCatalog(), readSyncState(), accessFrom(c)])
 
     if (systems.length === 0) {
       throw new ApiError(
@@ -29,14 +33,18 @@ export const catalogRoutes = new Hono<AppEnv>()
       )
     }
 
-    return c.json({ systems, sync } satisfies CatalogResponse)
+    const reach = catalogReach(access)
+    const shown = systems.filter((s) => reach.sees({ project: s.projectName, ...s }))
+    return c.json({ systems: shown, sync, scope: { all: reach.all, total: systems.length } } satisfies CatalogResponse)
   })
 
   .get('/status', async (c) => c.json(await readSyncState()))
 
   /** One application's full configuration, base and per environment. */
   .get('/systems/:system/applications/:name', async (c) => {
-    const rows = await readApplication(c.req.param('system'), c.req.param('name'))
+    const [system, access] = await Promise.all([readSystem(c.req.param('system')), accessFrom(c)])
+    // Someone else's project answers as one that does not exist: its name is not theirs to confirm.
+    const rows = system && catalogReach(access).sees(system) ? await readApplication(system.dir, c.req.param('name')) : []
     if (rows.length === 0) {
       throw new ApiError(404, 'application_not_found', 'There is no such application in the catalog.')
     }

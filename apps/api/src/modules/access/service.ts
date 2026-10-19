@@ -23,7 +23,8 @@ import { rbacAudit, rbacBindings } from './schema.ts'
  */
 
 export const PERMISSIONS = {
-  'catalog.view': 'See the projects map and application configuration',
+  'catalog.view': 'See the projects map and application configuration — for the projects your teams own',
+  'catalog.view_all': 'See every project in the map, not only the ones your teams own — or, scoped, that team’s or project’s too',
   'catalog.sync': 'Rebuild the catalog from inventories, and see the files a sync skipped',
   'requests.create': 'Ask for repositories, projects and access',
   'requests.decide': 'Approve, reject and retry any request, and see every request',
@@ -53,7 +54,12 @@ export const ROLES = {
   approver: {
     label: 'Approver',
     description: 'Decides every request and runs catalog syncs, without managing access.',
-    permissions: ['requests.decide', 'requests.decide_access', 'catalog.sync'],
+    permissions: ['requests.decide', 'requests.decide_access', 'catalog.sync', 'catalog.view_all'],
+  },
+  'project-viewer': {
+    label: 'Project viewer',
+    description: 'Sees projects beyond their own teams’ in the map: every one when bound globally (architects, managers), or a team’s or project’s when scoped.',
+    permissions: ['catalog.view_all'],
   },
   'pipeline-operator': {
     label: 'Pipeline operator',
@@ -188,6 +194,38 @@ export async function teamsOwning(project: string): Promise<string[]> {
     .from(catalogSystems)
     .where(eq(sql`lower(${catalogSystems.projectName})`, project.toLowerCase()))
   return [...new Set(rows.flatMap((row) => Object.values(row.teams ?? {})))]
+}
+
+/** What a system's `team.yml` names as its owners: the groups whose people see it. */
+export type Owned = { project: string; teams: Record<string, string>; approvers: string[]; managers: string[]; opsTeams?: string[] }
+
+/**
+ * Which systems of the catalog `access` sees: a person sees the projects
+ * their teams own, not the whole map. A system is theirs when one of their
+ * directory groups, or they themselves, is named in its `team.yml` — the team of any environment,
+ * a production approver, a project manager or an operations team — or when
+ * one of their bindings is scoped to it (a lead of DEVJAVA sees what DEVJAVA
+ * owns; a project-scoped grant, that project). `catalog.view_all` everywhere
+ * sees everything; scoped, it adds that team's or project's systems.
+ *
+ * Pure, so every reader of the catalog (the map, an application's page, the
+ * chatbot) asks the same question and gets the same answer.
+ */
+export function catalogReach(access: Access): { all: boolean; sees: (system: Owned) => boolean } {
+  if (can(access, 'catalog.view_all')) return { all: true, sees: () => true }
+  // team.yml names groups, and sometimes a person (a project manager): either is theirs.
+  const names = new Set([access.uid, ...access.groups].map((g) => g.toLowerCase()))
+  const projects = new Set<string>()
+  for (const g of access.grants) {
+    if (g.scopeType === 'team' && g.scope) names.add(g.scope.toLowerCase())
+    if (g.scopeType === 'project' && g.scope) projects.add(g.scope.toLowerCase())
+  }
+  return {
+    all: false,
+    sees: (s) =>
+      projects.has(s.project.toLowerCase()) ||
+      [...Object.values(s.teams), ...s.approvers, ...s.managers, ...(s.opsTeams ?? [])].some((owner) => names.has(owner.trim().toLowerCase())),
+  }
 }
 
 // ---- managing bindings -------------------------------------------------------

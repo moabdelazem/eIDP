@@ -9,7 +9,7 @@ import { readApplication } from '../catalog/index.ts'
 import { demandTeam, peek, recentWeeks, teamsFor, weekOf } from '../digest/index.ts'
 import { jenkins } from '../jenkins/index.ts'
 import { pipelines } from '../pipelines/index.ts'
-import { can, canSomewhere, PERMISSIONS, type Access, type Permission } from '../access/index.ts'
+import { can, canSomewhere, catalogReach, PERMISSIONS, type Access, type Permission } from '../access/index.ts'
 import type { Actor } from '../../lib/actor.ts'
 import { get as getRequest, listMine, listPool, type RequestRecord } from '../requests/index.ts'
 
@@ -64,7 +64,8 @@ const TOOLS = [
     }),
     allowed: (access) => can(access, 'catalog.view'),
     label: (a) => `Searched applications for “${a.query}”${a.environment ? ` in ${a.environment}` : ''}`,
-    run: async ({ query: text, environment }) => {
+    run: async ({ query: text, environment }, { access }) => {
+      const seen = await seenSystems(access)
       const words = text.trim().split(/\s+/).filter(Boolean).slice(0, 6)
       const where = words.map((word) => {
         const p = `%${word.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
@@ -75,6 +76,8 @@ const TOOLS = [
                 or exists (select 1 from unnest(a.technologies) t where t ilike ${p}))`
       })
       if (environment) where.push(sql`a.environment = ${environment}`)
+      // Only the projects this person sees in the map: the chatbot knows no more than the portal shows them.
+      if (seen) where.push(seen.length ? sql`a.system_dir = any(${sql.param(seen)})` : sql`false`)
       const rows = await sqlRows<{ id: string; system_dir: string; project_name: string; name: string; environment: string | null; repository: string | null; technologies: string[] }>(
         sql`select a.id, a.system_dir, s.project_name, a.name, a.environment, a.repository, a.technologies
            from ${catalogApplications} a join ${catalogSystems} s on s.dir = a.system_dir
@@ -103,8 +106,8 @@ const TOOLS = [
     args: z.object({ system: z.string().max(200).catch(''), name: z.string().max(200).catch('') }),
     allowed: (access) => can(access, 'catalog.view'),
     label: (a) => `Read the configuration of ${a.name}`,
-    run: async ({ system, name }) => {
-      const dir = await systemDir(system)
+    run: async ({ system, name }, { access }) => {
+      const dir = await systemDir(system, access)
       if (!dir) return { error: `There is no system called ${system}.` }
       const rows = await readApplication(dir, name)
       if (rows.length === 0) return { error: `${dir} has no application called ${name}.` }
@@ -129,8 +132,8 @@ const TOOLS = [
     args: z.object({ name: z.string().max(200).catch('') }),
     allowed: (access) => can(access, 'catalog.view'),
     label: (a) => `Looked up who owns ${a.name}`,
-    run: async ({ name }) => {
-      const dir = await systemDir(name)
+    run: async ({ name }, { access }) => {
+      const dir = await systemDir(name, access)
       if (!dir) return { error: `There is no system called ${name}. Try search_applications.` }
       const [system] = await db.select().from(catalogSystems).where(eq(catalogSystems.dir, dir))
       const apps = await db
@@ -475,15 +478,27 @@ function describeRequest(r: RequestRecord) {
   }
 }
 
-/** A system by its directory or its project name, either case. */
-async function systemDir(name: string): Promise<string | null> {
+/**
+ * A system by its directory or its project name, either case — if this
+ * person sees it. One they do not is answered as one that does not exist,
+ * as the map and the application page answer it.
+ */
+async function systemDir(name: string, access: Access): Promise<string | null> {
   const wanted = name.trim().toLowerCase()
   const [row] = await db
-    .select({ dir: catalogSystems.dir })
+    .select()
     .from(catalogSystems)
     .where(or(eq(sql`lower(${catalogSystems.dir})`, wanted), eq(sql`lower(${catalogSystems.projectName})`, wanted)))
     .limit(1)
-  return row?.dir ?? null
+  return row && catalogReach(access).sees({ ...row, project: row.projectName }) ? row.dir : null
+}
+
+/** The directories of the systems this person sees; null when they see every one. */
+async function seenSystems(access: Access): Promise<string[] | null> {
+  const reach = catalogReach(access)
+  if (reach.all) return null
+  const rows = await db.select().from(catalogSystems)
+  return rows.filter((row) => reach.sees({ ...row, project: row.projectName })).map((row) => row.dir)
 }
 
 /** JSON, cut to `max` characters with a note, so one result cannot fill the context window. */

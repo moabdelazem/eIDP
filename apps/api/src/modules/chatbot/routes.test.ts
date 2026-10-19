@@ -50,7 +50,7 @@ before(async () => {
   await query('delete from catalog_systems where dir = $1', [SYSTEM])
   await query(
     `insert into catalog_systems (dir, project_name, company, teams, approvers, managers, ops_teams)
-     values ($1, 'ZZ Assist Platform', 'eFinance', '{"dev":"DEVJAVA","prd":"DEVOPS"}', '{DEVOPS}', '{carol}', '{OPS}')`,
+     values ($1, 'ZZ Assist Platform', 'eFinance', '{"dev":"DEVJAVA","uat":"Payments","prd":"DEVOPS"}', '{DEVOPS}', '{carol}', '{OPS}')`,
     [SYSTEM],
   )
   for (const [group, env] of [['zz-scoring', null], ['prd_zz-scoring', 'prd']] as const) {
@@ -160,7 +160,8 @@ test('a follow-up carries the conversation so far', async () => {
 })
 
 test('who owns a system is looked up, with a link, not guessed', async () => {
-  const { steps, done } = await ask('dave', `Who owns ${SYSTEM}?`)
+  // bob is in Payments, which tests ZZAssist in uat: it is a project of his.
+  const { steps, done } = await ask('bob', `Who owns ${SYSTEM}?`)
   // Looked up case-insensitively, whatever case the model passes the name in.
   assert.equal(steps.length, 1)
   assert.match(steps[0]!, new RegExp(`^Looked up who owns ${SYSTEM}$`, 'i'))
@@ -170,7 +171,7 @@ test('who owns a system is looked up, with a link, not guessed', async () => {
 })
 
 test('applications are searched by technology, with each environment and a link to its page', async () => {
-  const { steps } = await ask('dave', 'Which spring apps do we have?')
+  const { steps } = await ask('bob', 'Which spring apps do we have?')
   assert.deepEqual(steps, ['Searched applications for “spring”'])
   // The catalog may hold other Spring apps; this one must be among them, folded
   // into one entry with its environment and its page.
@@ -187,12 +188,23 @@ test('applications are searched by technology, with each environment and a link 
 })
 
 test('an application’s configuration comes with its secrets still hidden', async () => {
-  const { steps } = await ask('dave', `Show the config of zz-scoring in ${SYSTEM}`)
+  const { steps } = await ask('bob', `Show the config of zz-scoring in ${SYSTEM}`)
   assert.deepEqual(steps, ['Read the configuration of zz-scoring'])
   // What the tool handed the model: each environment's configuration, the
   // password still [hidden] as the parser stored it.
   const result = JSON.parse(lastChat()!.messages.find((m) => m.role === 'tool')!.content)
   assert.deepEqual(result.environments.map((e: any) => e.configuration), ['{"replicas":1,"db_password":"[hidden]"}', '{"replicas":3,"db_password":"[hidden]"}'])
+})
+
+test('the chatbot knows only the projects the person sees in the map', async () => {
+  // dave's groups own nothing: ZZAssist is not his, so for him it does not exist.
+  await ask('dave', `Who owns ${SYSTEM}?`)
+  assert.match(lastChat()!.messages.findLast((m) => m.role === 'tool')!.content, /no system called/i)
+  await ask('dave', 'Which spring apps do we have?')
+  const found = JSON.parse(lastChat()!.messages.findLast((m) => m.role === 'tool')!.content)
+  assert.ok(!found.applications.some((a: any) => a.name === 'zz-scoring'), 'dave found zz-scoring')
+  await ask('dave', `Show the config of zz-scoring in ${SYSTEM}`)
+  assert.ok(JSON.parse(lastChat()!.messages.findLast((m) => m.role === 'tool')!.content).error)
 })
 
 test('Jenkins exists for the chatbot only for people who may see Jenkins', async () => {

@@ -17,7 +17,7 @@ import { Facts, PAGE, PageHeader, Section, Split } from '@/components/page-layou
 const PROMOTION: Environment[] = ['dev', 'qc', 'uat', 'prd']
 
 export function ProjectPage() {
-  const { status, systems, error, reload } = useCatalog()
+  const { status, systems, scope, error, reload } = useCatalog()
   const found = findApplication(systems, useParams().projectId)
   usePageTitle(found?.app.name ?? 'Application')
   // The full configuration is fetched per page rather than shipped with the
@@ -37,8 +37,17 @@ export function ProjectPage() {
   if (!found) {
     return (
       <EmptyState title="No such application">
-        Nothing in the map has that name. It may have been renamed or removed from{' '}
-        <code>inventories</code>.
+        {scope && !scope.all ? (
+          // The API does not say which: someone else's project is not theirs to confirm.
+          <>
+            Nothing in your teams’ projects has that name. It may belong to a team you are not in, or have been renamed or removed from{' '}
+            <code>inventories</code>.
+          </>
+        ) : (
+          <>
+            Nothing in the map has that name. It may have been renamed or removed from <code>inventories</code>.
+          </>
+        )}
       </EmptyState>
     )
   }

@@ -2,8 +2,8 @@ import { api } from '@/lib/api-client.ts'
 import type { System } from './catalog.ts'
 
 // The JSON's shapes are the API's, from @eidp/contracts — one definition, so the two cannot drift.
-import type { ApplicationDetail, CatalogResponse, CatalogSystem, SyncState } from '@eidp/contracts/catalog'
-export type { SyncState } from '@eidp/contracts/catalog'
+import type { ApplicationDetail, CatalogResponse, CatalogScope, CatalogSystem, SyncState } from '@eidp/contracts/catalog'
+export type { CatalogScope, SyncState } from '@eidp/contracts/catalog'
 /** One row of an application — the base, or one environment's override — with its merged configuration. */
 export type ApplicationConfig = ApplicationDetail
 
@@ -18,9 +18,10 @@ export function syncCatalog(): Promise<SyncState> {
   return api<SyncState>('/catalog/sync', { method: 'POST' })
 }
 
-export async function fetchCatalog(): Promise<{ systems: System[]; sync: SyncState }> {
+/** The projects the caller sees — their teams' unless they see every one (`scope`). */
+export async function fetchCatalog(): Promise<{ systems: System[]; sync: SyncState; scope: CatalogScope }> {
   const body = await api<CatalogResponse>('/catalog')
-  return { systems: body.systems.map(foldEnvironments), sync: body.sync }
+  return { systems: body.systems.map(foldEnvironments), sync: body.sync, scope: body.scope ?? { all: true, total: body.systems.length } }
 }
 
 /**

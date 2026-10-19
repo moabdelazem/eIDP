@@ -27,6 +27,17 @@ has been deleted from code grants nothing and is listed on the page as such.
   matches the owning teams the catalog read from each system's `project.yml`
   (`teamsOwning`), so a lead of `DEVJAVA` decides access to every project
   DEVJAVA owns in any environment. A scoped grant is never global.
+- **The projects map is scoped the same way** (`catalogReach`). A person sees
+  a system when one of their directory groups, or they themselves, is named
+  in its `team.yml`: any environment's team, `prd_approvers`,
+  `project_managers` or `ops_team_list`. They also see it when one of their
+  bindings, of any role, is scoped to its team or project. A lead of DEVJAVA
+  therefore sees what DEVJAVA owns. `catalog.view_all` sees every system. It
+  is held by `approver` and `devops-admin`, and by the **Project viewer**
+  role, which is for architects and managers. Bound globally, Project viewer
+  sees everything; scoped, it adds one team's or one project's systems for
+  someone outside them. The map says "Your teams' projects: 4 of 207" so a
+  partial map is never taken for a broken one.
 - **Team leads decide access requests only.** Creating a repository or project
   stays with `requests.decide`. A lead's approvals queue (`listPool`) holds
   only what they may decide, and `GET /requests/:id` returns `canDecide` so the
