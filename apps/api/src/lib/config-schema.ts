@@ -167,6 +167,19 @@ export const schema = z.object({
   OCP_TEMPLATES_WRITE_CHECKOUT: z.string().min(1).default('.cache/ocp-templates-write'),
   /** Push manifests here instead — a mirror, or a local repository in tests. */
   OCP_TEMPLATES_GIT_URL: z.string().min(1).optional(),
+
+  // What runs in Jenkins after an approved pipeline is pushed: provisioning
+  // (its branches and hooks), then a first test build. Job names and
+  // parameters are templates over {collection} {project} {system}
+  // {application} {repository} {newProject} {deployTarget} {technology};
+  // parameters are written as a query string. A job left unset is skipped,
+  // and the request page says what to run by hand.
+  PIPELINE_PROVISION_JOB: z.string().min(1).optional(),
+  PIPELINE_PROVISION_PARAMETERS: z.string().default('COLLECTION={collection}&PROJECT={project}&APP_NAME={application}&NEW_PROJECT={newProject}'),
+  PIPELINE_TEST_JOB: z.string().min(1).optional(),
+  PIPELINE_TEST_PARAMETERS: z.string().optional(),
+  /** A step with no result after this long is failed, to be looked at and retried. */
+  PIPELINE_STEP_TIMEOUT_MINUTES: z.coerce.number().positive().default(120),
 })
 
 /**

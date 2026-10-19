@@ -2,7 +2,7 @@ import type { Check } from '@eidp/contracts/requests'
 import { listProjects, listRepositories } from '../../integrations/ado/index.ts'
 import * as jira from '../../integrations/jira/index.ts'
 import { dnOf } from '../../integrations/ldap/index.ts'
-import { and, eq, inArray, or, sql, type SQLWrapper } from 'drizzle-orm'
+import { and, eq, inArray, ne, or, sql, type SQLWrapper } from 'drizzle-orm'
 import { db } from '../../lib/db.ts'
 import { jiraKeyProblem, jiraNameProblem, nameProblem } from './rules.ts'
 import { type AdoTarget, type JiraTarget, MAX_GRANTEES, type Target } from './model.ts'
@@ -13,15 +13,18 @@ import { same } from './rows.ts'
 /** A request still waiting, or being carried out: one of these for the same thing is a duplicate. */
 const open = inArray(requests.status, ['pending', 'approved'])
 
+/** Every request but `except` — the one a decider is adjusting is not a duplicate of itself. */
+export const others = (except?: string) => (except ? ne(requests.id, except) : undefined)
+
 /**
  * Whether a request could be filed as it stands: the name is one ADO accepts,
  * the target does not exist yet, and nobody has already asked for it. The form
  * calls this as someone types, and `submit` runs the same thing, so the answer
  * on screen is the answer on submit.
  */
-export async function check(input: Target): Promise<Check> {
-  if (input.kind === 'create_jira_project') return checkJiraProject(input)
-  if (input.kind === 'create_pipeline') return checkPipeline(input)
+export async function check(input: Target, except?: string): Promise<Check> {
+  if (input.kind === 'create_jira_project') return checkJiraProject(input, except)
+  if (input.kind === 'create_pipeline') return checkPipeline(input, except)
   if (input.kind === 'grant_access') return checkGrant(input)
   const creatingRepo = input.kind === 'create_repository'
   const name = creatingRepo ? (input.repository ?? '') : input.project
@@ -54,6 +57,7 @@ export async function check(input: Target): Promise<Check> {
         eq(lower(requests.project), input.project.toLowerCase()),
         eq(sql`lower(coalesce(${requests.repository}, ''))`, (input.repository ?? '').toLowerCase()),
         open,
+        others(except),
       ),
     )
   if (waiting) {
@@ -101,7 +105,7 @@ async function checkGrant(input: AdoTarget): Promise<Check> {
  * reserved words are its configuration. It also sees archived projects, whose
  * keys stay taken though the project list leaves them out.
  */
-async function checkJiraProject(input: JiraTarget): Promise<Check> {
+async function checkJiraProject(input: JiraTarget, except?: string): Promise<Check> {
   const problem = jiraNameProblem(input.project) ?? jiraKeyProblem(input.projectKey)
   if (problem) return { ok: false, reason: problem }
 
@@ -118,6 +122,7 @@ async function checkJiraProject(input: JiraTarget): Promise<Check> {
         eq(requests.kind, 'create_jira_project'),
         or(eq(sql`lower(${requests.project})`, input.project.toLowerCase()), eq(sql`lower(${requests.projectKey})`, input.projectKey.toLowerCase())),
         open,
+        others(except),
       ),
     )
   if (waiting) {

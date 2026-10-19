@@ -28,11 +28,13 @@ export type FakeBuild = {
   cause: string
   changes: { commitId: string; msg: string; author: string }[]
   log: string
+  /** The queue item it came from, for builds started out of the queue. */
+  queueId?: number
 }
 type Job = { kind: 'job'; name: string; pipeline: boolean; builds: FakeBuild[] }
 type Folder = { kind: 'folder'; name: string; className: string; children: Node[] }
 type Node = Job | Folder
-type Queued = { id: number; job: string; since: number; why: string; parameters?: Record<string, string>; cause?: string }
+type Queued = { id: number; job: string; since: number; why: string; parameters?: Record<string, string>; cause?: string; triggered?: boolean }
 
 const FOLDER = 'com.cloudbees.hudson.plugins.folder.Folder'
 const MULTIBRANCH = 'org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject'
@@ -209,7 +211,16 @@ function deploys(now: number): FakeBuild[] {
   }))
 }
 
-export function createFakeJenkins({ now = Date.now() } = {}) {
+/**
+ * `provisioning` adds the job approved pipelines are provisioned by
+ * (`devops/provisioning`). Builds e-IDP triggers wait in the queue until
+ * `startQueued()` starts them and `finishRunning()` ends them — the
+ * standalone server does both on a timer, so they run as a real one's would.
+ * A provisioning build for an application whose name has "fail" in it fails;
+ * one that succeeds creates `<PROJECT>/<APP_NAME>/develop`, the job its first
+ * test build runs in, and a build of a job with "flaky" in its name fails.
+ */
+export function createFakeJenkins({ now = Date.now(), provisioning = false } = {}) {
   const base = '/jenkins'
   /** A running build's log grows from here, as a real one does while you watch it. */
   const started = Date.now()
@@ -293,6 +304,7 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
       // Last built two months ago: older than any window, and than retention.
       { kind: 'job', name: 'legacy-batch', pipeline: false, builds: history(now, 3, { every: 24, ago: 24 * 60, outcome: () => 'SUCCESS' }) },
       { kind: 'job', name: 'never-built', pipeline: false, builds: [] },
+      ...(provisioning ? [{ kind: 'folder' as const, name: 'devops', className: FOLDER, children: [{ kind: 'job' as const, name: 'provisioning', pipeline: false, builds: [] }] }] : []),
     ],
   }
 
@@ -301,6 +313,11 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
     { displayName: 'Built-In Node', offline: false, temporarilyOffline: false, offlineCauseReason: '', numExecutors: 2, busy: 1 },
     { displayName: 'linux-02', offline: true, temporarilyOffline: true, offlineCauseReason: 'Disk full, taken offline by carol', numExecutors: 4, busy: 0 },
   ]
+
+  /** What became of queue items that left the queue: the build each started, or cancelled. */
+  const left = new Map<number, { job: string; number: number } | 'cancelled'>()
+  /** Builds started out of the queue and not finished yet. */
+  const running: { job: string; number: number; parameters: Record<string, string>; since: number }[] = []
 
   /** What e-IDP did, for tests to inspect. */
   const triggered: { job: string; parameters: Record<string, string> }[] = []
@@ -340,6 +357,63 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
     job.builds.unshift({ ...history(Date.now(), 1, { every: 1, ago: 0, outcome: () => build.result })[0]!, ...build, number })
   }
 
+  /** Starts what e-IDP queued and has waited at least `olderThanMs`; returns how many. */
+  function startQueued(olderThanMs = 0): number {
+    const due = queue.filter((q) => q.triggered && Date.now() - q.since >= olderThanMs)
+    for (const item of due) {
+      queue.splice(queue.indexOf(item), 1)
+      const parameters = item.parameters ?? {}
+      addBuild(item.job, {
+        result: null,
+        building: true,
+        queueId: item.id,
+        timestamp: Date.now(),
+        cause: 'Started by user eidp',
+        parameters: Object.entries(parameters).map(([name, value]) => ({ _class: STRING, name, value })),
+        changes: [],
+      })
+      const number = (find(item.job.split('/')) as Job).builds[0]!.number
+      left.set(item.id, { job: item.job, number })
+      running.push({ job: item.job, number, parameters, since: Date.now() })
+    }
+    return due.length
+  }
+
+  /** Ends the builds started out of the queue that ran at least `olderThanMs`; returns how many. */
+  function finishRunning(olderThanMs = 0): number {
+    const due = running.filter((r) => Date.now() - r.since >= olderThanMs)
+    for (const run of due) {
+      running.splice(running.indexOf(run), 1)
+      const build = (find(run.job.split('/')) as Job).builds.find((b) => b.number === run.number)!
+      const provisions = run.job === 'devops/provisioning'
+      const failed = provisions ? /fail/i.test(run.parameters.APP_NAME ?? '') : /flaky/i.test(run.job)
+      Object.assign(build, {
+        building: false,
+        result: failed ? 'FAILURE' : 'SUCCESS',
+        duration: Date.now() - build.timestamp,
+        log: `Started by user eidp\n${Object.entries(run.parameters).map(([k, v]) => `${k}=${v}`).join('\n')}\n${failed ? 'ERROR: script returned exit code 1\nFinished: FAILURE' : 'Finished: SUCCESS'}\n`,
+      })
+      // Provisioned: the application's pipeline exists from now on, its develop branch ready to build.
+      if (provisions && !failed && run.parameters.PROJECT && run.parameters.APP_NAME) addJob([run.parameters.PROJECT, run.parameters.APP_NAME, 'develop'])
+    }
+    return due.length
+  }
+
+  /** A job at `names`, its folders made as needed — the last folder a multibranch project, as provisioning makes it. */
+  function addJob(names: string[]) {
+    let node: Folder = root
+    names.slice(0, -1).forEach((name, i) => {
+      let next = node.children.find((child) => child.name === name)
+      if (!next) {
+        next = { kind: 'folder', name, className: i === names.length - 2 ? MULTIBRANCH : FOLDER, children: [] }
+        node.children.push(next)
+      }
+      if (next.kind !== 'folder') throw new Error(`${name} is a job, not a folder`)
+      node = next
+    })
+    if (!node.children.some((child) => child.name === names.at(-1))) node.children.push({ kind: 'job', name: names.at(-1)!, pipeline: true, builds: [] })
+  }
+
   const urlOf = (names: string[]) => `http://jenkins.example.com${base}/${names.map((n) => `job/${encodeURIComponent(n)}/`).join('')}`
 
   function serialise(node: Node, parents: string[]): Record<string, unknown> {
@@ -369,6 +443,7 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
       duration: b.duration,
       building: b.building,
       url: `${urlOf(names)}${b.number}/`,
+      ...(b.queueId !== undefined ? { queueId: b.queueId } : {}),
       actions: [
         { _class: 'hudson.model.CauseAction', causes: [{ shortDescription: b.cause }] },
         // Jenkins leaves null holes in actions, and password values out entirely.
@@ -430,8 +505,20 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
     }),
   )
 
+  // One queue item: waiting, started (its build), cancelled — or gone, as Jenkins forgets them.
+  app.get('/queue/item/:id/api/json', (c) => {
+    const id = Number(c.req.param('id'))
+    const waiting = queue.find((q) => q.id === id)
+    if (waiting) return c.json({ id, why: waiting.why, cancelled: false, executable: null })
+    const went = left.get(id)
+    if (!went) return c.html('<html>Not found</html>', 404)
+    if (went === 'cancelled') return c.json({ id, cancelled: true, executable: null })
+    return c.json({ id, cancelled: false, executable: { number: went.number, url: `${urlOf(went.job.split('/'))}${went.number}/` } })
+  })
+
   app.post('/queue/cancelItem', (c) => {
     const index = queue.findIndex((q) => q.id === Number(c.req.query('id')))
+    if (index >= 0) left.set(queue[index]!.id, 'cancelled')
     if (index >= 0) queue.splice(index, 1)
     // Jenkins redirects back to the queue page.
     return c.redirect(`${base}/`, 302)
@@ -479,7 +566,7 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
       const form = rest[0] === 'buildWithParameters' ? Object.fromEntries(new URLSearchParams(await c.req.text())) : {}
       triggered.push({ job: fullName, parameters: form as Record<string, string> })
       const id = nextQueueId++
-      queue.push({ id, job: fullName, since: Date.now(), why: 'Waiting for next available executor', parameters: form as Record<string, string> })
+      queue.push({ id, job: fullName, since: Date.now(), why: 'Waiting for next available executor', parameters: form as Record<string, string>, triggered: true })
       c.header('Location', `http://jenkins.example.com${base}/queue/item/${id}/`)
       return c.body(null, 201)
     }
@@ -564,6 +651,9 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
     find,
     jobs,
     addBuild,
+    addJob,
+    startQueued,
+    finishRunning,
     setAccess: (next: FakeAccess) => {
       access = next
     },
@@ -572,10 +662,16 @@ export function createFakeJenkins({ now = Date.now() } = {}) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const port = Number(process.env.FAKE_JENKINS_PORT ?? 4030)
-  const fake = createFakeJenkins()
+  const fake = createFakeJenkins({ provisioning: true })
   // FAKE_JENKINS_ACCESS=role-strategy or matrix for per-team rules.
   fake.setAccess((process.env.FAKE_JENKINS_ACCESS as FakeAccess | undefined) ?? 'none')
+  // What e-IDP queues starts after a few seconds and finishes a little later, as on a real server.
+  setInterval(() => {
+    fake.startQueued(3_000)
+    fake.finishRunning(8_000)
+  }, 1_000).unref()
   serve({ fetch: fake.app.fetch, port })
   console.log(`fake Jenkins on http://localhost:${port}/jenkins (access rules: ${process.env.FAKE_JENKINS_ACCESS ?? 'none'})`)
   console.log(`  JENKINS_URL=http://localhost:${port}/jenkins JENKINS_USER=eidp JENKINS_TOKEN=fake`)
+  console.log('  PIPELINE_PROVISION_JOB=devops/provisioning PIPELINE_TEST_JOB={project}/{application}/develop')
 }

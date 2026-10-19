@@ -472,6 +472,36 @@ export async function triggerBuild(job: string, parameters: URLSearchParams | nu
   return { queueId: id ? Number(id) : null }
 }
 
+/**
+ * What became of a queued build: still waiting (with Jenkins' reason), started
+ * (its number), or cancelled. Null when Jenkins no longer has the item — it
+ * keeps one for a few minutes after it leaves the queue; `buildFromQueue`
+ * finds the build then.
+ */
+export async function queueItem(id: number): Promise<{ number: number | null; cancelled: boolean; why: string | null } | null> {
+  try {
+    const item = await jenkinsGet<{ cancelled?: boolean; why?: string | null; executable?: { number: number } | null }>(`queue/item/${id}/api/json`, {
+      tree: 'cancelled,why,executable[number]',
+    })
+    return { number: item.executable?.number ?? null, cancelled: Boolean(item.cancelled), why: item.why ?? null }
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null
+    throw err
+  }
+}
+
+/** The build a queue item became, among the job's latest — for when Jenkins has let the item go. */
+export async function buildFromQueue(job: string, queueId: number): Promise<number | null> {
+  const raw = await jenkinsGet<{ builds?: { number: number; queueId?: number }[] }>(`${jobPath(job)}/api/json`, { tree: 'builds[number,queueId]{0,25}' })
+  return raw.builds?.find((b) => b.queueId === queueId)?.number ?? null
+}
+
+/** Whether a build is still running, and how it ended when it has. */
+export async function buildState(job: string, number: number): Promise<{ result: Result; url: string }> {
+  const raw = await jenkinsGet<{ building: boolean; result: string | null; url: string }>(`${jobPath(job)}/${number}/api/json`, { tree: 'building,result,url' })
+  return { result: raw.building ? 'running' : resultOf(raw.result), url: raw.url }
+}
+
 /** Asks a running build to stop. Jenkins aborts it at the next point it can. */
 export async function stopBuild(job: string, number: number): Promise<void> {
   await jenkinsPost(`${jobPath(job)}/${number}/stop`)

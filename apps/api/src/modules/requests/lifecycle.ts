@@ -1,4 +1,4 @@
-import type { PipelinePreview, RequestRecord } from '@eidp/contracts/requests'
+import type { PipelinePreview, RequestRecord, RequestStep, StepName } from '@eidp/contracts/requests'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import { profileOf } from '../../integrations/ldap/index.ts'
 import { can, type Access } from '../access/index.ts'
@@ -8,9 +8,10 @@ import { assess, assessmentsOf, type Assessment } from './risk.ts'
 import { check, uniqueNames } from './check.ts'
 import { assertCanDecide, decidableBy, mayDecide } from './deciding.ts'
 import { execute } from './execute.ts'
+import { retryStep } from './pipeline/follow-up.ts'
 import { previewPipeline } from './pipeline/write.ts'
 import type { Actor, AdoTarget, NewRequest } from './model.ts'
-import { find, same, toRecord } from './rows.ts'
+import { find, same, toRecord, withSteps } from './rows.ts'
 import { requests } from './schema.ts'
 import { errorFields, log } from '../../lib/log.ts'
 
@@ -112,7 +113,7 @@ export async function reassess(id: string, access: Access): Promise<Assessment> 
 
 export async function listMine(uid: string): Promise<RequestRecord[]> {
   const rows = await db.select().from(requests).where(eq(requests.requestedBy, uid)).orderBy(desc(requests.requestedAt)).limit(200)
-  return rows.map(toRecord)
+  return withSteps(rows.map(toRecord))
 }
 
 /**
@@ -130,7 +131,7 @@ export async function listPool(access: Access): Promise<{ open: RequestRecord[];
       .orderBy(desc(sql`coalesce(${requests.completedAt}, ${requests.decidedAt}, ${requests.requestedAt})`))
       .limit(30),
   ])
-  const all = { open: open.map(toRecord), recent: recent.map(toRecord) }
+  const all = { open: await withSteps(open.map(toRecord)), recent: await withSteps(recent.map(toRecord)) }
   // Assessments ride on the open ones only: that is where a decision is still to be made.
   if (can(access, 'requests.decide')) return { open: await withAssessments(all.open), recent: all.recent }
   const decidable = await decidableBy(access, [...all.open, ...all.recent])
@@ -149,7 +150,7 @@ export async function listPool(access: Access): Promise<{ open: RequestRecord[];
  */
 export async function listHistory(access: Access): Promise<RequestRecord[]> {
   const rows = await db.select().from(requests).orderBy(desc(requests.requestedAt)).limit(HISTORY_LIMIT)
-  const all = rows.map(toRecord)
+  const all = await withSteps(rows.map(toRecord))
   if (can(access, 'requests.decide')) return all
   const decidable = await decidableBy(access, all)
   return all.filter((r) => decidable.has(r.id))
@@ -159,7 +160,7 @@ export const HISTORY_LIMIT = 1000
 
 /** A request, if this person may see it: their own, or one they may decide — and whether they may. */
 export async function get(id: string, actor: Actor, access: Access): Promise<RequestRecord & { canDecide: boolean }> {
-  const request = await find(id)
+  const request = (await withSteps([await find(id)]))[0]!
   const canDecide = await mayDecide(request, access)
   if (request.requestedBy !== actor.uid && !canDecide) {
     throw new ApiError(404, 'request_not_found', 'There is no such request.')
@@ -239,4 +240,10 @@ export async function pipelinePreview(id: string, access: Access): Promise<Pipel
   const request = await find(id)
   if (request.kind !== 'create_pipeline') throw new ApiError(404, 'not_a_pipeline', 'That request is not for a pipeline.')
   return previewPipeline(request)
+}
+
+/** Runs one of a pushed pipeline's Jenkins steps again — for the people who may decide it. */
+export async function retryPipelineStep(id: string, step: StepName, access: Access): Promise<RequestStep[]> {
+  await assertCanDecide(id, access)
+  return retryStep(id, step)
 }

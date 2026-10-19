@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { after, before, test } from 'node:test'
 import { serve } from '@hono/node-server'
 import { createFakeAdo } from '../../integrations/ado/fake-server.ts'
+import { createFakeJenkins } from '../../integrations/jenkins/fake-server.ts'
 import { createFakeJira } from '../../integrations/jira/fake-server.ts'
 import { createFakeOllama } from '../../integrations/ollama/fake-server.ts'
 import { execFileSync } from 'node:child_process'
@@ -30,6 +31,17 @@ process.env.ADO_BASE_URL = `http://localhost:${port}/tfs/DefaultCollection`
 process.env.ADO_PAT = 'fake'
 process.env.JIRA_BASE_URL = `http://localhost:${jiraPort}/jira`
 process.env.JIRA_TOKEN = 'fake'
+
+// Jenkins, for what runs after a pipeline is pushed: provisioning, then a first
+// test build. Its builds start and finish only when a test says so.
+const fakeJenkins = createFakeJenkins({ provisioning: true })
+const jenkinsServer = serve({ fetch: fakeJenkins.app.fetch, port: 0 })
+await new Promise((resolve) => jenkinsServer.once('listening', resolve))
+process.env.JENKINS_URL = `http://localhost:${(jenkinsServer.address() as AddressInfo).port}/jenkins`
+process.env.JENKINS_USER = 'eidp'
+process.env.JENKINS_TOKEN = 'fake'
+process.env.PIPELINE_PROVISION_JOB = 'devops/provisioning'
+process.env.PIPELINE_TEST_JOB = '{project}/{application}/develop'
 
 const fakeOllama = createFakeOllama()
 const ollamaServer = serve({ fetch: fakeOllama.app.fetch, port: 0 })
@@ -105,6 +117,7 @@ process.env.OCP_TEMPLATES_WRITE_CHECKOUT = mkdtempSync(join(tmpdir(), 'eidp-ocp-
 const { createApp } = await import('../../app.ts')
 const { registerTechnology } = await import('./pipeline/technologies.ts')
 const { writePipeline } = await import('./pipeline/write.ts')
+const { advanceSteps } = await import('./pipeline/follow-up.ts')
 const { closeDb, migrate, query } = await import('../../lib/db.ts')
 const app = createApp()
 
@@ -129,6 +142,7 @@ after(async () => {
   await closeDb()
   server.close()
   jiraServer.close()
+  jenkinsServer.close()
   ollamaServer.close()
 })
 
@@ -708,7 +722,7 @@ const adoProject = (name: string, repos: string[]) => {
   coll.projects.push(project)
   for (const repo of repos) coll.repos.push({ id: randomUUID(), name: repo, project: { id: project.id, name } })
 }
-adoProject('PipeHome', ['pipe-api', 'pipe-web', 'pipe-late'])
+adoProject('PipeHome', ['pipe-api', 'pipe-web', 'pipe-late', 'pipe-steps', 'pipe-fail', 'pipe-edit'])
 adoProject('PipeLab', ['lab-api'])
 
 const teams = {
@@ -949,6 +963,161 @@ test('pipelines: a library gets no manifests, and a test technology without them
   assert.equal((await settled(filed.id)).status, 'completed')
   assert.ok(inventoriesFile('PipeHome/group_vars/pipe-lib/cicd.yml'), 'inventories written')
   assert.equal(execFileSync('git', ['--git-dir', ocpTemplatesRemote, 'rev-parse', 'main']).toString(), before)
+})
+
+// ---- after the push: provisioning and a first test build -----------------------
+
+type Step = { step: string; status: string; job: string | null; number: number | null; url: string | null; note: string | null; attempts: number }
+const stepsOf = async (id: string, who = 'alice') => (await json<{ steps: Step[] }>(await call(who, 'GET', `/requests/${id}`))).steps
+const statuses = async (id: string) => Object.fromEntries((await stepsOf(id)).map((s) => [s.step, s.status]))
+
+test('pipelines: once pushed, provisioning runs in Jenkins, then a first test build', async () => {
+  const filed = await json<{ id: string }>(await call('bob', 'POST', '/requests', pipelineRequest('PipeHome', 'pipe-steps')))
+  await call('alice', 'POST', `/requests/${filed.id}/approve`, {})
+  assert.equal((await settled(filed.id)).status, 'completed')
+  assert.deepEqual(await statuses(filed.id), { provision: 'pending', test: 'waiting' }, 'the test build waits on provisioning')
+
+  // Every open step moves along — earlier tests' pipelines too — so look for this one's.
+  await advanceSteps()
+  const provisioning = fakeJenkins.triggered.find((t) => t.parameters.APP_NAME === 'pipe-steps')!
+  assert.equal(provisioning.job, 'devops/provisioning')
+  assert.deepEqual(provisioning.parameters, { COLLECTION: 'DefaultCollection', PROJECT: 'PipeHome', APP_NAME: 'pipe-steps', NEW_PROJECT: 'false' })
+  assert.equal((await statuses(filed.id)).provision, 'queued')
+
+  fakeJenkins.startQueued()
+  await advanceSteps()
+  const running = (await stepsOf(filed.id))[0]!
+  assert.equal(running.status, 'running')
+  assert.match(running.url!, /job\/devops\/job\/provisioning\/\d+\/$/)
+
+  fakeJenkins.finishRunning()
+  await advanceSteps()
+  assert.deepEqual(await statuses(filed.id), { provision: 'succeeded', test: 'pending' })
+
+  // The test build, in the job provisioning made.
+  await advanceSteps()
+  assert.ok(fakeJenkins.triggered.some((t) => t.job === 'PipeHome/pipe-steps/develop'))
+  fakeJenkins.startQueued()
+  await advanceSteps()
+  fakeJenkins.finishRunning()
+  await advanceSteps()
+  assert.deepEqual(await statuses(filed.id), { provision: 'succeeded', test: 'succeeded' })
+  assert.equal((await json<{ status: string }>(await call('bob', 'GET', `/requests/${filed.id}`))).status, 'completed')
+  assert.equal((await stepsOf(filed.id, 'bob')).length, 2, 'the requester follows the steps too')
+})
+
+test('pipelines: provisioning failing leaves the request complete; DevOps run it again, the requester cannot', async () => {
+  const filed = await json<{ id: string }>(await call('bob', 'POST', '/requests', pipelineRequest('PipeHome', 'pipe-fail')))
+  await call('alice', 'POST', `/requests/${filed.id}/approve`, {})
+  assert.equal((await settled(filed.id)).status, 'completed')
+  await advanceSteps()
+  fakeJenkins.startQueued()
+  await advanceSteps()
+  fakeJenkins.finishRunning()
+  await advanceSteps()
+  const [provision, testBuild] = await stepsOf(filed.id)
+  assert.equal(provision!.status, 'failed')
+  assert.match(provision!.note!, /ended failure/)
+  assert.equal(testBuild!.status, 'waiting', 'no test build without provisioning')
+  assert.equal((await json<{ status: string }>(await call('alice', 'GET', `/requests/${filed.id}`))).status, 'completed', 'the files are in inventories either way')
+
+  assert.equal((await call('bob', 'POST', `/requests/${filed.id}/steps/provision/retry`)).status, 403)
+  assert.equal((await call('alice', 'POST', `/requests/${filed.id}/steps/test/retry`)).status, 200, 'the test build can be started by hand while it waits')
+  assert.equal((await statuses(filed.id)).test, 'pending')
+  const again = await json<Step[]>(await call('alice', 'POST', `/requests/${filed.id}/steps/provision/retry`))
+  assert.deepEqual(Object.fromEntries(again.map((s) => [s.step, s.status])), { provision: 'pending', test: 'waiting' }, 'provisioning again puts the test build back behind it')
+  assert.equal((await call('alice', 'POST', `/requests/${filed.id}/steps/provision/retry`)).status, 409, 'only a failed or skipped one runs again')
+  await advanceSteps()
+  assert.equal((await stepsOf(filed.id))[0]!.attempts, 2)
+})
+
+// ---- deciders adjusting a waiting request -----------------------------------------
+
+type Adjusted = { id: string; repository: string | null; adjustments: { field: string; from: string | null; to: string | null; byName: string }[]; editedFiles: string[]; pipeline: { application: string; version: string } | null }
+
+test('adjust: DevOps rename a repository before approving; each change is checked, kept, and shown to the requester', async () => {
+  const filed = await json<{ id: string }>(await call('bob', 'POST', '/requests', repoRequest('adj-repo')))
+  assert.equal((await call('bob', 'PATCH', `/requests/${filed.id}`, { repository: 'adj-repo-2' })).status, 403, 'the requester does not adjust their own')
+
+  const taken = await call('alice', 'PATCH', `/requests/${filed.id}`, { repository: 'agriland-api' })
+  assert.equal(taken.status, 409)
+  assert.match((await json<{ error: { message: string } }>(taken)).error.message, /already has a repository called agriland-api/)
+  assert.equal((await call('alice', 'PATCH', `/requests/${filed.id}`, { application: 'x' })).status, 400, 'a field this kind does not have')
+
+  const adjusted = await json<Adjusted>(await call('alice', 'PATCH', `/requests/${filed.id}`, { repository: 'adj-repo-2' }))
+  assert.equal(adjusted.repository, 'adj-repo-2')
+  assert.deepEqual(
+    adjusted.adjustments.map(({ field, from, to }) => ({ field, from, to })),
+    [{ field: 'repository', from: 'adj-repo', to: 'adj-repo-2' }],
+  )
+  const seen = await json<Adjusted>(await call('bob', 'GET', `/requests/${filed.id}`))
+  assert.equal(seen.adjustments[0]!.byName.length > 0, true, 'the requester sees who changed it')
+  // The same value again changes nothing and records nothing.
+  assert.equal((await json<Adjusted>(await call('alice', 'PATCH', `/requests/${filed.id}`, { repository: 'adj-repo-2' }))).adjustments.length, 1)
+
+  await call('alice', 'POST', `/requests/${filed.id}/approve`, {})
+  assert.equal((await settled(filed.id)).status, 'completed')
+  const repos = fake.collections.get('DefaultCollection')!.repos.map((r) => r.name)
+  assert.ok(repos.includes('adj-repo-2') && !repos.includes('adj-repo'), 'created under the adjusted name')
+  assert.equal((await call('alice', 'PATCH', `/requests/${filed.id}`, { repository: 'later' })).status, 409, 'only while it waits')
+})
+
+test('adjust: an access request changes nothing — who gets access is the requester’s to ask', async () => {
+  const filed = await json<{ id: string }>(
+    await call('bob', 'POST', '/requests', { kind: 'grant_access', collection: 'DefaultCollection', project: 'AgriLand', grantees: ['bob'], justification: 'I join the AgriLand team this week.', teamGroup: 'Payments' }),
+  )
+  const res = await call('alice', 'PATCH', `/requests/${filed.id}`, { project: 'NBFS_LoanManagementSystem' })
+  assert.equal(res.status, 400)
+  assert.match((await json<{ error: { message: string } }>(res)).error.message, /Reject it with a note/)
+})
+
+test('adjust: a pipeline’s files edited before approving are what is pushed, and only deciders read them', async () => {
+  const filed = await json<{ id: string }>(await call('bob', 'POST', '/requests', pipelineRequest('PipeHome', 'pipe-edit')))
+  const preview = await json<{ files: { path: string; content: string }[] }>(await call('alice', 'GET', `/requests/${filed.id}/pipeline`))
+  const path = 'PipeHome/group_vars/pipe-edit/TestTech.yml'
+  const original = preview.files.find((f) => f.path === path)!.content
+  const edited = `${original}replicas: 2\n`
+
+  assert.equal((await call('alice', 'PATCH', `/requests/${filed.id}`, { files: [{ path: 'PipeHome/elsewhere.yml', content: 'x: 1\n' }] })).status, 400, 'only files approving writes')
+  const leak = await call('alice', 'PATCH', `/requests/${filed.id}`, { files: [{ path, content: `${original}db_password: hunter2\n` }] })
+  assert.equal(leak.status, 400)
+  assert.match((await json<{ error: { message: string } }>(leak)).error.message, /db_password/)
+
+  const adjusted = await json<Adjusted>(
+    await call('alice', 'PATCH', `/requests/${filed.id}`, {
+      files: [
+        { path, content: edited },
+        // Unchanged files are not kept as edits.
+        { path: 'PipeHome/pipe-edit.yml', content: preview.files.find((f) => f.path === 'PipeHome/pipe-edit.yml')!.content },
+      ],
+    }),
+  )
+  assert.deepEqual(adjusted.editedFiles, [path])
+  const bob = await json<Adjusted & { content?: unknown }>(await call('bob', 'GET', `/requests/${filed.id}`))
+  assert.deepEqual(bob.editedFiles, [path], 'the requester sees which files were edited')
+  assert.ok(!JSON.stringify(bob).includes('replicas: 2'), 'but not what they say')
+  const after = await json<{ files: { path: string; content: string }[]; edited: string[] }>(await call('alice', 'GET', `/requests/${filed.id}/pipeline`))
+  assert.deepEqual(after.edited, [path])
+  assert.equal(after.files.find((f) => f.path === path)!.content, edited)
+
+  await call('alice', 'POST', `/requests/${filed.id}/approve`, {})
+  assert.equal((await settled(filed.id)).status, 'completed')
+  assert.equal(inventoriesFile(path), edited)
+})
+
+test('adjust: renaming a pipeline’s application drops edits to files it no longer writes, and says so', async () => {
+  const filed = await json<{ id: string }>(await call('bob', 'POST', '/requests', pipelineRequest('PipeHome', 'pipe-api', { application: 'pipe-renamed' })))
+  const path = 'PipeHome/group_vars/pipe-renamed/TestTech.yml'
+  const preview = await json<{ files: { path: string; content: string }[] }>(await call('alice', 'GET', `/requests/${filed.id}/pipeline`))
+  await call('alice', 'PATCH', `/requests/${filed.id}`, { files: [{ path, content: `${preview.files.find((f) => f.path === path)!.content}# edited\n` }] })
+  assert.equal((await call('alice', 'PATCH', `/requests/${filed.id}`, { application: 'pipe-two', files: [] })).status, 400, 'one at a time')
+  const renamed = await json<Adjusted>(await call('alice', 'PATCH', `/requests/${filed.id}`, { application: 'pipe-two', version: '1' }))
+  assert.equal(renamed.pipeline!.application, 'pipe-two')
+  assert.equal(renamed.pipeline!.version, '1')
+  assert.deepEqual(renamed.editedFiles, [])
+  assert.deepEqual(renamed.adjustments.map((a) => a.field), ['files', 'application', 'version', 'files'])
+  assert.equal((await call('alice', 'PATCH', `/requests/${filed.id}`, { version: '7' })).status, 409, 'a version the technology does not build')
+  await call('alice', 'POST', `/requests/${filed.id}/reject`, { note: 'test done' })
 })
 
 test('pipelines: what appeared in inventories while it waited is a conflict at approval, and nothing is pushed', async () => {

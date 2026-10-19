@@ -1,4 +1,4 @@
-import type { AccessLevel, Fact, PipelineFile, PipelineSpec, RequestKind, RequestStatus, RiskLevel } from '@eidp/contracts/requests'
+import type { AccessLevel, Adjustment, Fact, PipelineFile, PipelineSpec, RequestKind, RequestStatus, RiskLevel, StepName, StepStatus } from '@eidp/contracts/requests'
 import { sql } from 'drizzle-orm'
 import { bigserial, check, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 
@@ -27,6 +27,10 @@ export const requests = pgTable('requests', {
   projectKey: text('project_key'),
   heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
   pipeline: jsonb().$type<PipelineSpec>(),
+  /** What deciders changed before approving, oldest first. */
+  adjustments: jsonb().$type<Adjustment[]>().default([]).notNull(),
+  /** create_pipeline: files of what approving writes, as a decider edited them. */
+  pipelineEdits: jsonb('pipeline_edits').$type<PipelineFile[]>(),
 }, (table) => [
   uniqueIndex('requests_one_open_create_idx').on(sql`kind`, sql`lower(collection)`, sql`lower(project)`, sql`lower(COALESCE(repository, ''::text))`).where(sql`((status = ANY (ARRAY['pending'::text, 'approved'::text])) AND (kind <> 'grant_access'::text))`),
   uniqueIndex('requests_one_open_jira_key_idx').on(sql`lower(project_key)`).where(sql`((status = ANY (ARRAY['pending'::text, 'approved'::text])) AND (kind = 'create_jira_project'::text))`),
@@ -84,3 +88,31 @@ export const pipelineTemplateHistory = pgTable('pipeline_template_history', {
   changedByName: text('changed_by_name').notNull(),
   changedAt: timestamp('changed_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [index('pipeline_template_history_dir_idx').on(table.dir, table.changedAt.desc())])
+
+/**
+ * What runs in Jenkins after an approved pipeline is pushed, one row per step:
+ * provisioning, then a first test build. The request is complete once the
+ * push lands; a step failing after it is the step's to retry, not the
+ * request's — the files are in inventories either way.
+ */
+export const requestSteps = pgTable('request_steps', {
+  requestId: uuid('request_id').notNull(),
+  step: text().$type<StepName>().notNull(),
+  status: text().$type<StepStatus>().notNull(),
+  job: text(),
+  parameters: jsonb().$type<Record<string, string>>(),
+  queueId: integer('queue_id'),
+  number: integer(),
+  url: text(),
+  note: text(),
+  attempts: integer().default(0).notNull(),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  finishedAt: timestamp('finished_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.requestId, table.step] }),
+  foreignKey({ columns: [table.requestId], foreignColumns: [requests.id], name: 'request_steps_request_id_fkey' }).onDelete('cascade'),
+  index('request_steps_open_idx').on(table.status).where(sql`status = ANY (ARRAY['pending'::text, 'queued'::text, 'running'::text])`),
+  check('request_steps_step_check', sql`step = ANY (ARRAY['provision'::text, 'test'::text])`),
+  check('request_steps_status_check', sql`status = ANY (ARRAY['waiting'::text, 'pending'::text, 'queued'::text, 'running'::text, 'succeeded'::text, 'failed'::text, 'skipped'::text])`),
+])

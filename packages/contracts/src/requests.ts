@@ -91,7 +91,14 @@ export type PipelineFile = { path: string; content: string }
  * library or a technology without manifests). `commit` is the inventories
  * commit, once the push has landed.
  */
-export type PipelinePreview = { files: PipelineFile[]; manifests: PipelineFile[]; errors: string[]; commit: string | null }
+export type PipelinePreview = {
+  files: PipelineFile[]
+  manifests: PipelineFile[]
+  errors: string[]
+  commit: string | null
+  /** Paths whose content is a decider's edit rather than what the templates write. */
+  edited: string[]
+}
 
 /**
  * One template on the Pipeline templates page: what a technology writes for a
@@ -168,6 +175,62 @@ export type RequestRecord = {
   error: string | null
   /** For people who may decide it: what to weigh before approving. Absent for everyone else. */
   assessment?: Assessment | null
+  /** What a decider changed before approving, oldest first — shown to the requester too. */
+  adjustments: Adjustment[]
+  /** create_pipeline only: the files a decider edited in what approving writes, by path. Their contents are in the preview. */
+  editedFiles: string[]
+  /** create_pipeline only: what runs in Jenkins after the push — provisioning, then a first test build. */
+  steps: RequestStep[]
+}
+
+/**
+ * One change a decider made to a waiting request before approving it — a
+ * name, a version, or the files a pipeline writes — and who made it.
+ */
+export type Adjustment = { field: string; label: string; from: string | null; to: string | null; by: string; byName: string; at: string }
+
+/**
+ * What a decider may change on a waiting request (`PATCH /requests/:id`),
+ * by kind: a repository's or project's names, a Jira project's name and
+ * key, a pipeline's application name and version, and the files it writes.
+ * Each change is checked as a new request would be.
+ */
+export type RequestChanges = {
+  collection?: string
+  project?: string
+  repository?: string
+  projectKey?: string
+  application?: string
+  version?: string
+  /** The files approving writes, as edited: replaces every earlier edit; [] goes back to what the templates write. */
+  files?: PipelineFile[]
+}
+
+/** What runs in Jenkins after an approved pipeline is pushed. */
+export type StepName = 'provision' | 'test'
+
+/**
+ * Where a step is:
+ * - `waiting` for the step before it (the test build waits on provisioning);
+ * - `pending`: due to be sent to Jenkins;
+ * - `queued` in Jenkins' queue, then `running` as a build;
+ * - `succeeded`, `failed`, or `skipped` (not configured — `note` says how to do it by hand).
+ */
+export type StepStatus = 'waiting' | 'pending' | 'queued' | 'running' | 'succeeded' | 'failed' | 'skipped'
+
+export type RequestStep = {
+  step: StepName
+  status: StepStatus
+  /** The Jenkins job, and the build once it started. */
+  job: string | null
+  number: number | null
+  /** Jenkins' page for the build. */
+  url: string | null
+  /** Why it failed or was skipped. */
+  note: string | null
+  attempts: number
+  startedAt: string | null
+  finishedAt: string | null
 }
 
 /** One request as `GET /requests/:id` sends it: with whether the viewer may decide it. */

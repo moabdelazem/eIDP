@@ -94,6 +94,21 @@ const NewRequest = z.intersection(
 
 const Decision = z.object({ note: z.string().max(4000).optional() })
 
+const Name = z.string().max(256)
+/** A decider's changes: at most the templates' own limits for files (200, 256 KB each). */
+const Changes = z
+  .object({
+    collection: Name.optional(),
+    project: Name.optional(),
+    repository: Name.optional(),
+    projectKey: z.string().max(20).optional(),
+    application: Name.optional(),
+    version: z.string().max(40).optional(),
+    files: z.array(z.object({ path: z.string().min(1).max(512), content: z.string() })).max(200).optional(),
+  })
+  .strict()
+const changesLimit = bodyLimit({ maxSize: 4 * 1024 * 1024, onError: (c) => c.json({ error: { code: 'too_large', message: 'The changes are over 4 MB.' } }, 413) })
+
 /** Everyone who may decide at least one request: DevOps hold it everywhere. */
 const decider = requirePermission('requests.decide_access', { scoped: true })
 
@@ -162,6 +177,16 @@ export const requestRoutes = new Hono<AppEnv>()
   .post('/:id/assess', decider, async (c) => c.json(await requests.reassess(c.req.param('id'), await accessFrom(c))))
 
   .post('/:id/retry', decider, async (c) => c.json(await requests.retry(c.req.param('id'), await accessFrom(c))))
+
+  /** Change a waiting request before approving it: names, a pipeline's version, the files it writes — each checked and recorded. */
+  .patch('/:id', decider, changesLimit, validate('json', Changes), async (c) =>
+    c.json(await requests.adjust(c.req.param('id'), c.req.valid('json'), actor(c), await accessFrom(c))),
+  )
+
+  /** Run a pushed pipeline's provisioning or test build again. */
+  .post('/:id/steps/:step/retry', decider, validate('param', z.object({ id: z.string(), step: z.enum(['provision', 'test']) })), async (c) =>
+    c.json(await requests.retryPipelineStep(c.req.param('id'), c.req.valid('param').step, await accessFrom(c))),
+  )
 
   /** What approving a pipeline request would write into inventories, as they are now. */
   .get('/:id/pipeline', decider, async (c) => c.json(await requests.pipelinePreview(c.req.param('id'), await accessFrom(c))))

@@ -1,5 +1,5 @@
 import type { Check, PipelineProject, PipelineSpec } from '@eidp/contracts/requests'
-import { and, eq, inArray, or, sql } from 'drizzle-orm'
+import { and, eq, inArray, ne, or, sql } from 'drizzle-orm'
 import { listRepositories } from '../../../integrations/ado/index.ts'
 import { db } from '../../../lib/db.ts'
 import { catalogApplications, catalogSystems } from '../../catalog/index.ts'
@@ -18,7 +18,7 @@ export type PipelineTarget = { kind: 'create_pipeline'; collection: string; proj
  * inventories) and ADO; the files themselves are checked again against
  * inventories at approval, when they are written.
  */
-export async function checkPipeline(input: PipelineTarget): Promise<Check> {
+export async function checkPipeline(input: PipelineTarget, except?: string): Promise<Check> {
   const spec = input.pipeline
   const fail = (reason: string): Check => ({ ok: false, reason })
 
@@ -90,6 +90,7 @@ export async function checkPipeline(input: PipelineTarget): Promise<Check> {
           eq(sql`lower(${requests.pipeline}->>'application')`, spec.application.toLowerCase()),
           eq(sql`lower(${requests.repository})`, input.repository.toLowerCase()),
         ),
+        except ? ne(requests.id, except) : undefined,
       ),
     )
     .limit(1)
