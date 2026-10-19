@@ -1,12 +1,14 @@
 import { createContext, use, useMemo, type ReactNode } from 'react'
 import { useResource } from '@/lib/use-resource.ts'
 import type { System } from './catalog.ts'
-import { fetchCatalog, type SyncState } from './api.ts'
+import { fetchCatalog, type CatalogScope, type SyncState } from './api.ts'
 
 type CatalogValue = {
   status: 'loading' | 'ready' | 'error'
   systems: System[]
   sync: SyncState | null
+  /** Whether these are every project or only the caller's teams', and how many there are in all. */
+  scope: CatalogScope | null
   /** Set when the catalog could not be loaded; already fit to show. */
   error: string | null
   reload: () => void
@@ -27,6 +29,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
       status: catalog.data ? 'ready' : catalog.error ? 'error' : 'loading',
       systems: catalog.data?.systems ?? [],
       sync: catalog.data?.sync ?? null,
+      scope: catalog.data?.scope ?? null,
       error: catalog.data ? null : catalog.error,
       reload: catalog.reload,
     }),

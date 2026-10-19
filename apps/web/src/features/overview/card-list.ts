@@ -14,7 +14,7 @@ export const CARDS: Record<CardId, CardInfo> = {
   pipelines: { id: 'pipelines', title: 'Your pipelines', description: 'Yours and your teams’, broken first, over 7 days.' },
   requests: { id: 'requests', title: 'Your requests', description: 'What you asked for, newest first.' },
   projects: { id: 'projects', title: 'Your teams’ projects', description: 'Systems in the inventories a group of yours owns.' },
-  catalog: { id: 'catalog', title: 'The catalog', description: 'Every system and application, by technology and size.', wide: true },
+  catalog: { id: 'catalog', title: 'The catalog', description: 'The systems and applications you see, by technology and size.', wide: true },
 }
 
 /** Who someone is, as the cards need it. */

@@ -14,6 +14,19 @@ state is reported through `/catalog`. Stale data is still served; only an empty
 catalog is an error, and then the message carries the reason the last attempt
 failed.
 
+**Each person sees their teams' projects, not the whole catalog.** `GET
+/catalog` returns only the systems the caller reaches, and `scope` says which
+part it is (`{ all, total }`). Who reaches what is decided in access by
+`catalogReach` (`docs/access.md`). An application in a system they don't reach
+answers 404, the same as one that doesn't exist. Someone who reaches nothing
+gets an empty list, not the empty-catalog 503, and the map explains why.
+Anything new that serves catalog data to a person (a page, a chatbot tool, an
+export) must ask `catalogReach` too, or it leaks the map that `/catalog`
+withholds. The chatbot's `search_applications`, `get_application` and
+`get_system` already do. Background readers (My pipelines' application index,
+the digest, Access suggestions) see the whole catalog: they work for the
+person under their own rules, or only DevOps can reach them.
+
 **Background work is jobs** (`lib/jobs.ts`, registered in `server.ts`):
 catalog sync, Jenkins sync (with auto-explain after it), Jenkins access,
 Jenkins and activity retention, weekly digests and request recovery. The API

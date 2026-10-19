@@ -116,6 +116,7 @@ The ones that have broken something before, or would quietly. Each doc says why.
 - **Reads go through `useResource(key, …)`**; the same key is the same request, so name keys for what they fetch. (`docs/web.md`)
 - **Pages are `lazyPage`s, charts and the stage graph are lazy too** — a static import puts them back in everyone's bundle. (`docs/web.md`)
 - **A guarded page is four edits**: `manageItems`, `<RequirePermission>`, `requirePermission`, and `DEVOPS_ONLY` in `modules/access/routes.test.ts`. A new permission is the contract's `Permission` plus its `PERMISSIONS` entry. (`docs/access.md`)
+- **Catalog data shown to a person goes through `catalogReach`** (access): each person sees the projects their teams own, not the whole map, and a page, chatbot tool or export that skips it leaks what `/catalog` withholds. (`docs/access.md`, `docs/platform.md`)
 - **Secrets never leave the parser or the integration** (`[hidden]`), and values are never logged — names only. (`docs/integrations.md`, `docs/jenkins.md`)
 - **Every colour is a token with a value in `:root` and `.dark`**; red only ever means "act on this"; meaning colours always come with an icon and a word. (`docs/design.md`)
 - **All motion sits inside `prefers-reduced-motion: no-preference`.** (`docs/web.md`)

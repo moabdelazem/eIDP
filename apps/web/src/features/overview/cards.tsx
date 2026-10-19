@@ -280,11 +280,12 @@ export function RequestsCard() {
 // ---- Your teams' projects --------------------------------------------------
 
 export function ProjectsCard({ profile }: { profile: Profile | undefined }) {
-  const { status, systems } = useCatalog()
+  const { status, systems, scope } = useCatalog()
   const groups = new Set((profile?.groups ?? []).map((g) => g.toLowerCase()))
-  // A system is your team's when one of its team fields (dev_team, qc_team…) names a group you are in.
-  const yours = systems
-    .filter((s) => Object.values(s.teams ?? {}).some((team) => typeof team === 'string' && groups.has(team.toLowerCase())))
+  // Most people's catalog is already their teams' projects (the API scopes it). Someone who sees
+  // every project gets the ones whose team fields (dev_team, qc_team…) name a group they are in.
+  const yours = (scope && !scope.all ? systems : systems.filter((s) => Object.values(s.teams ?? {}).some((team) => typeof team === 'string' && groups.has(team.toLowerCase()))))
+    .slice()
     .sort((a, b) => (a.projectName ?? '').localeCompare(b.projectName ?? ''))
   return (
     <CardFrame info={CARDS.projects} flush action={<MoreLink to="/map" label="Map" />}>
@@ -295,7 +296,7 @@ export function ProjectsCard({ profile }: { profile: Profile | undefined }) {
       ) : yours.length === 0 ? (
         <p className="flex items-start gap-2 border-t px-6 py-6 text-sm text-muted-foreground">
           <Users className="mt-0.5 size-4 shrink-0" aria-hidden />
-          None of your groups is named as a team on a system in the inventories yet.
+          None of your groups is named in a project’s <code>team.yml</code> yet.
         </p>
       ) : (
         <ul className="divide-y border-t">

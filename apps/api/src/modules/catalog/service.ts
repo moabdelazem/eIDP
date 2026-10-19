@@ -154,6 +154,12 @@ export async function readApplication(system: string, name: string): Promise<App
   return rows.map((row) => ({ ...listed(row), descriptor: row.descriptor ?? {} }))
 }
 
+/** One system's ownership, to decide who sees it; null when there is no such system. */
+export async function readSystem(dir: string) {
+  const [row] = await db.select().from(catalogSystems).where(sql`${catalogSystems.dir} = ${dir}`)
+  return row ? { dir: row.dir, project: row.projectName, teams: row.teams ?? {}, approvers: row.approvers ?? [], managers: row.managers ?? [], opsTeams: row.opsTeams ?? [] } : null
+}
+
 /**
  * The catalog as stored. Environment rows are folded into their base
  * application, so the caller sees one entry per application with the
@@ -179,6 +185,7 @@ export async function readCatalog(): Promise<CatalogSystem[]> {
     teams: row.teams ?? {},
     approvers: row.approvers ?? [],
     managers: row.managers ?? [],
+    opsTeams: row.opsTeams ?? [],
     applications: bySystem.get(row.dir) ?? [],
   }))
 }

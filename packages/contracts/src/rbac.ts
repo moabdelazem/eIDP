@@ -3,6 +3,7 @@
 /** One thing the portal can do. The API's `PERMISSIONS` describes each, and must name exactly these. */
 export type Permission =
   | 'catalog.view'
+  | 'catalog.view_all'
   | 'catalog.sync'
   | 'requests.create'
   | 'requests.decide'

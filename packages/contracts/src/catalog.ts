@@ -38,8 +38,17 @@ export type CatalogSystem = {
   teams: Record<string, string>
   approvers: string[]
   managers: string[]
+  /** `ops_team_list`: the teams that operate it. */
+  opsTeams: string[]
   applications: CatalogApplication[]
 }
 
-/** `GET /catalog`. */
-export type CatalogResponse = { systems: CatalogSystem[]; sync: SyncState }
+/**
+ * Which part of the catalog the caller sees. Someone sees the projects their
+ * teams own (`all: false`); `catalog.view_all` sees every one. `total` is how
+ * many there are in all, so the map can say "4 of 207".
+ */
+export type CatalogScope = { all: boolean; total: number }
+
+/** `GET /catalog`: the systems the caller sees. */
+export type CatalogResponse = { systems: CatalogSystem[]; sync: SyncState; scope: CatalogScope }

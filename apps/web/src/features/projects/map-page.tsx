@@ -22,13 +22,14 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { TriangleAlert } from 'lucide-react'
 import { RefreshCatalogButton } from './refresh-catalog-button.tsx'
+import { NoProjects, ScopeNote } from './scope-note.tsx'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { HeaderSkeleton, Loading } from '@/components/skeletons.tsx'
 
 export function ProjectMapPage() {
   usePageTitle('Projects map')
-  const { status, systems, sync, error, reload } = useCatalog()
+  const { status, systems, sync, scope, error, reload } = useCatalog()
   const { can } = useProfile()
   const [searchParams, setSearchParams] = useSearchParams()
   // A tree needs width a phone does not have; the list reads fine there.
@@ -86,6 +87,16 @@ export function ProjectMapPage() {
 
   if (status === 'error') return <CatalogUnavailable error={error!} onRetry={reload} />
   if (status === 'loading') return <MapSkeleton />
+  if (systems.length === 0) {
+    return (
+      <div>
+        <PageHeader title="Projects map" actions={<RefreshCatalogButton />} />
+        <div className="mt-6">
+          <NoProjects />
+        </div>
+      </div>
+    )
+  }
 
   const filtered = systems
     .map((system) => ({
@@ -103,7 +114,9 @@ export function ProjectMapPage() {
 
   return (
     <div>
-      <PageHeader title="Projects map" actions={<RefreshCatalogButton />} />
+      <PageHeader title="Projects map" actions={<RefreshCatalogButton />}>
+        <ScopeNote scope={scope} shown={systems.length} />
+      </PageHeader>
 
       <div className="mt-4">
         <MapToolbar
