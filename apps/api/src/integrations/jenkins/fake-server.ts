@@ -212,15 +212,15 @@ function deploys(now: number): FakeBuild[] {
 }
 
 /**
- * `provisioning` adds the job approved pipelines are provisioned by
- * (`devops/provisioning`). Builds e-IDP triggers wait in the queue until
- * `startQueued()` starts them and `finishRunning()` ends them — the
- * standalone server does both on a timer, so they run as a real one's would.
- * A provisioning build for an application whose name has "fail" in it fails;
- * one that succeeds creates `<PROJECT>/<APP_NAME>/develop`, the job its first
- * test build runs in, and a build of a job with "flaky" in its name fails.
+ * Builds e-IDP triggers wait in the queue until `startQueued()` starts them
+ * and `finishRunning()` ends them — the standalone server does both on a
+ * timer, so they run as a real one's would. With `autoJobs`, a build asked
+ * of a job that is not there yet makes it first (`<project>/<app>/develop`,
+ * the branch job a multibranch project finds once the branch exists), as a
+ * new application's first test build needs. A build of a job with "fail" or
+ * "flaky" in its name fails.
  */
-export function createFakeJenkins({ now = Date.now(), provisioning = false } = {}) {
+export function createFakeJenkins({ now = Date.now(), autoJobs = false } = {}) {
   const base = '/jenkins'
   /** A running build's log grows from here, as a real one does while you watch it. */
   const started = Date.now()
@@ -304,7 +304,6 @@ export function createFakeJenkins({ now = Date.now(), provisioning = false } = {
       // Last built two months ago: older than any window, and than retention.
       { kind: 'job', name: 'legacy-batch', pipeline: false, builds: history(now, 3, { every: 24, ago: 24 * 60, outcome: () => 'SUCCESS' }) },
       { kind: 'job', name: 'never-built', pipeline: false, builds: [] },
-      ...(provisioning ? [{ kind: 'folder' as const, name: 'devops', className: FOLDER, children: [{ kind: 'job' as const, name: 'provisioning', pipeline: false, builds: [] }] }] : []),
     ],
   }
 
@@ -385,16 +384,13 @@ export function createFakeJenkins({ now = Date.now(), provisioning = false } = {
     for (const run of due) {
       running.splice(running.indexOf(run), 1)
       const build = (find(run.job.split('/')) as Job).builds.find((b) => b.number === run.number)!
-      const provisions = run.job === 'devops/provisioning'
-      const failed = provisions ? /fail/i.test(run.parameters.APP_NAME ?? '') : /flaky/i.test(run.job)
+      const failed = /fail|flaky/i.test(run.job)
       Object.assign(build, {
         building: false,
         result: failed ? 'FAILURE' : 'SUCCESS',
         duration: Date.now() - build.timestamp,
         log: `Started by user eidp\n${Object.entries(run.parameters).map(([k, v]) => `${k}=${v}`).join('\n')}\n${failed ? 'ERROR: script returned exit code 1\nFinished: FAILURE' : 'Finished: SUCCESS'}\n`,
       })
-      // Provisioned: the application's pipeline exists from now on, its develop branch ready to build.
-      if (provisions && !failed && run.parameters.PROJECT && run.parameters.APP_NAME) addJob([run.parameters.PROJECT, run.parameters.APP_NAME, 'develop'])
     }
     return due.length
   }
@@ -543,6 +539,7 @@ export function createFakeJenkins({ now = Date.now(), provisioning = false } = {
       i += 2
     }
     const rest = segments.slice(i)
+    if (autoJobs && c.req.method === 'POST' && (rest[0] === 'build' || rest[0] === 'buildWithParameters') && !find(names)) addJob(names)
     const node = find(names)
     // Any item's configuration, folders included — where matrix grants live.
     if (node && rest.join('/') === 'config.xml') {
@@ -662,7 +659,7 @@ export function createFakeJenkins({ now = Date.now(), provisioning = false } = {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const port = Number(process.env.FAKE_JENKINS_PORT ?? 4030)
-  const fake = createFakeJenkins({ provisioning: true })
+  const fake = createFakeJenkins({ autoJobs: true })
   // FAKE_JENKINS_ACCESS=role-strategy or matrix for per-team rules.
   fake.setAccess((process.env.FAKE_JENKINS_ACCESS as FakeAccess | undefined) ?? 'none')
   // What e-IDP queues starts after a few seconds and finishes a little later, as on a real server.
@@ -673,5 +670,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   serve({ fetch: fake.app.fetch, port })
   console.log(`fake Jenkins on http://localhost:${port}/jenkins (access rules: ${process.env.FAKE_JENKINS_ACCESS ?? 'none'})`)
   console.log(`  JENKINS_URL=http://localhost:${port}/jenkins JENKINS_USER=eidp JENKINS_TOKEN=fake`)
-  console.log('  PIPELINE_PROVISION_JOB=devops/provisioning PIPELINE_TEST_JOB={project}/{application}/develop')
+  console.log('  PIPELINE_TEST_JOB={project}/{application}/develop')
 }

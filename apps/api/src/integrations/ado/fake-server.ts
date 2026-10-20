@@ -13,7 +13,7 @@ import { serve } from '@hono/node-server'
 import { Hono, type Context, type Next } from 'hono'
 
 type Project = { id: string; name: string; description: string; state: 'wellFormed' }
-type Repo = { id: string; name: string; project: { id: string; name: string } }
+type Repo = { id: string; name: string; project: { id: string; name: string }; defaultBranch?: string }
 type Operation = { id: string; status: string; resultMessage: string | null; pending: () => void }
 type Identity = { id: string; descriptor: string; providerDisplayName: string; properties: { Account: { $value: string } } }
 
@@ -31,6 +31,18 @@ export function createFakeAdo(options: { failProjects?: boolean; denyServerScope
     options.failProjects = fail
   }
   const collections = new Map<string, { id: string; projects: Project[]; repos: Repo[] }>()
+  /** Each repository's branches: ref name → commit. A repository with none has no commit yet. */
+  const refs = new Map<string, Map<string, string>>()
+  /**
+   * A first commit on main, as a developer's first push makes it. ADO creates
+   * a repository empty; the fake gives it a commit straight away so a
+   * pipeline can be set up for it, unless its name says "empty".
+   */
+  function firstCommit(repo: Repo) {
+    if (/empty/i.test(repo.name)) return
+    refs.set(repo.id, new Map([['refs/heads/main', randomUUID().replaceAll('-', '').padEnd(40, '0').slice(0, 40)]]))
+    repo.defaultBranch = 'refs/heads/main'
+  }
   const operations = new Map<string, Operation>()
   /** Everyone ADO can find — the directory it is joined to, plus project groups. */
   const identities: Identity[] = []
@@ -64,7 +76,9 @@ export function createFakeAdo(options: { failProjects?: boolean; denyServerScope
   function addRepo(collection: string, project: string, name: string) {
     const c = collections.get(collection)!
     const p = c.projects.find((x) => x.name === project)!
-    c.repos.push({ id: randomUUID(), name, project: { id: p.id, name: p.name } })
+    const repo: Repo = { id: randomUUID(), name, project: { id: p.id, name: p.name } }
+    c.repos.push(repo)
+    firstCommit(repo)
   }
 
   for (const account of ['alice', 'bob', 'carol', 'Payments', 'DEVOPS']) addIdentity(account)
@@ -169,7 +183,31 @@ export function createFakeAdo(options: { failProjects?: boolean; denyServerScope
     }
     const repo: Repo = { id: randomUUID(), name: body.name, project: { id: project.id, name: project.name } }
     coll.repos.push(repo)
+    firstCommit(repo)
     return c.json(repo, 201)
+  })
+
+  // A repository's branches, and creating them: one ref update per branch, from no commit to the base.
+  const repoById = (collection: string, id: string) => collections.get(collection)?.repos.find((r) => r.id === id || ci(r.name, id))
+  app.get('/:collection/:project/_apis/git/repositories/:id/refs', (c) => {
+    const repo = repoById(c.req.param('collection'), c.req.param('id'))
+    if (!repo) return c.json({ message: 'Repository not found' }, 404)
+    const prefix = `refs/${c.req.query('filter') ?? ''}`
+    return c.json(list([...(refs.get(repo.id) ?? new Map<string, string>())].filter(([name]) => name.startsWith(prefix)).map(([name, objectId]) => ({ name, objectId }))))
+  })
+  app.post('/:collection/:project/_apis/git/repositories/:id/refs', async (c) => {
+    const repo = repoById(c.req.param('collection'), c.req.param('id'))
+    if (!repo) return c.json({ message: 'Repository not found' }, 404)
+    const updates = await c.req.json<{ name: string; oldObjectId: string; newObjectId: string }[]>()
+    const branches = refs.get(repo.id) ?? new Map<string, string>()
+    refs.set(repo.id, branches)
+    const results = updates.map((u) => {
+      const now = branches.get(u.name) ?? '0'.repeat(40)
+      if (now !== u.oldObjectId) return { name: u.name, success: false, updateStatus: 'staleOldObjectId', customMessage: null }
+      branches.set(u.name, u.newObjectId)
+      return { name: u.name, success: true, updateStatus: 'succeeded', customMessage: null }
+    })
+    return c.json(list(results))
   })
 
   // On ADO Server 6.0 the identity and security APIs are preview-only, and a
@@ -226,7 +264,20 @@ export function createFakeAdo(options: { failProjects?: boolean; denyServerScope
     return c.json(true)
   })
 
-  return { app, collections, identities, acl, members, setFailProjects, setDenyServerScope, setDenyGrants }
+  /** A repository's branch names, for tests. */
+  const branchesOf = (collection: string, repository: string) => {
+    const repo = collections.get(collection)?.repos.find((r) => ci(r.name, repository))
+    return [...(repo ? (refs.get(repo.id) ?? new Map()) : new Map()).keys()].map((name) => String(name).replace('refs/heads/', '')).sort()
+  }
+  /** Gives an empty repository its first commit — the developer pushed. */
+  const push = (collection: string, repository: string) => {
+    const repo = collections.get(collection)?.repos.find((r) => ci(r.name, repository))
+    if (!repo) return
+    refs.set(repo.id, new Map([['refs/heads/main', 'a'.repeat(40)]]))
+    repo.defaultBranch = 'refs/heads/main'
+  }
+
+  return { app, collections, identities, acl, members, setFailProjects, setDenyServerScope, setDenyGrants, branchesOf, push }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

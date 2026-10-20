@@ -29,6 +29,13 @@
       "when": 1792406279961,
       "tag": "0003_pipeline_steps",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792408790030,
+      "tag": "0004_pipeline_steps_in_portal",
+      "breakpoints": true
     }
   ]
 }

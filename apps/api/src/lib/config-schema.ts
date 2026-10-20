@@ -168,14 +168,17 @@ export const schema = z.object({
   /** Push manifests here instead — a mirror, or a local repository in tests. */
   OCP_TEMPLATES_GIT_URL: z.string().min(1).optional(),
 
-  // What runs in Jenkins after an approved pipeline is pushed: provisioning
-  // (its branches and hooks), then a first test build. Job names and
+  // What follows an approved pipeline's push: its repository's branches,
+  // made by the portal in Azure DevOps (createBranchs_hooks_initApp.sh's
+  // first half), then a first test build in Jenkins. The test job and its
   // parameters are templates over {collection} {project} {system}
   // {application} {repository} {newProject} {deployTarget} {technology};
-  // parameters are written as a query string. A job left unset is skipped,
-  // and the request page says what to run by hand.
-  PIPELINE_PROVISION_JOB: z.string().min(1).optional(),
-  PIPELINE_PROVISION_PARAMETERS: z.string().default('COLLECTION={collection}&PROJECT={project}&APP_NAME={application}&NEW_PROJECT={newProject}'),
+  // parameters are written as a query string. Unset: skipped, said so.
+  /** The branches every application's repository gets, from its default branch. */
+  PIPELINE_BRANCHES: z
+    .string()
+    .default('develop,release,hotfixes,stress')
+    .transform((v) => v.split(',').map((b) => b.trim()).filter(Boolean)),
   PIPELINE_TEST_JOB: z.string().min(1).optional(),
   PIPELINE_TEST_PARAMETERS: z.string().optional(),
   /** A step with no result after this long is failed, to be looked at and retried. */

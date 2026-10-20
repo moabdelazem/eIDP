@@ -33,8 +33,8 @@ pnpm workspace. `apps/*` and `packages/*`.
   lifecycle, deciding, adjust, rows, and one executor per kind: `execute.ts`
   runs the Azure DevOps creations and dispatches `grant.ts`,
   `jira-project.ts` and `pipeline/execute.ts`; their shared steps are
-  `steps.ts`; a pipeline's Jenkins steps after its push are
-  `pipeline/follow-up.ts`), with `service.ts` re-exporting the
+  `steps.ts`; what follows a pipeline's push — its branches, service
+  hooks and first test build — is `pipeline/follow-up.ts`), with `service.ts` re-exporting the
   names its routes use.
 
   `app.ts` builds the app without listening so tests drive it via

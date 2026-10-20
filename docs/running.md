@@ -29,7 +29,7 @@ Jenkins or inventories:
 
 ```sh
 pnpm --filter @eidp/api ado:fake        # Azure DevOps on :4010
-pnpm --filter @eidp/api jenkins:fake    # Jenkins on :4030, with devops/provisioning
+pnpm --filter @eidp/api jenkins:fake    # Jenkins on :4030
 pnpm --filter @eidp/api pipelines:dev   # once; add what it prints to .env, then start the API
 ```
 
@@ -44,12 +44,16 @@ importing them, as DevOps would on the Pipeline templates page. The catalog
 sync reads `INVENTORIES_GIT_URL` when it is set, so the map shows what
 approvals push.
 
+The fake Azure DevOps gives every repository a first commit on `main`, so
+its branches can be made, unless the repository's name contains "empty".
 The fake Jenkins starts what the portal queues after a few seconds and ends
-it a little later. Provisioning that succeeds creates
-`<PROJECT>/<APP_NAME>/develop`, where the first test build runs.
+it a little later. It makes the application's job
+(`<project>/<application>/develop`) when the first build is asked of it.
 
-To try a failure, put "fail" in the application's name (provisioning fails)
-or "flaky" in a job's (its build fails).
+To try failures:
+- ask for a repository with "empty" in its name: making its branches fails
+  until it has a commit;
+- put "fail" in the application's name: its first test build fails.
 
 A walk-through:
 1. As bob, ask for a repository in AgriLand.
@@ -58,6 +62,6 @@ A walk-through:
    then file a .NET Core pipeline.
 4. As alice, **Adjust** it, or edit a file under *What approving writes*,
    then approve.
-5. Follow provisioning and the test build on the request page.
+5. Follow its branches and its first test build on the request page.
 
 Delete `apps/api/.cache/dev-git` to start over.

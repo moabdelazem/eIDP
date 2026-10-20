@@ -206,8 +206,13 @@ export type RequestChanges = {
   files?: PipelineFile[]
 }
 
-/** What runs in Jenkins after an approved pipeline is pushed. */
-export type StepName = 'provision' | 'test'
+/**
+ * What follows an approved pipeline's push, in order: its repository's
+ * branches (made by the portal in Azure DevOps), its service hooks, and a
+ * first test build in Jenkins. Requests approved before the portal made the
+ * branches itself may also have had `provision`, the Jenkins job that did.
+ */
+export type StepName = 'branches' | 'hooks' | 'test'
 
 /**
  * Where a step is:
@@ -226,7 +231,7 @@ export type RequestStep = {
   number: number | null
   /** Jenkins' page for the build. */
   url: string | null
-  /** Why it failed or was skipped. */
+  /** What it did, or why it failed or was skipped. */
   note: string | null
   attempts: number
   startedAt: string | null
