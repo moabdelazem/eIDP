@@ -1,19 +1,21 @@
 import { useState } from 'react'
-import { Check, ExternalLink, Gavel, Loader2, TriangleAlert, Undo2, X } from 'lucide-react'
-import { useParams } from 'react-router'
+import { Check, ExternalLink, Gavel, Loader2, TriangleAlert, Undo2, Workflow, X } from 'lucide-react'
+import { Link, useParams } from 'react-router'
 import { DataDialog } from '@/components/data-dialog.tsx'
 import { EmptyState } from '@/components/empty-state.tsx'
-import { AzureDevOpsIcon, JiraIcon } from '@/components/brand-icons.tsx'
+import { AzureDevOpsIcon, JenkinsIcon, JiraIcon } from '@/components/brand-icons.tsx'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSession } from '@/features/auth/session-context.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
-import { isInFlight, isJira, requestsApi, systemOf, targetPath, type PortalRequest } from './api.ts'
+import { isInFlight, isJira, isPipeline, pipelineFormFor, requestsApi, stepMoving, systemOf, targetPath, type PortalRequest } from './api.ts'
+import { AdjustDialog, canAdjust } from './adjust-dialog.tsx'
 import { decide, rejectRequest } from './decisions.ts'
 import { REQUEST_TYPES } from './kinds.ts'
 import { RejectDialog } from './reject-dialog.tsx'
+import { PipelinePanel } from './pipeline-panel.tsx'
 import { RiskPanel } from './risk.tsx'
 import { ApproveDialog, WithdrawDialog } from './decision-dialogs.tsx'
 import { AccessLine, kindIcon, kindLabel, since, statusLabel, StatusBadge, TargetPath, WrappingUrl } from './status.tsx'
@@ -26,8 +28,8 @@ export function RequestPage() {
   const [pollMs, setPollMs] = useState<number | null>(3000)
   const request = useResource(['requests', 'get', requestId], async () => {
       const found = await requestsApi.get(requestId)
-      // Watch it while it is moving; stop once it has settled.
-      setPollMs(isInFlight(found.status) ? 3000 : null)
+      // Watch it while it is moving — or its pipeline's steps are, in Jenkins — and stop once all have settled.
+      setPollMs(isInFlight(found.status) || found.steps.some(stepMoving) ? 3000 : null)
       return found
     }, { pollMs })
   usePageTitle(request.data ? (request.data.repository ?? request.data.project) : 'Request')
@@ -74,6 +76,7 @@ export function RequestPage() {
         }
       >
         <DecisionCard request={r} onChanged={request.reload} />
+        {r.kind === 'create_pipeline' && <PipelinePanel request={r} onChanged={request.reload} />}
         <Section title="Activity">
           <ol>
             <Step title={own ? 'You asked for it' : `${r.requestedByName} asked for it`} when={r.requestedAt} done>
@@ -86,6 +89,7 @@ export function RequestPage() {
               )}
             </Step>
 
+            {r.adjustments.length > 0 && <AdjustedStep request={r} own={own} />}
             <DecisionStep request={r} own={own} />
             <OutcomeStep request={r} />
           </ol>
@@ -103,7 +107,7 @@ export function RequestPage() {
 function RequestHeader({ request: r, own, onChanged }: { request: PortalRequest; own: boolean; onChanged: () => void }) {
   const [withdrawing, setWithdrawing] = useState(false)
   const KindIcon = kindIcon(r.kind)
-  const Mark = isJira(r) ? JiraIcon : AzureDevOpsIcon
+  const Mark = isJira(r) ? JiraIcon : isPipeline(r) ? JenkinsIcon : AzureDevOpsIcon
   // The registry's short label: the provider is already said beside it ("Jira · Project", not "Jira · Jira project").
   const kind = REQUEST_TYPES.find((t) => t.kind === r.kind)?.label ?? kindLabel(r.kind)
   return (
@@ -118,7 +122,7 @@ function RequestHeader({ request: r, own, onChanged }: { request: PortalRequest;
             Request · {systemOf(r)} · {kind}
           </p>
           {/* An ADO name is an identifier people copy; a Jira project's name is a title. */}
-          <h1 className={`mt-0.5 text-2xl font-semibold tracking-tight break-words ${isJira(r) ? '' : 'font-mono'}`}>{r.repository ?? r.project}</h1>
+          <h1 className={`mt-0.5 text-2xl font-semibold tracking-tight break-words ${isJira(r) ? '' : 'font-mono'}`}>{r.pipeline?.application ?? r.repository ?? r.project}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {isJira(r) ? (
               <>
@@ -126,7 +130,7 @@ function RequestHeader({ request: r, own, onChanged }: { request: PortalRequest;
               </>
             ) : (
               <>
-                {r.kind === 'grant_access' ? 'Access to ' : 'In '}
+                {r.kind === 'grant_access' ? 'Access to ' : isPipeline(r) ? 'From ' : 'In '}
                 <TargetPath parts={targetPath(r).slice(0, r.kind === 'grant_access' ? undefined : -1)} />
               </>
             )}{' '}
@@ -136,6 +140,7 @@ function RequestHeader({ request: r, own, onChanged }: { request: PortalRequest;
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <StatusBadge status={r.status} kind={r.kind} />
+        {canAdjust(r) && <AdjustDialog request={r} onChanged={onChanged} />}
         {own && r.status === 'pending' && (
           <Button variant="outline" size="sm" onClick={() => setWithdrawing(true)}>
             <Undo2 /> Withdraw
@@ -156,8 +161,8 @@ function stagesOf(r: PortalRequest): Stage[] {
   const at = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : null)
   const submitted: Stage = { label: 'Submitted', detail: at(r.requestedAt), state: 'done' }
   // The third stage is the work in the provider, named for what it is doing or did; the fourth, that it is all done.
-  const work = granting ? 'Granting' : 'Creating'
-  const worked = granting ? 'Granted' : 'Created'
+  const work = granting ? 'Granting' : isPipeline(r) ? 'Pushing' : 'Creating'
+  const worked = granting ? 'Granted' : isPipeline(r) ? 'Pushed' : 'Created'
   const end = 'Done'
   switch (r.status) {
     case 'pending':
@@ -235,7 +240,7 @@ function Details({ request: r, own }: { request: PortalRequest; own: boolean }) 
             : [['Key', <code>{r.projectKey}</code>]]) as [string, React.ReactNode][]),
           ['Project', <code>{r.project}</code>],
           ...(r.repository ? ([['Repository', <code>{r.repository}</code>]] as [string, React.ReactNode][]) : []),
-          ['Access', <AccessLine request={r} own={own} />],
+          ...(isPipeline(r) ? [] : ([['Access', <AccessLine request={r} own={own} />]] as [string, React.ReactNode][])),
           ['Requested by', own ? 'You' : r.requestedByName],
           ['Requested', at(r.requestedAt)],
           ['Decided by', r.decidedByName],
@@ -245,6 +250,37 @@ function Details({ request: r, own }: { request: PortalRequest; own: boolean }) 
       />
     </Section>
   )
+}
+
+/**
+ * What deciders changed before approving, as asked → as it will be done: the
+ * requester sees their request was changed, by whom, and from what — nothing
+ * is quietly replaced. Grouped by who made them.
+ */
+function AdjustedStep({ request: r, own }: { request: PortalRequest; own: boolean }) {
+  const byWho = new Map<string, PortalRequest['adjustments']>()
+  for (const a of r.adjustments) byWho.set(a.byName, [...(byWho.get(a.byName) ?? []), a])
+  return [...byWho.entries()].map(([name, changes]) => (
+    <Step key={name} title={`Changed by ${name} before deciding`} when={changes.at(-1)!.at} done>
+      <ul className="mt-2 space-y-1 text-sm">
+        {changes.map((c, i) => (
+          <li key={i} className="flex flex-wrap items-baseline gap-x-1.5">
+            <span className="text-muted-foreground">{c.label}:</span>
+            {c.field === 'files' ? (
+              <span>{c.to}</span>
+            ) : (
+              <>
+                <code className="break-words text-muted-foreground line-through decoration-muted-foreground/60">{c.from ?? '—'}</code>
+                <span aria-label="changed to">→</span>
+                <code className="break-words">{c.to}</code>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+      {own && <p className="mt-2 text-xs text-muted-foreground">What you asked for is kept on the request.</p>}
+    </Step>
+  ))
 }
 
 function DecisionStep({ request: r, own }: { request: PortalRequest; own: boolean }) {
@@ -272,18 +308,19 @@ function DecisionStep({ request: r, own }: { request: PortalRequest; own: boolea
 function OutcomeStep({ request: r }: { request: PortalRequest }) {
   const granting = r.kind === 'grant_access'
   const system = systemOf(r)
+  const pipeline = isPipeline(r)
   const Icon = isJira(r) ? JiraIcon : AzureDevOpsIcon
   if (r.status === 'approved') {
-    return <Step title={granting ? `Granting access in ${system}…` : `Creating it in ${system}…`} current last />
+    return <Step title={granting ? `Granting access in ${system}…` : pipeline ? 'Pushing it to inventories…' : `Creating it in ${system}…`} current last />
   }
   if (r.status === 'completed') {
-    const cloneUrl = r.repository && r.resultUrl ? r.resultUrl : null
+    const cloneUrl = r.kind === 'create_repository' && r.resultUrl ? r.resultUrl : null
     return (
-      <Step title={granting ? `Access granted in ${system}` : `Created in ${system}`} when={r.completedAt} done success last>
+      <Step title={granting ? `Access granted in ${system}` : pipeline ? 'Pushed to inventories' : `Created in ${system}`} when={r.completedAt} done success last>
         {r.resultUrl && (
           <Button asChild variant="outline" size="sm" className="mt-3">
             <a href={r.resultUrl} target="_blank" rel="noreferrer">
-              <Icon /> Open in {system} <ExternalLink />
+              <Icon /> {pipeline ? 'Open the commit' : `Open in ${system}`} <ExternalLink />
             </a>
           </Button>
         )}
@@ -295,12 +332,20 @@ function OutcomeStep({ request: r }: { request: PortalRequest }) {
             </code>
           </div>
         )}
+        {/* The old portal's ➕ beside a repository: its pipeline next, with the repository filled in. */}
+        {r.kind === 'create_repository' && (
+          <Button asChild size="sm" className="mt-3">
+            <Link to={pipelineFormFor(r)}>
+              <Workflow /> Set up its pipeline
+            </Link>
+          </Button>
+        )}
       </Step>
     )
   }
   if (r.status === 'failed') {
     return (
-      <Step title={granting ? `${system} could not grant it` : `${system} could not create it`} attention last>
+      <Step title={granting ? `${system} could not grant it` : pipeline ? 'It could not be pushed to inventories' : `${system} could not create it`} attention last>
         <p className="mt-2 text-sm">{r.error}</p>
         <p className="mt-2 text-sm text-muted-foreground">DevOps can retry once the cause is fixed.</p>
       </Step>
@@ -340,7 +385,9 @@ function DecisionCard({ request: r, onChanged }: { request: PortalRequest; onCha
             {pending
               ? r.kind === 'grant_access'
                 ? 'Approving grants the access straight away. Read the risk notes beside this first.'
-                : `Approving creates it in ${systemOf(r)} and grants access. Read the risk notes beside this first.`
+                : isPipeline(r)
+                  ? 'Approving pushes the files below to inventories at once. Read them, and the risk notes beside this, first.'
+                  : `Approving creates it in ${systemOf(r)} and grants access. Read the risk notes beside this first.`
               : 'Retry once the cause in the activity below is fixed. A retry picks up where it stopped.'}
           </p>
         </div>
@@ -352,7 +399,7 @@ function DecisionCard({ request: r, onChanged }: { request: PortalRequest; onCha
               Reject
             </Button>
             <Button disabled={busy} onClick={() => setApproving(true)}>
-              {r.kind === 'grant_access' ? 'Approve and grant' : 'Approve and create'}
+              {r.kind === 'grant_access' ? 'Approve and grant' : isPipeline(r) ? 'Approve and push' : 'Approve and create'}
             </Button>
           </>
         ) : (

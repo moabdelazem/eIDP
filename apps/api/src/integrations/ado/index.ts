@@ -2,7 +2,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { ApiError } from '../../lib/errors.ts'
 import { adoConfig, adoGet, adoGetList, adoPost } from './client.ts'
 
-export { cloneOrUpdate, headCommit } from './git.ts'
+export { cloneOrUpdate, commitAndPush, findCommit, freshCopy, headCommit, inventoriesRemote, ocpTemplatesRemote, type FileWrite, type Remote } from './git.ts'
 export { adoConfig } from './client.ts'
 export { addToProjectGroup, CONTRIBUTOR, findIdentity, grantRepository, READER, type Principal } from './access.ts'
 

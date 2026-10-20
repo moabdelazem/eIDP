@@ -1,8 +1,8 @@
 import { api } from '@/lib/api-client.ts'
 
 // The JSON's shapes are the API's, from @eidp/contracts — one definition, so the two cannot drift.
-import type { Assessment, Check, RequestStatus, RequestView, Target } from '@eidp/contracts/requests'
-export type { AccessLevel, Assessment, Check, RequestKind, RequestStatus, Target } from '@eidp/contracts/requests'
+import type { Assessment, Check, PipelinePreview, PipelineProject, RequestChanges, RequestStatus, RequestStep, RequestView, StepName, Target, Technology } from '@eidp/contracts/requests'
+export type { AccessLevel, Adjustment, Assessment, Check, DeployTarget, Namespace, PipelineFile, PipelinePreview, PipelineProject, PipelineSpec, ProjectTeams, RequestChanges, RequestKind, RequestStatus, RequestStep, StepName, StepStatus, Target, Technology } from '@eidp/contracts/requests'
 
 /** A request as the web holds it: the record, and on a single one whether the viewer may decide it. */
 export type PortalRequest = RequestView
@@ -14,6 +14,16 @@ export const requestsApi = {
     api<{ name: string; description: string | null }[]>(
       `/ado/collections/${encodeURIComponent(collection)}/projects`,
     ),
+  repositories: (collection: string, project: string) =>
+    api<{ name: string; webUrl: string | null }[]>(
+      `/ado/collections/${encodeURIComponent(collection)}/projects/${encodeURIComponent(project)}/repositories`,
+    ),
+  /** The build technologies a pipeline can be asked for, and the fields each asks. */
+  technologies: () => api<Technology[]>('/requests/pipeline/technologies'),
+  /** Whether inventories has the project yet — a new one is asked for its teams and namespaces. */
+  pipelineProject: (project: string) => api<PipelineProject>(`/requests/pipeline/project?project=${encodeURIComponent(project)}`),
+  /** What approving would write into inventories, as they are now. For the people who may decide it. */
+  pipelinePreview: (id: string) => api<PipelinePreview>(`/requests/${encodeURIComponent(id)}/pipeline`),
   /** Which Jira the portal talks to; fails when it cannot reach it. */
   jira: () => api<{ baseUrl: string; serverTitle: string; version: string }>('/jira'),
   check: (target: Target) =>
@@ -36,19 +46,35 @@ export const requestsApi = {
   retry: (id: string) => api<PortalRequest>(`/requests/${id}/retry`, { method: 'POST' }),
   /** Assess again — the directory and the catalog may have changed since it was filed. */
   assess: (id: string) => api<Assessment>(`/requests/${id}/assess`, { method: 'POST' }),
+  /** A decider's changes to a waiting request — each checked as a new request would be, and recorded. */
+  adjust: (id: string, changes: RequestChanges) => api<PortalRequest>(`/requests/${id}`, { method: 'PATCH', body: JSON.stringify(changes) }),
+  /** Runs a pushed pipeline's provisioning or test build again. */
+  retryStep: (id: string, step: StepName) => api<RequestStep[]>(`/requests/${id}/steps/${step}/retry`, { method: 'POST' }),
 }
+
+/** Whether a step is still on its way in Jenkins — the page keeps watching until none is. */
+export const stepMoving = (step: Pick<RequestStep, 'status'>) => step.status === 'pending' || step.status === 'queued' || step.status === 'running'
+
+/** Where the pipeline form opens for a repository that exists, filled in. */
+export const pipelineFormFor = (r: Pick<PortalRequest, 'collection' | 'project' | 'repository'>) =>
+  `/requests/new/jenkins/pipeline?${new URLSearchParams({ collection: r.collection ?? '', project: r.project, repository: r.repository ?? '' })}`
 
 /** Jira's requests act in Jira; everything else is Azure DevOps. */
 export function isJira(request: Pick<PortalRequest, 'kind'>): boolean {
   return request.kind === 'create_jira_project'
 }
 
-/** Where a request acts, by name — for sentences like "created in Jira". */
-export function systemOf(request: Pick<PortalRequest, 'kind'>): string {
-  return isJira(request) ? 'Jira' : 'Azure DevOps'
+/** A pipeline request writes into the inventories repository rather than creating something in a provider. */
+export function isPipeline(request: Pick<PortalRequest, 'kind'>): boolean {
+  return request.kind === 'create_pipeline'
 }
 
-type Located = Pick<PortalRequest, 'kind' | 'collection' | 'project' | 'projectKey' | 'repository'>
+/** Where a request acts, by name — for sentences like "created in Jira". */
+export function systemOf(request: Pick<PortalRequest, 'kind'>): string {
+  return isJira(request) ? 'Jira' : isPipeline(request) ? 'inventories' : 'Azure DevOps'
+}
+
+type Located = Pick<PortalRequest, 'kind' | 'collection' | 'project' | 'projectKey' | 'repository'> & { pipeline?: PortalRequest['pipeline'] }
 
 /**
  * The thing being created, as a path — the one line that identifies a request.
@@ -56,6 +82,8 @@ type Located = Pick<PortalRequest, 'kind' | 'collection' | 'project' | 'projectK
  */
 export function targetPath(request: Located): string[] {
   if (isJira(request)) return [request.projectKey ?? '', request.project]
+  // A pipeline is named for its application, built from the repository before it.
+  if (isPipeline(request) && request.pipeline) return [request.collection ?? '', request.project, request.repository ?? '', request.pipeline.application]
   return [request.collection ?? '', request.project, ...(request.repository ? [request.repository] : [])]
 }
 

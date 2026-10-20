@@ -210,6 +210,9 @@ const SECRET_KEY = /pass(word|wd)?$|passwd|pwd|secret|token|credential|private_?
 
 export const REDACTED = '[hidden]'
 
+/** Whether a key's value is a credential, by its name. */
+export const isSecretKey = (key: string): boolean => SECRET_KEY.test(key)
+
 function redact(value: unknown, key = ''): any {
   if (SECRET_KEY.test(key) && value !== null && typeof value !== 'object') return REDACTED
   if (Array.isArray(value)) return value.map((item) => redact(item))

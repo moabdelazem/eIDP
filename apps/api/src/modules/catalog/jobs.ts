@@ -8,7 +8,7 @@ export const jobs: Job[] = [
   {
     name: 'catalog-sync',
     everyMs: config.SYNC_INTERVAL_MINUTES * 60_000,
-    enabled: Boolean(config.INVENTORIES_PROJECT),
+    enabled: Boolean(config.INVENTORIES_PROJECT || config.INVENTORIES_GIT_URL),
     run: async () => `ok at ${(await syncCatalog()).commit?.slice(0, 8)}`,
   },
 ]
@@ -18,7 +18,7 @@ export const jobs: Job[] = [
  * once however many replicas boot together: the others join that sync.
  */
 export function atBoot(): void {
-  if (config.INVENTORIES_PROJECT && config.SYNC_INTERVAL_MINUTES <= 0) {
+  if ((config.INVENTORIES_PROJECT || config.INVENTORIES_GIT_URL) && config.SYNC_INTERVAL_MINUTES <= 0) {
     syncCatalog().catch((err) => log.error('catalog sync at boot failed', errorFields(err)))
   }
 }

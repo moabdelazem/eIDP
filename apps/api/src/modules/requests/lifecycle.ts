@@ -1,4 +1,4 @@
-import type { RequestRecord } from '@eidp/contracts/requests'
+import type { PipelinePreview, RequestRecord, RequestStep, StepName } from '@eidp/contracts/requests'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import { profileOf } from '../../integrations/ldap/index.ts'
 import { can, type Access } from '../access/index.ts'
@@ -8,8 +8,10 @@ import { assess, assessmentsOf, type Assessment } from './risk.ts'
 import { check, uniqueNames } from './check.ts'
 import { assertCanDecide, decidableBy, mayDecide } from './deciding.ts'
 import { execute } from './execute.ts'
+import { retryStep } from './pipeline/follow-up.ts'
+import { previewPipeline } from './pipeline/write.ts'
 import type { Actor, AdoTarget, NewRequest } from './model.ts'
-import { find, same, toRecord } from './rows.ts'
+import { find, same, toRecord, withSteps } from './rows.ts'
 import { requests } from './schema.ts'
 import { errorFields, log } from '../../lib/log.ts'
 
@@ -41,8 +43,9 @@ export async function submit(input: NewRequest, actor: Actor): Promise<RequestRe
         collection: input.kind === 'create_jira_project' ? null : input.collection,
         project: input.project,
         projectKey: input.kind === 'create_jira_project' ? input.projectKey : null,
-        repository: input.kind === 'create_repository' ? input.repository : null,
-        description: input.description?.trim() || null,
+        repository: input.kind === 'create_repository' || input.kind === 'create_pipeline' ? input.repository : null,
+        description: input.kind === 'create_pipeline' ? null : input.description?.trim() || null,
+        pipeline: input.kind === 'create_pipeline' ? input.pipeline : null,
         justification: input.justification.trim(),
         requestedBy: actor.uid,
         requestedByName: actor.name,
@@ -110,7 +113,7 @@ export async function reassess(id: string, access: Access): Promise<Assessment> 
 
 export async function listMine(uid: string): Promise<RequestRecord[]> {
   const rows = await db.select().from(requests).where(eq(requests.requestedBy, uid)).orderBy(desc(requests.requestedAt)).limit(200)
-  return rows.map(toRecord)
+  return withSteps(rows.map(toRecord))
 }
 
 /**
@@ -128,7 +131,7 @@ export async function listPool(access: Access): Promise<{ open: RequestRecord[];
       .orderBy(desc(sql`coalesce(${requests.completedAt}, ${requests.decidedAt}, ${requests.requestedAt})`))
       .limit(30),
   ])
-  const all = { open: open.map(toRecord), recent: recent.map(toRecord) }
+  const all = { open: await withSteps(open.map(toRecord)), recent: await withSteps(recent.map(toRecord)) }
   // Assessments ride on the open ones only: that is where a decision is still to be made.
   if (can(access, 'requests.decide')) return { open: await withAssessments(all.open), recent: all.recent }
   const decidable = await decidableBy(access, [...all.open, ...all.recent])
@@ -147,7 +150,7 @@ export async function listPool(access: Access): Promise<{ open: RequestRecord[];
  */
 export async function listHistory(access: Access): Promise<RequestRecord[]> {
   const rows = await db.select().from(requests).orderBy(desc(requests.requestedAt)).limit(HISTORY_LIMIT)
-  const all = rows.map(toRecord)
+  const all = await withSteps(rows.map(toRecord))
   if (can(access, 'requests.decide')) return all
   const decidable = await decidableBy(access, all)
   return all.filter((r) => decidable.has(r.id))
@@ -157,7 +160,7 @@ export const HISTORY_LIMIT = 1000
 
 /** A request, if this person may see it: their own, or one they may decide — and whether they may. */
 export async function get(id: string, actor: Actor, access: Access): Promise<RequestRecord & { canDecide: boolean }> {
-  const request = await find(id)
+  const request = (await withSteps([await find(id)]))[0]!
   const canDecide = await mayDecide(request, access)
   if (request.requestedBy !== actor.uid && !canDecide) {
     throw new ApiError(404, 'request_not_found', 'There is no such request.')
@@ -229,4 +232,18 @@ export async function retry(id: string, access: Access): Promise<RequestRecord> 
   if (!rows[0]) throw new ApiError(409, 'request_not_failed', 'Only a failed request can be retried.')
   void execute(toRecord(rows[0]))
   return toRecord(rows[0])
+}
+
+/** What approving a pipeline request would write — for the people who may decide it, who read the files before approving. */
+export async function pipelinePreview(id: string, access: Access): Promise<PipelinePreview> {
+  await assertCanDecide(id, access)
+  const request = await find(id)
+  if (request.kind !== 'create_pipeline') throw new ApiError(404, 'not_a_pipeline', 'That request is not for a pipeline.')
+  return previewPipeline(request)
+}
+
+/** Runs one of a pushed pipeline's Jenkins steps again — for the people who may decide it. */
+export async function retryPipelineStep(id: string, step: StepName, access: Access): Promise<RequestStep[]> {
+  await assertCanDecide(id, access)
+  return retryStep(id, step)
 }

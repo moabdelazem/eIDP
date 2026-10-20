@@ -24,6 +24,8 @@ const DEVOPS_ONLY: [method: string, path: string][] = [
   ['POST', '/requests/00000000-0000-0000-0000-000000000000/reject'],
   ['POST', '/requests/00000000-0000-0000-0000-000000000000/retry'],
   ['POST', '/requests/00000000-0000-0000-0000-000000000000/assess'],
+  ['PATCH', '/requests/00000000-0000-0000-0000-000000000000'],
+  ['POST', '/requests/00000000-0000-0000-0000-000000000000/steps/test/retry'],
   ['POST', '/catalog/sync'],
   ['GET', '/rbac/roles'],
   ['GET', '/rbac/bindings'],
@@ -49,6 +51,12 @@ const DEVOPS_ONLY: [method: string, path: string][] = [
   ['POST', '/jenkins/ignore'],
   ['POST', '/jenkins/unignore'],
   ['POST', '/digests/Payments/regenerate'],
+  // A template that does not exist: past the guard it is a 404, and no real template is touched.
+  ['GET', '/requests/pipeline/templates'],
+  ['GET', '/requests/pipeline/template?dir=none'],
+  ['PUT', '/requests/pipeline/template?dir=none'],
+  ['DELETE', '/requests/pipeline/template?dir=none'],
+  ['POST', '/requests/pipeline/template/import?dir=none'],
 ]
 
 async function login(username: string): Promise<string> {

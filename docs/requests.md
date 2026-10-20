@@ -90,6 +90,209 @@ retry just grants again — both operations are idempotent. The form is its own
 page (`grant-access-page.tsx`); the badge says Granting/Granted, not
 Creating/Created.
 
+**Pipelines** (`create_pipeline`) write an application into the inventories
+repository for a repository that already exists — the old portal's "create
+new application". The request carries the repository and a `pipeline`
+document (application, technology, version, deploy target, library, the
+technology's own fields, and for a project new to inventories its team.yml
+and namespaces); `requests_pipeline_check` keeps that column to this kind.
+
+- **The technology registry** (`modules/requests/pipeline/technologies.ts`)
+  is the old `TECH_CONFIG` and its templates in one place: each technology's
+  label, versions, fields and deploy targets, and a function writing its
+  files; namespaces are registered per deploy target. The form is built from
+  it (`GET /requests/pipeline/technologies`), so a technology added there is
+  on the form with its fields. Until one is registered the form says none is
+  set up.
+- **`definitions.ts` is the old `tech_config.py` as data**, key for key so the
+  two can be compared: per technology, the application in inventories it is
+  copied from (per deploy target — no K8s reference, no K8s), the keys patched
+  from the version (`versionTagOverrides`, `versionFieldOverrides`), and its
+  special cases (`appPathReferenceMap`, `dockerfileByTarget`,
+  `generatedFiles`, `isDatabase`). The old generator kept no templates of its
+  own: it copied a real application of the same kind and patched it. So a
+  template is handed the inventories working copy, read-only (`Inventories`:
+  `exists`, `read`, `list`), as well as the request. The environments a new
+  project names namespaces for are the old ones, in their order — OCP `dev`,
+  `qc`, `uat`, `prd`, `prd_dr`; K8s adds `preprod` — and the application name
+  rule is the old `APP_NAME_REGEX`, at most 50.
+- **The templates are edited in the portal**, on Manage → *Pipeline
+  templates* (`/pipeline-templates`, permission `pipelines.templates`, which
+  only `devops-admin` holds). They are rows in the database
+  (`pipeline_templates`, `pipeline/templates.ts`), not files in the image, so
+  a template changes without a release. Every save and removal is kept in
+  `pipeline_template_history`, with who made it. There is one template per
+  *slot*:
+  - each technology's `group_vars` per deploy target (Flutter on OCP: one per
+    `app_path`);
+  - its manifests per target, for ocp-templates;
+  - `project`, a new project's `group_vars/all`.
+
+  *Import from the reference* reads the slot's reference application from a
+  fresh copy of its repository, on the server, into the editor. It does not
+  save anything. The reference's name becomes `__APPLICATION__`
+  (`__PROJECT__` for the project; manifests only in their paths, as the old
+  portal copied them). A literal credential becomes `changeme`. The page
+  lists what to check: each credential replaced, and each file where the name
+  was replaced more than once. Saving refuses:
+  - a credential;
+  - a path that is not plainly relative;
+  - the same path twice;
+  - more than 200 files or 256 KB a file;
+  - for the project template, a folder or a `team.yml` (the requester fills
+    that in).
+
+  **A technology is on the request form only for the targets whose templates
+  are all saved**, so nobody can file what cannot be written. Removing one
+  takes it off the form at once.
+- **`generate.ts` is the old `new_applications.py`**, file for file, checked
+  byte for byte against the Python when ported:
+  `<system>/<application>.yml` (OCP without `preprod`, K8s with it, a
+  database on `localhost`); the application's `group_vars` from its template
+  with `repository_name`, the library keys, Maven's artifact/group (and
+  `group_path` = `group_id`), .NET's `app_path`/`nuget_name`/version fields,
+  Flutter's `app_path`, the proxy's Dockerfile per target, the image tags
+  from the version (`yaml-edit.ts`, line-level, so the rest of the file is
+  untouched), and the generated files; for a new project, the template
+  project's files, `team.yml` and one namespace per environment
+  (`cluster_type` DR for `prd_dr`); for a database, `host_vars/localhost`
+  when the project has none.
+- **After the push, Jenkins** (`pipeline/follow-up.ts`): provisioning, then a
+  first test build, as the old approval ran them right after its push. Each
+  is a row in `request_steps`, moved along by the `pipeline-steps` job every
+  ten seconds, one process at a time:
+  - `pending` → `queued` (Jenkins' queue item) → `running` (its build) →
+    `succeeded` or `failed`;
+  - the test build is `waiting` until provisioning succeeds;
+  - a step not configured is `skipped`, with what to run by hand (the old
+    printed command, for provisioning).
+
+  The state is in the database, never in memory, so a restart or a second
+  replica carries on. Claiming a step is the lock that sends its build once.
+  A queue item Jenkins has let go of is found among the job's builds by its
+  `queueId`. A step with no result after `PIPELINE_STEP_TIMEOUT_MINUTES` fails.
+
+  **The request is complete with the push, whatever Jenkins does next.** Its
+  files are in inventories either way, so a failed step is the step's to
+  retry, by a decider on the request page (`POST
+  /requests/:id/steps/:step/retry`), never a reason to push again. Running
+  provisioning again puts the test build back to waiting. The test build can
+  also be started by hand while provisioning is failed or skipped (done
+  outside the portal). A failed step shows under "Needs you" on deciders'
+  Overview.
+
+  The jobs are settings, templates over the request's values `{collection}`,
+  `{project}`, `{system}`, `{application}`, `{repository}`, `{newProject}`,
+  `{deployTarget}` and `{technology}`:
+  - `PIPELINE_PROVISION_JOB` and `PIPELINE_PROVISION_PARAMETERS` (a query
+    string; by default `COLLECTION`, `PROJECT`, `APP_NAME`, `NEW_PROJECT`);
+  - `PIPELINE_TEST_JOB` (e.g. `{project}/{application}/develop`) and
+    `PIPELINE_TEST_PARAMETERS`.
+
+  The old `jenkins_client.py` was not available when this was written. Check
+  the job names and parameter names against the real provisioning job before
+  turning it on.
+- **What approval leaves to a person** is listed on the completed request
+  (*Still to do by hand*): each namespace's token, and its user when left
+  empty, written as placeholders, never real.
+- **`check()`** refuses an application name inventories would misread — one
+  starting with an environment prefix (`prd_api` is read as the `prd`
+  override of `api`), or `all` — an unknown technology, a missing version or
+  field, a repository ADO does not have, an application the catalog already
+  has, a pipeline already asked for, and a project whose new-or-existing
+  answer does not match the catalog (`GET /requests/pipeline/project`). For a
+  new project every team is required, and so is the auto-deploy-to-QC answer:
+  it starts unset, as on the old form, rather than defaulting to no.
+- **The files are worked out at approval, not at filing** (`files.ts`), from
+  inventories as they are then; anything that appeared while the request
+  waited is a conflict, and nothing is ever overwritten. Deciders read the
+  exact files first (`GET /requests/:id/pipeline`, the request page's
+  *What approving writes*); the requester never sees them.
+- **Approval pushes straight to the default branch** (`write.ts`), as the old
+  portal did: in a working copy of its own (`INVENTORIES_WRITE_CHECKOUT`,
+  never the catalog sync's), reset to the remote before every write, one
+  writer at a time across replicas (`inTurn` on lock `inventories-write`). A
+  push overtaken by someone else's starts again from a fresh copy, three
+  times. Every commit carries `e-IDP-Request: <id>`, and a retry looks for
+  it first, so a push that landed but was never recorded is found rather
+  than made twice. The commit is the request's result, and the catalog is
+  synced at once. `INVENTORIES_GIT_URL` points the writer elsewhere — a
+  mirror, or the local repository the tests push to. The ADO service
+  account's PAT needs Code (read & write) on inventories and ocp-templates.
+- **The manifests go to ocp-templates** (`OCP_TEMPLATES_REPO`, in the
+  inventories' project unless `OCP_TEMPLATES_PROJECT` says otherwise), under
+  `<project>/<application>/`, from the `manifests/<Technology>/<target>` template
+  — the old `reference_template` copy, the name replaced in paths only, as it
+  was. Not for a library, nor a technology without a reference on that
+  target. Both repositories are planned before either is pushed, so a
+  conflict in one writes nothing; ocp-templates is pushed first, then
+  inventories, each with the marker, so a retry after only the first landed
+  finishes the second. The old portal pushed them separately and could leave
+  an application without its manifests. The request's result is the
+  inventories commit.
+- `team.yml` is written the way the repository spells it, in the old order —
+  the auto-deploy flag quoted, an empty list as one empty item, and the ops,
+  approver, prd-only and manager lists DEVOPS when left empty (the form says
+  so).
+
+**Deciders adjust a waiting request instead of rejecting it to be filed
+again** (`adjust.ts`, `PATCH /requests/:id`, the request page's *Adjust*).
+What they may change depends on the kind:
+- a repository: its collection, project and name;
+- a project: its collection and name;
+- a Jira project: its name and key;
+- a pipeline: its application name and version, and the files it writes.
+
+Access requests change nothing: who gets access is the requester's to ask.
+
+Each change is checked as filing it would be (`check(target, except)`, which
+leaves the request itself out of the duplicate search) and recorded in
+`requests.adjustments` with who made it and the value asked for. The
+requester sees each change in the activity timeline as asked → as it will be
+done, and the request is assessed again.
+
+A pipeline's files are edited under *What approving writes*. The rules:
+- only the content of a file approving writes, never a new path;
+- only edits that differ from what the templates write are kept
+  (`requests.pipeline_edits`);
+- never a credential.
+
+The preview and the push lay the edits over the templates' output
+(`applyEdits`). An edit to a file approving no longer writes stops the push
+instead of being dropped. Renaming the application sets the edits aside,
+and says so. The requester sees which files were edited, not what they say:
+reading files is the approver's job.
+
+The old portal let approvers override names (`override_params`) and the
+generated YAML (`override_file_changes`) at approval, with no trace of what
+had been asked for.
+
+**What it does differently from the old portal, on purpose.** The port keeps
+the old generator's output, not its traps:
+
+| The old portal | Here |
+|---|---|
+| Worked out the files when the request was filed and stored them; the approver approved a snapshot that could be stale | Worked out at approval against inventories as they are then; what changed meanwhile is a conflict |
+| Pulled a shared checkout from the page; two people at once raced | One working copy, reset before every write, one writer at a time across replicas |
+| "Treat as new project" override, so a project's `team.yml` could be written over | New or existing comes from the catalog and is checked again at approval; `group_vars/all` is never written over |
+| No duplicate check: two people could ask for the same app | An open request for the same application or repository blocks a second |
+| Any typed version, even one with no build image | Listed versions only; another is a request to DevOps first |
+| `group_id`, `artifact_id`, `nuget_name` as typed | Checked against `FIELD_RULES` on the form and at filing |
+| Copied the reference app's files with whatever credential sat in them | A file carrying a literal value for a credential-named key stops the write (`credentialsIn`); placeholders, `{{ … }}` and vaulted values pass |
+| Names like `prd_api` or `all`, and case-only duplicates, accepted | Refused: inventories would read them as an override or the project's own files |
+| Copied a live reference application at every request: an edit or rename there changed or broke every pipeline after it, and its hostnames, ports and DB names came along | Templates imported once from the reference, checked by a person and saved in the portal, with every change kept; a reference changing later changes nothing |
+| Namespace tokens written as `changeme` and left to memory; deploys failed until someone remembered | Still `changeme` (never a real token in inventories), but the completed request lists the tokens to set as an open follow-up |
+| DBScripts skipped namespaces but Database_Microsoft did not | Every database skips them and gets `host_vars/localhost` |
+| Replaced the reference app's name wherever it appeared in the copied text, hitting anything that contained it | `__APPLICATION__` marks where the name goes, put there once at import and checked before saving |
+| Copied GAFI_Digital_Network's project files changing only `project_name`, and wrote `team.yml` only if that project had one | `__PROJECT__` in the template; `team.yml` always written |
+| Ignored the auto-deploy answer: "false" for DEVdotNET, "true" for everyone else | The requester's answer is written, and the approver sees it |
+| "Leave empty — default user will be used", then wrote `changeme` | The form says `changeme`, and the request lists it to set |
+| Pushed inventories and ocp-templates separately, cleaning up local files on failure; one could land without the other | Both planned before either is pushed; each push carries the marker and a retry completes what is missing |
+| Audit, history and ELK in files and best-effort calls | The request itself: who, what, when, the decision, the commit |
+| Auto-deploy to QC as a string; a failed submit could pass silently | An explicit yes/no, and a request is filed in one transaction or not at all |
+| Provisioning and the test build ran inside the approval call; a Jenkins hiccup there was a warning in a returned dict | Steps of their own, in the database, followed to a result, retried on their own; the request page shows each with its build |
+| Approvers overrode names and YAML at approval, silently | Changes made before approving, each checked and recorded; the requester sees what was changed, by whom, from what |
+
 **Every request is assessed for its approver** (`modules/requests/risk.ts`),
 in the background the moment it is filed, and shown only to people who may
 decide it — on the approval card, in the approve dialog when it is not low,

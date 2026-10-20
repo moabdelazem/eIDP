@@ -76,7 +76,7 @@ export function FormHeader({ type, lead }: { type: RequestType; lead: string }) 
 }
 
 /** When the provider cannot be reached, the form has nothing to offer: say so, and offer to try again. */
-export function Unreachable({ type, lead, message, error, onRetry }: { type: RequestType; lead: string; message: string; error: string; onRetry: () => void }) {
+export function Unreachable({ type, lead, message, error, onRetry }: { type: RequestType; lead: string; message: string; error: ReactNode; onRetry: () => void }) {
   return (
     <div className={PAGE}>
       <FormHeader type={type} lead={lead} />

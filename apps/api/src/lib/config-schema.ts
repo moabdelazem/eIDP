@@ -150,6 +150,36 @@ export const schema = z.object({
   INVENTORIES_REPO: z.string().min(1).default('inventories'),
   /** Working copy the sync clones into and pulls on later runs. */
   INVENTORIES_CHECKOUT: z.string().min(1).default('.cache/inventories'),
+  /**
+   * Where approved pipeline requests are written and pushed from: a working
+   * copy of its own, never the sync's, reset before every write.
+   */
+  INVENTORIES_WRITE_CHECKOUT: z.string().min(1).default('.cache/inventories-write'),
+  /** Push pipeline changes here instead of the ADO repository above — a mirror, or a local repository in tests. */
+  INVENTORIES_GIT_URL: z.string().min(1).optional(),
+  /** Who commits pipeline changes to inventories; the requester and approver are named in the message. */
+  INVENTORIES_COMMITTER_NAME: z.string().min(1).default('e-IDP'),
+  INVENTORIES_COMMITTER_EMAIL: z.string().min(3).default('e-idp@noreply.local'),
+  /** The OpenShift/Kubernetes manifests repository approved pipelines also write to, and its project (the inventories' by default). */
+  OCP_TEMPLATES_REPO: z.string().min(1).default('ocp-templates'),
+  OCP_TEMPLATES_PROJECT: z.string().min(1).optional(),
+  /** Its own writing copy, as the inventories have theirs. */
+  OCP_TEMPLATES_WRITE_CHECKOUT: z.string().min(1).default('.cache/ocp-templates-write'),
+  /** Push manifests here instead — a mirror, or a local repository in tests. */
+  OCP_TEMPLATES_GIT_URL: z.string().min(1).optional(),
+
+  // What runs in Jenkins after an approved pipeline is pushed: provisioning
+  // (its branches and hooks), then a first test build. Job names and
+  // parameters are templates over {collection} {project} {system}
+  // {application} {repository} {newProject} {deployTarget} {technology};
+  // parameters are written as a query string. A job left unset is skipped,
+  // and the request page says what to run by hand.
+  PIPELINE_PROVISION_JOB: z.string().min(1).optional(),
+  PIPELINE_PROVISION_PARAMETERS: z.string().default('COLLECTION={collection}&PROJECT={project}&APP_NAME={application}&NEW_PROJECT={newProject}'),
+  PIPELINE_TEST_JOB: z.string().min(1).optional(),
+  PIPELINE_TEST_PARAMETERS: z.string().optional(),
+  /** A step with no result after this long is failed, to be looked at and retried. */
+  PIPELINE_STEP_TIMEOUT_MINUTES: z.coerce.number().positive().default(120),
 })
 
 /**

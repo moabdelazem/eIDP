@@ -77,6 +77,11 @@ export function useNeeds(v: Viewer): { needs: Need[]; loading: boolean } {
     if (pending.length) out.push({ key: 'decide', icon: ListChecks, text: `${pending.length} ${pending.length === 1 ? 'request waits' : 'requests wait'} for your decision`, to: '/approvals', tone: 'act' })
     const failedPool = pool.data?.open.filter((r) => r.status === 'failed') ?? []
     if (failedPool.length) out.push({ key: 'retry', icon: AlertCircle, text: `${failedPool.length} approved ${failedPool.length === 1 ? 'request' : 'requests'} failed and need a retry`, to: '/approvals', tone: 'act' })
+    // A pushed pipeline whose provisioning or test build failed in Jenkins: the request is done, the step is not.
+    for (const r of [...(pool.data?.open ?? []), ...(pool.data?.recent ?? [])].filter((r) => r.steps?.some((s) => s.status === 'failed')).slice(0, 5)) {
+      const step = r.steps.find((s) => s.status === 'failed')!
+      out.push({ key: `step-${r.id}`, icon: Workflow, text: <>{step.step === 'provision' ? 'Provisioning' : 'The first test build'} of <b className="font-medium">{r.pipeline?.application ?? r.repository}</b> failed in Jenkins</>, to: `/requests/${r.id}`, tone: 'act' })
+    }
     // Your own requests that went wrong in the last week: rejected (read why) or failed (DevOps retries; you may want to know).
     const week = Date.now() - 7 * 86_400_000
     for (const r of mine.data ?? []) {

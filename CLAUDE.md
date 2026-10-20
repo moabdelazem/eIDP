@@ -30,9 +30,11 @@ pnpm workspace. `apps/*` and `packages/*`.
   in whichever module had it first. A module that outgrows one service file
   splits into parts in its folder — `jenkins` (shared, now, stats, search,
   actions, sync, access, retention, explainer) and `requests` (model, check,
-  lifecycle, deciding, rows, and one executor per kind: `execute.ts` runs the
-  Azure DevOps creations and dispatches `grant.ts` and `jira-project.ts`;
-  their shared steps are `steps.ts`), with `service.ts` re-exporting the
+  lifecycle, deciding, adjust, rows, and one executor per kind: `execute.ts`
+  runs the Azure DevOps creations and dispatches `grant.ts`,
+  `jira-project.ts` and `pipeline/execute.ts`; their shared steps are
+  `steps.ts`; a pipeline's Jenkins steps after its push are
+  `pipeline/follow-up.ts`), with `service.ts` re-exporting the
   names its routes use.
 
   `app.ts` builds the app without listening so tests drive it via
@@ -141,5 +143,5 @@ docker compose up -d
 
 ## Notes
 
-- `inventories` is read-only input. e-IDP never writes back to it.
+- `inventories` is input, read by the catalog sync. The one thing e-IDP writes to it — and to `ocp-templates` — is an approved pipeline request's files, pushed to the default branch by `modules/requests/pipeline/write.ts` and nothing else (`docs/requests.md`).
 - Don't add a dependency for something Node 24 or Hono already does.
