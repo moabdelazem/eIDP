@@ -3,7 +3,7 @@
  * or inventories:
  *
  *   pnpm --filter @eidp/api ado:fake         # fake Azure DevOps on :4010
- *   pnpm --filter @eidp/api jenkins:fake     # fake Jenkins on :4030; makes an application's job when asked to build it
+ *   pnpm --filter @eidp/api jenkins:fake     # fake Jenkins on :4030, with devops/provisioning
  *   pnpm --filter @eidp/api pipelines:dev    # this: once, then add what it prints to .env
  *
  * It makes two local git repositories under apps/api/.cache/dev-git —
@@ -108,5 +108,6 @@ ADO_PAT=fake
 JENKINS_URL=http://localhost:4030/jenkins
 JENKINS_USER=eidp
 JENKINS_TOKEN=fake
+PIPELINE_PROVISION_JOB=devops/provisioning
 PIPELINE_TEST_JOB={project}/{application}/develop
 `)

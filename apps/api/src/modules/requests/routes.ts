@@ -183,8 +183,8 @@ export const requestRoutes = new Hono<AppEnv>()
     c.json(await requests.adjust(c.req.param('id'), c.req.valid('json'), actor(c), await accessFrom(c))),
   )
 
-  /** Run one of a pushed pipeline's steps again: its branches, or its test build. */
-  .post('/:id/steps/:step/retry', decider, validate('param', z.object({ id: z.string(), step: z.enum(['branches', 'hooks', 'test']) })), async (c) =>
+  /** Run a pushed pipeline's provisioning or test build again. */
+  .post('/:id/steps/:step/retry', decider, validate('param', z.object({ id: z.string(), step: z.enum(['provision', 'test']) })), async (c) =>
     c.json(await requests.retryPipelineStep(c.req.param('id'), c.req.valid('param').step, await accessFrom(c))),
   )
 

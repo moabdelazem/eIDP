@@ -17,8 +17,7 @@ import { requestsApi, type PipelineFile, type PortalRequest, type RequestStep, t
  * everyone who may see the request — then, to the people who may decide it,
  * the files approving would write, worked out from inventories as they are
  * now and editable while it waits; and once pushed, what runs in Jenkins
- * after it (its branches, service hooks, a first test build) and what is left
- * to do by hand.
+ * after it (provisioning, a first test build) and what is left to do by hand.
  * The requester never sees the files: reading them is the approver's job.
  */
 export function PipelinePanel({ request: r, onChanged }: { request: PortalRequest; onChanged: () => void }) {
@@ -211,8 +210,7 @@ function FileList({
 
 // ---- after the push: Jenkins -----------------------------------------------------------
 
-/** Steps by name; `provision` is the Jenkins job requests approved before the portal made branches itself had. */
-const STEP_NAME: Record<string, string> = { branches: 'Branches', hooks: 'Service hooks', test: 'First test build', provision: 'Provisioning' }
+const STEP_NAME: Record<RequestStep['step'], string> = { provision: 'Provisioning', test: 'First test build' }
 
 /** Each status with an icon and a word, never colour alone; red only where someone should act. */
 const LOOK: Record<StepStatus, { icon: LucideIcon; word: string; tone: string; spin?: boolean }> = {
@@ -227,51 +225,44 @@ const LOOK: Record<StepStatus, { icon: LucideIcon; word: string; tone: string; s
 const lookOf = (status: string) => LOOK[status as StepStatus] ?? { icon: CircleDashed, word: status, tone: 'text-muted-foreground' }
 
 /**
- * What follows the push, as it goes: the repository's branches (made by the
- * portal), its service hooks (by hand until the portal makes them — the
- * command is shown), and a first test build in Jenkins. The request is done
- * either way: its files are in inventories. A failed or skipped step is run
- * again from here, by the people who may decide the request; a step waiting
- * on one that failed or was done by hand can be started by hand.
+ * What runs in Jenkins after the push — provisioning, then a first test build
+ * — as it goes. The request is done either way: its files are in
+ * inventories. A failed or skipped step is run again from here, by the people
+ * who may decide the request; the test build can be started by hand while it
+ * waits on a provisioning done outside the portal.
  */
 function Steps({ request: r, onChanged }: { request: PortalRequest; onChanged: () => void }) {
   const { can } = useProfile()
   const [busy, setBusy] = useState<string | null>(null)
   if (r.steps.length === 0) return null
+  const provision = r.steps.find((s) => s.step === 'provision')
   const run = async (step: RequestStep['step']) => {
     setBusy(step)
     try {
       await requestsApi.retryStep(r.id, step)
-      toast.success(`${STEP_NAME[step] ?? step}: running again.`)
+      toast.success(`${STEP_NAME[step]} is on its way to Jenkins.`)
       onChanged()
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Could not run it again. Try again.')
+      toast.error(err instanceof ApiError ? err.message : 'Jenkins could not be asked. Try again.')
     } finally {
       setBusy(null)
     }
   }
   return (
     <div className="mt-4 space-y-2">
-      <h3 className="text-sm font-semibold">After the push</h3>
+      <h3 className="text-sm font-semibold">After the push, in Jenkins</h3>
       <ul className="divide-y rounded-md border">
-        {r.steps.map((s, i) => {
+        {r.steps.map((s) => {
           const look = lookOf(s.status)
           const Icon = look.icon
-          const before = r.steps.slice(0, i)
-          // What it waits on: the nearest earlier step not done yet.
-          const blocking = s.status === 'waiting' ? before.findLast((b) => b.status !== 'succeeded' && b.status !== 'skipped') : undefined
-          // Service hooks are not made by the portal yet: the note says what to run; there is nothing to run again here.
-          const portalRuns = s.step !== 'hooks'
-          const again = portalRuns && (s.status === 'failed' || s.status === 'skipped')
-          const byHand = portalRuns && s.status === 'waiting' && before.some((b) => b.status === 'failed' || b.status === 'skipped')
-          const word = s.step === 'hooks' && s.status === 'skipped' ? 'By hand' : blocking ? `Waits for ${(STEP_NAME[blocking.step] ?? blocking.step).toLowerCase()}` : look.word
-          const [say, command] = s.note?.includes('by hand: ') ? s.note.split('by hand: ') : [s.note, null]
+          const again = s.status === 'failed' || s.status === 'skipped'
+          const byHand = s.step === 'test' && s.status === 'waiting' && provision && ['failed', 'skipped'].includes(provision.status)
           return (
             <li key={s.step} className="flex flex-wrap items-start gap-x-3 gap-y-2 px-3 py-2.5 text-sm">
               <Icon className={`mt-0.5 size-4 shrink-0 ${look.tone} ${look.spin ? 'animate-spin motion-reduce:animate-none' : ''}`} aria-hidden />
               <div className="min-w-0 flex-1">
                 <p>
-                  <span className="font-medium">{STEP_NAME[s.step] ?? s.step}</span> <span className={look.tone}>· {word}</span>
+                  <span className="font-medium">{STEP_NAME[s.step] ?? s.step}</span> <span className={look.tone}>· {s.step === 'test' && s.status === 'waiting' ? 'Waits for provisioning' : look.word}</span>
                   {s.attempts > 1 && <span className="text-muted-foreground"> · try {s.attempts}</span>}
                 </p>
                 {s.job && (
@@ -296,12 +287,7 @@ function Steps({ request: r, onChanged }: { request: PortalRequest; onChanged: (
                     )}
                   </p>
                 )}
-                {say && (
-                  <p className="mt-1 text-xs break-words text-muted-foreground">
-                    {command ? `${say}by hand:` : say}
-                  </p>
-                )}
-                {command && <code className="mt-1 block rounded-md border bg-muted/40 px-2 py-1 text-xs break-words select-all">{command}</code>}
+                {s.note && <p className="mt-1 text-xs break-words text-muted-foreground">{s.note}</p>}
               </div>
               {r.canDecide && (again || byHand) && (
                 <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void run(s.step)}>

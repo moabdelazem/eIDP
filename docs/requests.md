@@ -157,59 +157,41 @@ and namespaces); `requests_pipeline_check` keeps that column to this kind.
   project's files, `team.yml` and one namespace per environment
   (`cluster_type` DR for `prd_dr`); for a database, `host_vars/localhost`
   when the project has none.
-- **After the push** (`pipeline/follow-up.ts`): what the old approval did
-  after its push with `createBranchs_hooks_initApp.sh`. The portal runs it
-  itself, not through the script, in this order:
-  1. **Branches.** `develop`, `release`, `hotfixes` and `stress`
-     (`PIPELINE_BRANCHES`), made from the repository's default branch through
-     the Azure DevOps API (`ensureBranches`). This replaces
-     `createBranch.sh`'s clone, `checkout -b` and push. A branch already
-     there is left as it is. A repository with no commit yet fails with a
-     note to push one first, then run it again.
-  2. **Service hooks.** Not made by the portal yet: they are the Ansible
-     playbook `playbooks/CICD/Servicehook.yml`, which
-     `Recreate_app_servicehooks.sh` runs and the portal has not seen. The
-     step is `skipped` and shows the command that makes them.
-  3. **A first test build** in Jenkins (`PIPELINE_TEST_JOB`, e.g.
-     `{project}/{application}/develop`, and `PIPELINE_TEST_PARAMETERS`),
-     templates over `{collection}`, `{project}`, `{system}`, `{application}`,
-     `{repository}`, `{newProject}`, `{deployTarget}` and `{technology}`.
-
-  `createBranchs_hooks_initProject.sh` ran the same for every application
-  of a new project. A new project's one application is this one, so it
-  needs nothing more.
-
-  The script also wrote to Elasticsearch: the version entry (`init_app.sh` in
-  `Versions-lookup`) and the app's technology (`add_new_app.sh` into
-  `ef-devops-projects`). These are not ported yet. They wait on `add_doc.sh`,
-  `getAppTechnology.sh` and `mass_load_csv.sh`, which say how those documents
-  are made.
-
-  **How the steps run.** Each step is a row in `request_steps`, moved along by
-  the `pipeline-steps` job every ten seconds, one process at a time:
-  - a step the portal runs goes `pending` → `running` → `succeeded` or
-    `failed` in one round;
-  - a Jenkins build goes `pending` → `queued` (its queue item) → `running`
-    (its build) → `succeeded` or `failed`;
-  - a step waits (`waiting`) until every step before it succeeded or was
-    skipped as not set up; a failed one holds what follows.
+- **After the push, Jenkins** (`pipeline/follow-up.ts`): provisioning, then a
+  first test build, as the old approval ran them right after its push. Each
+  is a row in `request_steps`, moved along by the `pipeline-steps` job every
+  ten seconds, one process at a time:
+  - `pending` → `queued` (Jenkins' queue item) → `running` (its build) →
+    `succeeded` or `failed`;
+  - the test build is `waiting` until provisioning succeeds;
+  - a step not configured is `skipped`, with what to run by hand (the old
+    printed command, for provisioning).
 
   The state is in the database, never in memory, so a restart or a second
-  replica carries on. Claiming a step is the lock that runs it once. A queue
-  item Jenkins has let go of is found among the job's builds by its
-  `queueId`. A build with no result after `PIPELINE_STEP_TIMEOUT_MINUTES`
-  fails.
+  replica carries on. Claiming a step is the lock that sends its build once.
+  A queue item Jenkins has let go of is found among the job's builds by its
+  `queueId`. A step with no result after `PIPELINE_STEP_TIMEOUT_MINUTES` fails.
 
-  **The request is complete with the push, whatever comes after.** Its files
-  are in inventories either way, so a failed step is the step's to run again,
-  by a decider on the request page (`POST /requests/:id/steps/:step/retry`),
-  never a reason to push again. Running a step again puts the failed or
-  pending ones after it back to waiting. A step waiting on one that failed or
-  was done by hand can be started by hand. A failed step shows under "Needs
-  you" on deciders' Overview.
+  **The request is complete with the push, whatever Jenkins does next.** Its
+  files are in inventories either way, so a failed step is the step's to
+  retry, by a decider on the request page (`POST
+  /requests/:id/steps/:step/retry`), never a reason to push again. Running
+  provisioning again puts the test build back to waiting. The test build can
+  also be started by hand while provisioning is failed or skipped (done
+  outside the portal). A failed step shows under "Needs you" on deciders'
+  Overview.
 
-  Requests approved while a Jenkins provisioning job did all of this may have
-  a `provision` step; it shows and runs again as it did.
+  The jobs are settings, templates over the request's values `{collection}`,
+  `{project}`, `{system}`, `{application}`, `{repository}`, `{newProject}`,
+  `{deployTarget}` and `{technology}`:
+  - `PIPELINE_PROVISION_JOB` and `PIPELINE_PROVISION_PARAMETERS` (a query
+    string; by default `COLLECTION`, `PROJECT`, `APP_NAME`, `NEW_PROJECT`);
+  - `PIPELINE_TEST_JOB` (e.g. `{project}/{application}/develop`) and
+    `PIPELINE_TEST_PARAMETERS`.
+
+  The old `jenkins_client.py` was not available when this was written. Check
+  the job names and parameter names against the real provisioning job before
+  turning it on.
 - **What approval leaves to a person** is listed on the completed request
   (*Still to do by hand*): each namespace's token, and its user when left
   empty, written as placeholders, never real.
@@ -308,7 +290,7 @@ the old generator's output, not its traps:
 | Pushed inventories and ocp-templates separately, cleaning up local files on failure; one could land without the other | Both planned before either is pushed; each push carries the marker and a retry completes what is missing |
 | Audit, history and ELK in files and best-effort calls | The request itself: who, what, when, the decision, the commit |
 | Auto-deploy to QC as a string; a failed submit could pass silently | An explicit yes/no, and a request is filed in one transaction or not at all |
-| Provisioning shelled out to `createBranchs_hooks_initApp.sh` (a clone and a push per branch) inside the approval call; a hiccup there was a warning in a returned dict | Branches made through the Azure DevOps API and the test build run in Jenkins as steps of their own, in the database, followed to a result, run again on their own; the request page shows each |
+| Provisioning and the test build ran inside the approval call; a Jenkins hiccup there was a warning in a returned dict | Steps of their own, in the database, followed to a result, retried on their own; the request page shows each with its build |
 | Approvers overrode names and YAML at approval, silently | Changes made before approving, each checked and recorded; the requester sees what was changed, by whom, from what |
 
 **Every request is assessed for its approver** (`modules/requests/risk.ts`),

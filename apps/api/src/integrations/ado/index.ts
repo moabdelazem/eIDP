@@ -80,51 +80,6 @@ export async function createRepository(
   )
 }
 
-type AdoRef = { name: string; objectId: string }
-type RefUpdate = { name: string; success: boolean; updateStatus: string; customMessage?: string | null }
-
-const NO_COMMIT = '0000000000000000000000000000000000000000'
-
-/**
- * Makes sure `branches` exist in a repository, each new one starting at the
- * default branch's head — what createBranch.sh did with a clone, a
- * `checkout -b` and a push, in one call and without a working copy. A
- * branch that is already there is left as it is. A repository with no
- * commit yet has no default branch to start from, and says so.
- */
-export async function ensureBranches(
-  collection: string,
-  project: string,
-  repository: string,
-  branches: string[],
-): Promise<{ from: string; created: string[]; existing: string[] }> {
-  const repo = (await listRepositories(collection, project)).find((r) => r.name.toLowerCase() === repository.toLowerCase())
-  if (!repo) throw new ApiError(404, 'ado_repository_missing', `${project} has no repository called ${repository}.`)
-  if (!repo.defaultBranch) {
-    throw new ApiError(409, 'ado_repository_empty', `${repository} has no commits yet, so there is no branch to start the others from. Push a first commit to it, then run this again.`)
-  }
-  const scope = { collection, project: repo.project.name }
-  const heads = await adoGetList<AdoRef>(`git/repositories/${repo.id}/refs`, { ...scope, query: { filter: 'heads/' } })
-  const base = heads.find((ref) => ref.name === repo.defaultBranch)
-  if (!base) throw new ApiError(409, 'ado_repository_empty', `${repository}'s default branch, ${repo.defaultBranch}, has no commit to start from.`)
-  const from = repo.defaultBranch.replace(/^refs\/heads\//, '')
-  const has = new Set(heads.map((ref) => ref.name.toLowerCase()))
-  const missing = branches.filter((branch) => !has.has(`refs/heads/${branch}`.toLowerCase()))
-  const existing = branches.filter((branch) => !missing.includes(branch))
-  if (missing.length === 0) return { from, created: [], existing }
-
-  const updates = await adoPost<{ value: RefUpdate[] }>(
-    `git/repositories/${repo.id}/refs`,
-    missing.map((branch) => ({ name: `refs/heads/${branch}`, oldObjectId: NO_COMMIT, newObjectId: base.objectId })),
-    scope,
-  )
-  const refused = updates.value.filter((u) => !u.success)
-  if (refused.length) {
-    throw new ApiError(502, 'ado_branch_refused', refused.map((u) => `${u.name.replace('refs/heads/', '')}: ${u.customMessage || u.updateStatus}`).join('; '))
-  }
-  return { from, created: missing, existing }
-}
-
 /**
  * Creates a Git project and waits for it to actually exist.
  *

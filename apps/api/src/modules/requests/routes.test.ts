@@ -32,15 +32,15 @@ process.env.ADO_PAT = 'fake'
 process.env.JIRA_BASE_URL = `http://localhost:${jiraPort}/jira`
 process.env.JIRA_TOKEN = 'fake'
 
-// Jenkins, for a pipeline's first test build after its push; it makes the
-// application's job when asked to build it. Its builds start and finish only
-// when a test says so.
-const fakeJenkins = createFakeJenkins({ autoJobs: true })
+// Jenkins, for what runs after a pipeline is pushed: provisioning, then a first
+// test build. Its builds start and finish only when a test says so.
+const fakeJenkins = createFakeJenkins({ provisioning: true })
 const jenkinsServer = serve({ fetch: fakeJenkins.app.fetch, port: 0 })
 await new Promise((resolve) => jenkinsServer.once('listening', resolve))
 process.env.JENKINS_URL = `http://localhost:${(jenkinsServer.address() as AddressInfo).port}/jenkins`
 process.env.JENKINS_USER = 'eidp'
 process.env.JENKINS_TOKEN = 'fake'
+process.env.PIPELINE_PROVISION_JOB = 'devops/provisioning'
 process.env.PIPELINE_TEST_JOB = '{project}/{application}/develop'
 
 const fakeOllama = createFakeOllama()
@@ -965,71 +965,70 @@ test('pipelines: a library gets no manifests, and a test technology without them
   assert.equal(execFileSync('git', ['--git-dir', ocpTemplatesRemote, 'rev-parse', 'main']).toString(), before)
 })
 
-// ---- after the push: branches, service hooks, a first test build ------------------
+// ---- after the push: provisioning and a first test build -----------------------
 
 type Step = { step: string; status: string; job: string | null; number: number | null; url: string | null; note: string | null; attempts: number }
 const stepsOf = async (id: string, who = 'alice') => (await json<{ steps: Step[] }>(await call(who, 'GET', `/requests/${id}`))).steps
 const statuses = async (id: string) => Object.fromEntries((await stepsOf(id)).map((s) => [s.step, s.status]))
-const stepOf = async (id: string, step: string) => (await stepsOf(id)).find((s) => s.step === step)!
 
-test('pipelines: once pushed, the portal makes the branches, then a first test build runs in Jenkins', async () => {
-  fake.push('DefaultCollection', 'pipe-steps')
+test('pipelines: once pushed, provisioning runs in Jenkins, then a first test build', async () => {
   const filed = await json<{ id: string }>(await call('bob', 'POST', '/requests', pipelineRequest('PipeHome', 'pipe-steps')))
   await call('alice', 'POST', `/requests/${filed.id}/approve`, {})
   assert.equal((await settled(filed.id)).status, 'completed')
-  assert.deepEqual(await statuses(filed.id), { branches: 'pending', hooks: 'skipped', test: 'waiting' })
-  // Service hooks are an Ansible playbook the portal does not run yet: the step says what to run.
-  assert.match((await stepOf(filed.id, 'hooks')).note!, /Recreate_app_servicehooks\.sh PipeHome pipe-steps$/)
+  assert.deepEqual(await statuses(filed.id), { provision: 'pending', test: 'waiting' }, 'the test build waits on provisioning')
 
-  // Every open step moves along — earlier tests' pipelines too — so look at this one's.
+  // Every open step moves along — earlier tests' pipelines too — so look for this one's.
   await advanceSteps()
-  const branches = await stepOf(filed.id, 'branches')
-  assert.equal(branches.status, 'succeeded', branches.note ?? '')
-  assert.equal(branches.note, 'Made develop, release, hotfixes, stress from main.')
-  assert.deepEqual(fake.branchesOf('DefaultCollection', 'pipe-steps'), ['develop', 'hotfixes', 'main', 'release', 'stress'])
-  assert.equal((await stepOf(filed.id, 'test')).status, 'pending', 'hooks not made by the portal do not hold the build back')
+  const provisioning = fakeJenkins.triggered.find((t) => t.parameters.APP_NAME === 'pipe-steps')!
+  assert.equal(provisioning.job, 'devops/provisioning')
+  assert.deepEqual(provisioning.parameters, { COLLECTION: 'DefaultCollection', PROJECT: 'PipeHome', APP_NAME: 'pipe-steps', NEW_PROJECT: 'false' })
+  assert.equal((await statuses(filed.id)).provision, 'queued')
 
+  fakeJenkins.startQueued()
+  await advanceSteps()
+  const running = (await stepsOf(filed.id))[0]!
+  assert.equal(running.status, 'running')
+  assert.match(running.url!, /job\/devops\/job\/provisioning\/\d+\/$/)
+
+  fakeJenkins.finishRunning()
+  await advanceSteps()
+  assert.deepEqual(await statuses(filed.id), { provision: 'succeeded', test: 'pending' })
+
+  // The test build, in the job provisioning made.
   await advanceSteps()
   assert.ok(fakeJenkins.triggered.some((t) => t.job === 'PipeHome/pipe-steps/develop'))
   fakeJenkins.startQueued()
   await advanceSteps()
-  const running = await stepOf(filed.id, 'test')
-  assert.equal(running.status, 'running')
-  assert.match(running.url!, /job\/PipeHome\/job\/pipe-steps\/job\/develop\/\d+\/$/)
   fakeJenkins.finishRunning()
   await advanceSteps()
-  assert.deepEqual(await statuses(filed.id), { branches: 'succeeded', hooks: 'skipped', test: 'succeeded' })
+  assert.deepEqual(await statuses(filed.id), { provision: 'succeeded', test: 'succeeded' })
   assert.equal((await json<{ status: string }>(await call('bob', 'GET', `/requests/${filed.id}`))).status, 'completed')
-  assert.equal((await stepsOf(filed.id, 'bob')).length, 3, 'the requester follows the steps too')
-  assert.equal((await call('alice', 'POST', `/requests/${filed.id}/steps/branches/retry`)).status, 409, 'only a failed or skipped one runs again')
+  assert.equal((await stepsOf(filed.id, 'bob')).length, 2, 'the requester follows the steps too')
 })
 
-test('pipelines: an empty repository fails its branches, the request stays complete, and DevOps run them again once it has a commit', async () => {
+test('pipelines: provisioning failing leaves the request complete; DevOps run it again, the requester cannot', async () => {
   const filed = await json<{ id: string }>(await call('bob', 'POST', '/requests', pipelineRequest('PipeHome', 'pipe-fail')))
   await call('alice', 'POST', `/requests/${filed.id}/approve`, {})
   assert.equal((await settled(filed.id)).status, 'completed')
   await advanceSteps()
-  const branches = await stepOf(filed.id, 'branches')
-  assert.equal(branches.status, 'failed')
-  assert.match(branches.note!, /has no commits yet/)
-  assert.equal((await stepOf(filed.id, 'test')).status, 'waiting', 'a failed step holds what follows')
+  fakeJenkins.startQueued()
+  await advanceSteps()
+  fakeJenkins.finishRunning()
+  await advanceSteps()
+  const [provision, testBuild] = await stepsOf(filed.id)
+  assert.equal(provision!.status, 'failed')
+  assert.equal(provision!.note, 'The build failed.')
+  assert.equal(testBuild!.status, 'waiting', 'no test build without provisioning')
   assert.equal((await json<{ status: string }>(await call('alice', 'GET', `/requests/${filed.id}`))).status, 'completed', 'the files are in inventories either way')
 
-  assert.equal((await call('bob', 'POST', `/requests/${filed.id}/steps/branches/retry`)).status, 403)
-  const hooks = await call('alice', 'POST', `/requests/${filed.id}/steps/hooks/retry`)
-  assert.equal(hooks.status, 409)
-  assert.match((await json<{ error: { message: string } }>(hooks)).error.message, /Recreate_app_servicehooks/)
+  assert.equal((await call('bob', 'POST', `/requests/${filed.id}/steps/provision/retry`)).status, 403)
   assert.equal((await call('alice', 'POST', `/requests/${filed.id}/steps/test/retry`)).status, 200, 'the test build can be started by hand while it waits')
-  assert.equal((await stepOf(filed.id, 'test')).status, 'pending')
-
-  fake.push('DefaultCollection', 'pipe-fail')
-  const again = await json<Step[]>(await call('alice', 'POST', `/requests/${filed.id}/steps/branches/retry`))
-  assert.deepEqual(Object.fromEntries(again.map((s) => [s.step, s.status])), { branches: 'pending', hooks: 'skipped', test: 'waiting' }, 'running branches again puts the build back behind them')
+  assert.equal((await statuses(filed.id)).test, 'pending')
+  const again = await json<Step[]>(await call('alice', 'POST', `/requests/${filed.id}/steps/provision/retry`))
+  assert.deepEqual(Object.fromEntries(again.map((s) => [s.step, s.status])), { provision: 'pending', test: 'waiting' }, 'provisioning again puts the test build back behind it')
+  assert.equal((await call('alice', 'POST', `/requests/${filed.id}/steps/provision/retry`)).status, 409, 'only a failed or skipped one runs again')
   await advanceSteps()
-  const made = await stepOf(filed.id, 'branches')
-  assert.equal(made.status, 'succeeded')
-  assert.equal(made.attempts, 2)
-  assert.equal((await stepOf(filed.id, 'test')).status, 'pending')
+  assert.equal((await stepsOf(filed.id))[0]!.attempts, 2)
 })
 
 // ---- deciders adjusting a waiting request -----------------------------------------

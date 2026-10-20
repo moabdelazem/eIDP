@@ -41,8 +41,7 @@ export function toRecord(row: Row): RequestRecord {
   }
 }
 
-/** The order a pipeline's steps run in after its push; `provision` is from requests approved before the portal made branches itself. */
-export const STEP_ORDER: string[] = ['provision', 'branches', 'hooks', 'test']
+const STEP_ORDER = ['provision', 'test']
 
 /** The records with what ran in Jenkins after their push — pipelines only; the rest have none. */
 export async function withSteps<T extends RequestRecord>(records: T[]): Promise<T[]> {

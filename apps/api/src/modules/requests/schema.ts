@@ -113,7 +113,6 @@ export const requestSteps = pgTable('request_steps', {
   primaryKey({ columns: [table.requestId, table.step] }),
   foreignKey({ columns: [table.requestId], foreignColumns: [requests.id], name: 'request_steps_request_id_fkey' }).onDelete('cascade'),
   index('request_steps_open_idx').on(table.status).where(sql`status = ANY (ARRAY['pending'::text, 'queued'::text, 'running'::text])`),
-  // provision: the Jenkins job that made branches and hooks before the portal did; kept for requests from then.
-  check('request_steps_step_check', sql`step = ANY (ARRAY['provision'::text, 'branches'::text, 'hooks'::text, 'test'::text])`),
+  check('request_steps_step_check', sql`step = ANY (ARRAY['provision'::text, 'test'::text])`),
   check('request_steps_status_check', sql`status = ANY (ARRAY['waiting'::text, 'pending'::text, 'queued'::text, 'running'::text, 'succeeded'::text, 'failed'::text, 'skipped'::text])`),
 ])
