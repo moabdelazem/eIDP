@@ -86,7 +86,7 @@ export function ChatbotPage() {
   if (!home.data.ai.configured) {
     return (
       <div className={PAGE}>
-        <EmptyState title="The chatbot is not set up" icon={Bot}>
+        <EmptyState title={`The ${AGENT} is not set up`} icon={Bot}>
           It is not set up yet. Ask DevOps to turn it on.
         </EmptyState>
       </div>
@@ -105,7 +105,7 @@ export function ChatbotPage() {
       <section className="flex min-h-[calc(100svh-8rem)] min-w-0 flex-col">
         <header className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
+            <h1 className="flex items-center gap-2.5 text-xl font-semibold tracking-tight">
               <Bot className="size-5 text-[var(--chart-1)]" aria-hidden />
               <span className="truncate">{current?.title ?? 'Chatbot'}</span>
             </h1>

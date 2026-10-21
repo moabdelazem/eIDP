@@ -20,7 +20,7 @@ export function ProfilePage() {
   if (error && !profile) {
     return (
       <div className="max-w-prose">
-        <h1 className="text-lg font-semibold tracking-tight">Your profile</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Your profile</h1>
         <p className="mt-2 text-muted-foreground">{error}</p>
         <Button variant="outline" className="mt-5" onClick={reload}>
           Try again
@@ -68,7 +68,7 @@ export function ProfilePage() {
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0">
-              <h1 className="truncate text-lg font-semibold tracking-tight">{profile.name}</h1>
+              <h1 className="truncate text-xl font-semibold tracking-tight">{profile.name}</h1>
               {profile.title && <p className="truncate text-muted-foreground">{profile.title}</p>}
             </div>
           </div>

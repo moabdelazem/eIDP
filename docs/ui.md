@@ -65,6 +65,23 @@ How pages are named, laid out and loaded; how identifiers wrap; dialogs; tables;
   table ignores the 1px width, so the invisible table widened every chart page
   on a phone by its own width. `PageHeader`'s actions wrap (`min-w-0`, not
   `shrink-0`) for the same reason — three buttons ran off a phone screen.
+- **A count in a tile is a `StatTile`** (`components/stat-tile.tsx`) — the
+  request stats, Jenkins' tiles, My pipelines' and the Overview's Jenkins card
+  were four copies of it. It is a button (a filter, `aria-pressed`) or a link,
+  rolls its number to a new value, and marks the chosen one with a bar that
+  slides between the tiles of its row (`group`). Headline numbers with a delta
+  stay `Kpi`, which rolls its number too.
+- **shadcn's `Item` for a row that is a way somewhere** (the Overview's Needs
+  you: what it is, what opening it does, a chevron). Its link hover uses
+  `--accent`, the rail's eggplant here, so `index.css` repoints
+  `a[data-slot=item]:hover` at the ground's tint, as for menus. Components
+  added since the CLI cannot reach ui.shadcn.com from every network came from
+  the registry's own source (`apps/v4/registry/new-york-v4/ui` in
+  shadcn-ui/ui), which is what `shadcn add` writes; check the alias
+  (`@/registry/…` → `@/components/ui/…`).
+- **`Progress` fills eggplant, and green when full** — shadcn fills it with
+  `--primary`, red here, and red means act. `index.css` sets the indicator to
+  `--chart-1` and, once the caller marks it `data-complete`, `--success` (shadcn's Progress never passes `value` to Radix, so Radix's own `data-state` stays indeterminate; the caller also sets the `aria-value*`).
 - **Loading looks like what is loading.** `components/skeletons.tsx` has
   placeholders shaped like the real layouts (header, facts, request rows,
   approval cards, timeline, bar chart), each wrapped in `Loading` so screen

@@ -1,10 +1,14 @@
 import { useState, type ReactNode } from 'react'
-import { ArrowDown, ArrowUp, Check, Eye, EyeOff, LayoutGrid, RotateCcw } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, ChevronDown, CircleCheck, Eye, EyeOff, LayoutGrid, Plus, RotateCcw } from 'lucide-react'
+import { m } from 'motion/react'
 import { Navigate, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { ErrorBoundary } from '@/components/error-boundary.tsx'
 import { PAGE } from '@/components/page-layout.tsx'
+import { AnimatedNumber } from '@/components/animated-number.tsx'
 import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { NewRequestMenuContent } from '@/features/requests/new-request-menu.tsx'
 import { Spinner } from '@/components/ui/spinner'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { ApiError } from '@/lib/api-client.ts'
@@ -71,19 +75,40 @@ function Overview() {
   }
 
   const first = profile?.name?.split(' ')[0]
-  const summary = loading ? 'Looking at what is yours…' : needs.length === 0 ? 'Nothing needs you right now.' : `${needs.length} ${needs.length === 1 ? 'thing needs' : 'things need'} you.`
+  const today = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
 
   return (
     <div className={PAGE}>
-      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+      {/* The page's one loud moment: who you are greeted as, and how much waits on you. Everything below is quieter. */}
+      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold tracking-tight">
+          <p className="text-sm text-muted-foreground">
+            {today}
+            {profile?.title || profile?.division ? <span className="hidden sm:inline"> · {[profile.title, profile.division].filter(Boolean).join(', ')}</span> : null}
+          </p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">
             {greeting(new Date().getHours())}
             {first ? `, ${first}` : ''}
           </h1>
-          <p className="mt-1 text-muted-foreground">
-            {summary}
-            {profile?.title || profile?.division ? <span className="hidden sm:inline"> · {[profile.title, profile.division].filter(Boolean).join(', ')}</span> : null}
+          <p className="mt-2 flex items-center gap-2 text-muted-foreground" aria-live="polite">
+            {loading ? (
+              'Looking at what is yours…'
+            ) : needs.length === 0 ? (
+              <>
+                <CircleCheck className="size-4 text-success" aria-hidden /> Nothing needs you right now.
+              </>
+            ) : (
+              <>
+                {/* Red: these are things to act on. The dot comes with the words. */}
+                <span aria-hidden className="relative flex size-2">
+                  <span className="absolute inline-flex size-full rounded-full bg-destructive/60 motion-safe:animate-ping motion-safe:[animation-iteration-count:3]" />
+                  <span className="relative inline-flex size-2 rounded-full bg-destructive" />
+                </span>
+                <span>
+                  <AnimatedNumber value={needs.length} className="font-semibold text-foreground" /> {needs.length === 1 ? 'thing needs' : 'things need'} you.
+                </span>
+              </>
+            )}
           </p>
         </div>
         {editing ? (
@@ -99,9 +124,19 @@ function Overview() {
             </Button>
           </div>
         ) : (
-          <Button size="sm" variant="outline" onClick={() => setDraft({ shown, hidden })} disabled={!saved.data && !saved.error}>
-            <LayoutGrid /> Customize
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => setDraft({ shown, hidden })} disabled={!saved.data && !saved.error}>
+              <LayoutGrid /> Customize
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm">
+                  <Plus /> New request <ChevronDown />
+                </Button>
+              </DropdownMenuTrigger>
+              <NewRequestMenuContent align="end" />
+            </DropdownMenu>
+          </div>
         )}
       </header>
 
@@ -159,8 +194,9 @@ function Customize({ draft, onChange }: { draft: { shown: string[]; hidden: stri
           <p className="px-4 py-6 text-sm text-muted-foreground">Nothing — show a card from the right.</p>
         ) : (
           <ol className="divide-y">
+            {/* A card moved up or down slides to its new place, so the eye follows it rather than hunting for it. */}
             {draft.shown.map((id, i) => (
-              <li key={id} className="flex items-center gap-3 px-4 py-3">
+              <m.li key={id} layout="position" transition={{ type: 'spring', stiffness: 500, damping: 40 }} className="flex items-center gap-3 bg-card px-4 py-3">
                 <span className="w-5 text-right text-xs text-muted-foreground tabular-nums">{i + 1}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium">{info(id).title}</span>
@@ -182,7 +218,7 @@ function Customize({ draft, onChange }: { draft: { shown: string[]; hidden: stri
                 <Button size="sm" variant="outline" onClick={() => onChange({ shown: draft.shown.filter((x) => x !== id), hidden: [...draft.hidden, id] })} aria-label={`Hide ${info(id).title}`}>
                   <EyeOff /> <span className="hidden sm:inline">Hide</span>
                 </Button>
-              </li>
+              </m.li>
             ))}
           </ol>
         )}

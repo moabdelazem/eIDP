@@ -2,7 +2,9 @@ import type { FormEvent, ReactNode } from 'react'
 import { Link } from 'react-router'
 import { CircleCheck, Circle, Info, TriangleAlert } from 'lucide-react'
 import { PAGE } from '@/components/page-layout.tsx'
+import { m } from 'motion/react'
 import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
@@ -67,7 +69,7 @@ export function FormHeader({ type, lead }: { type: RequestType; lead: string }) 
         <Mark className="size-6" />
       </span>
       <div className="min-w-0">
-        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">New request · {provider.label}</p>
+        <p className="text-sm text-muted-foreground">New request in {provider.label}</p>
         <h1 className="mt-0.5 text-2xl font-semibold tracking-tight">{type.title}</h1>
         <p className="mt-1 max-w-2xl text-muted-foreground">{lead}</p>
       </div>
@@ -263,7 +265,7 @@ export function ReviewPanel({ ready, steps, children }: { ready: Readiness; step
     <>
       <div className="rounded-xl border bg-card shadow-sm">
         <div className="border-b px-5 py-4">
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Summary</p>
+          <p className="text-sm font-semibold">Summary</p>
           <div className="mt-2 space-y-4">{children}</div>
         </div>
         <div className="px-5 py-4">
@@ -273,13 +275,31 @@ export function ReviewPanel({ ready, steps, children }: { ready: Readiness; step
               {done} of {ready.length}
             </span>
           </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={ready.length} aria-valuenow={done} aria-label="How much of the form is done">
-            <div className="h-full rounded-full bg-success transition-[width] duration-300 motion-reduce:transition-none" style={{ width: `${(done / ready.length) * 100}%` }} />
-          </div>
+          {/*
+            Eggplant while it fills, green once everything is in (data-complete; index.css colours it). shadcn's Progress
+            keeps `value` to itself and never hands it to Radix, so the bar says its own value to screen readers.
+          */}
+          <Progress
+            className="mt-2 h-1.5"
+            value={Math.round((done / ready.length) * 100)}
+            data-complete={done === ready.length ? '' : undefined}
+            aria-label="How much of the form is done"
+            aria-valuemin={0}
+            aria-valuemax={ready.length}
+            aria-valuenow={done}
+            aria-valuetext={`${done} of ${ready.length} done`}
+          />
           <ul className="mt-3 space-y-2 text-sm">
             {ready.map((r) => (
               <li key={r.label} className={`flex items-center gap-2 ${r.done ? '' : 'text-muted-foreground'}`}>
-                {r.done ? <CircleCheck className="size-4 shrink-0 text-success" aria-label="Done" /> : <Circle className="size-4 shrink-0 text-muted-foreground/50" aria-label="To do" />}
+                {r.done ? (
+                  // The tick lands when the field is done: the checklist answers what was just typed.
+                  <m.span key="done" initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 600, damping: 22 }} className="flex">
+                    <CircleCheck className="size-4 shrink-0 text-success" aria-label="Done" />
+                  </m.span>
+                ) : (
+                  <Circle className="size-4 shrink-0 text-muted-foreground/50" aria-label="To do" />
+                )}
                 {r.label}
               </li>
             ))}
@@ -288,7 +308,7 @@ export function ReviewPanel({ ready, steps, children }: { ready: Readiness; step
       </div>
 
       <div className="rounded-xl border bg-card px-5 py-4 shadow-sm">
-        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">What happens next</p>
+        <p className="text-sm font-semibold">What happens next</p>
         <ol className="mt-3">
           {steps.map((step, i) => (
             <li key={step} className="relative flex gap-3 pb-4 last:pb-0">

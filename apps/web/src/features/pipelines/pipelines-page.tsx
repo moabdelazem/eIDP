@@ -21,6 +21,7 @@ import { Aside } from './aside.tsx'
 import { failingOf, FailingNow } from './failing-now.tsx'
 import { PipelineRow, RunRow, sameRow } from './rows.tsx'
 import { AGENT } from '@/lib/agent.ts'
+import { StatTile } from '@/components/stat-tile.tsx'
 
 type Show = 'all' | 'failed' | 'running' | 'operable'
 type View = 'runs' | 'pipelines'
@@ -204,21 +205,16 @@ export function PipelinesPage() {
           const n = scoped.filter(count).length
           const selected = show === value
           return (
-            <button
+            <StatTile
               key={value}
-              type="button"
-              aria-pressed={selected}
+              group="my-pipelines"
+              label={label}
+              value={n}
+              dot={dot}
+              alarm={value === 'failed' && n > 0}
+              selected={selected}
               onClick={() => set('show', selected ? 'all' : value, 'all')}
-              className={`rounded-xl border bg-card px-4 py-3 text-left shadow-sm transition-colors hover:bg-muted/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none ${
-                selected ? 'border-ring ring-1 ring-ring/40' : ''
-              }`}
-            >
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                {dot && <span aria-hidden className={`size-2 rounded-full ${dot}`} />}
-                {label}
-              </span>
-              <span className={`mt-1 block text-2xl font-semibold tabular-nums ${value === 'failed' && n > 0 ? 'text-primary' : ''}`}>{n}</span>
-            </button>
+            />
           )
         })}
       </div>

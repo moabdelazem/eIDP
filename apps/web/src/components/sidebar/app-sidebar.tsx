@@ -25,7 +25,7 @@ export function AppSidebar() {
           <img src={logo} alt="" className="size-6 shrink-0" />
           <span className="grid leading-tight group-data-[collapsible=icon]:hidden">
             <span className="font-semibold tracking-tight">e-IDP</span>
-            <span className="text-xs text-rail-muted">DEVOPS Portal</span>
+            <span className="text-xs text-rail-muted">DevOps portal</span>
           </span>
         </div>
       </SidebarHeader>

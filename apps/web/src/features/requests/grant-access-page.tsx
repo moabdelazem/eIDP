@@ -199,7 +199,7 @@ export function GrantAccessPage() {
         </Field>
 
         <Field label="Project" htmlFor="project" hint={GRANTS}>
-          <ProjectPicker id="project" projects={projects.data ?? []} value={project} onChange={setProject} loading={!collection || projects.loading} />
+          <ProjectPicker id="project" projects={projects.data ?? []} value={project} onChange={setProject} loading={projects.loading} after={!collection ? 'a collection' : undefined} />
         </Field>
       </FormSection>
 

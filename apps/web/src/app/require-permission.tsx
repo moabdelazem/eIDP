@@ -32,7 +32,7 @@ function Denied() {
   return (
     <div className="max-w-prose">
       <ShieldX className="size-6 text-muted-foreground" />
-      <h1 className="mt-3 text-lg font-semibold tracking-tight">You don’t have access to this page</h1>
+      <h1 className="mt-3 text-xl font-semibold tracking-tight">You don’t have access to this page</h1>
       <p className="mt-2 text-muted-foreground">
         None of your roles include it. You can follow what you have asked for in{' '}
         <Link to="/requests" className="underline">

@@ -1,5 +1,6 @@
 import type { PortalRequest, RequestStatus } from './api.ts'
 import { statusTone } from './status.tsx'
+import { StatTile } from '@/components/stat-tile.tsx'
 
 /**
  * A status's name as a filter — shorter and kind-neutral, unlike the badge's
@@ -50,23 +51,16 @@ export function RequestStats({
         const selected = active === status
         const alarm = status !== 'all' && attention.includes(status) && n > 0
         return (
-          // A card that is a button: shadcn's Card is a div, and a filter must be
-          // reachable by keyboard.
-          <button
+          <StatTile
             key={status}
-            type="button"
-            aria-pressed={selected}
+            group="request-stats"
+            label={label}
+            value={n}
+            dot={status !== 'all' ? statusTone(status).dot : null}
+            alarm={alarm}
+            selected={selected}
             onClick={() => onPick(selected && status !== 'all' ? 'all' : status)}
-            className={`rounded-xl border bg-card px-4 py-3 text-left shadow-sm transition-colors hover:bg-muted/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none ${
-              selected ? 'border-ring ring-1 ring-ring/40' : ''
-            }`}
-          >
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              {status !== 'all' && <span aria-hidden className={`size-2 rounded-full ${statusTone(status).dot}`} />}
-              {label}
-            </span>
-            <span className={`mt-1 block text-2xl font-semibold tabular-nums ${alarm ? 'text-primary' : ''}`}>{n}</span>
-          </button>
+          />
         )
       })}
     </div>

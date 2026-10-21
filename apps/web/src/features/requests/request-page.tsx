@@ -102,7 +102,7 @@ export function RequestPage() {
 
 /**
  * The request's name, large, under what it is and where it goes — the kind's
- * mark in a tile, "Request · Azure DevOps · Repository" — with its status and
+ * mark in a tile, "Repository request in Azure DevOps" — with its status and
  * what its requester may do about it beside.
  */
 function RequestHeader({ request: r, own, onChanged }: { request: PortalRequest; own: boolean; onChanged: () => void }) {
@@ -119,8 +119,8 @@ function RequestHeader({ request: r, own, onChanged }: { request: PortalRequest;
           <Mark className="absolute -right-1.5 -bottom-1.5 size-5 rounded-md bg-card p-0.5 shadow-sm ring-1 ring-border" />
         </span>
         <div className="min-w-0">
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Request · {systemOf(r)} · {kind}
+          <p className="text-sm text-muted-foreground">
+            {kind} request in {systemOf(r)}
           </p>
           {/* An ADO name is an identifier people copy; a Jira project's name is a title. */}
           <h1 className={`mt-0.5 text-2xl font-semibold tracking-tight break-words ${isJira(r) ? '' : 'font-mono'}`}>{r.pipeline?.application ?? r.repository ?? r.project}</h1>

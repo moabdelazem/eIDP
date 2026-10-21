@@ -23,6 +23,7 @@ import { Dashboard } from './dashboard.tsx'
 import { IgnoreDialog, IgnoredList } from './ignore.tsx'
 import { JobName, OpenedLast, RESULT, ResultBadge } from './result.tsx'
 import { ParameterChips, RunAction, Runs } from './runs.tsx'
+import { StatTile } from '@/components/stat-tile.tsx'
 
 type Tab = 'dashboard' | 'failures' | 'runs' | 'queue' | 'agents' | 'activity'
 const TABS: Tab[] = ['dashboard', 'failures', 'runs', 'queue', 'agents', 'activity']
@@ -101,7 +102,7 @@ export function JenkinsPage() {
   }
 
   const heading = (
-    <h1 className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
+    <h1 className="flex items-center gap-2.5 text-xl font-semibold tracking-tight">
       <JenkinsIcon className="size-5" />
       Jenkins
     </h1>
@@ -264,21 +265,7 @@ function Tiles({ overview: o, active, onPick }: { overview: Overview; active: Ta
   return (
     <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
       {tiles.map((tile) => (
-        <button
-          key={tile.tab}
-          type="button"
-          aria-pressed={active === tile.tab}
-          onClick={() => onPick(tile.tab)}
-          className={`rounded-xl border bg-card px-4 py-3 text-left shadow-sm transition-colors hover:bg-muted/40 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none ${
-            active === tile.tab ? 'border-ring ring-1 ring-ring/40' : ''
-          }`}
-        >
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span aria-hidden className={`size-2 rounded-full ${tile.dot}`} />
-            {tile.label}
-          </span>
-          <span className={`mt-1 block text-2xl font-semibold ${tile.alarm ? 'text-primary' : ''}`}>{tile.n}</span>
-        </button>
+        <StatTile key={tile.tab} group="jenkins-now" label={tile.label} value={tile.n} dot={tile.dot} alarm={tile.alarm} selected={active === tile.tab} onClick={() => onPick(tile.tab)} />
       ))}
     </div>
   )

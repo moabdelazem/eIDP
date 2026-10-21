@@ -107,7 +107,27 @@ the default rather than an override. `page-enter` plays once per path, `reveal`
 (opacity only — a transform would clobber an SVG node's position) fades in
 new map nodes and timeline steps, and `lib/view-transition.ts` wraps a state
 change in the native View Transitions API — a decided approval leaves and the
-cards below slide up. No animation library.
+cards below slide up.
+
+What CSS cannot do is `motion` (`motion/react`), and only for a change
+someone caused or is watching:
+- a count rolling to its new value (`components/animated-number.tsx`; the
+  first value is shown as it is, never counted up from zero, and the digits
+  are written to an element React leaves empty, with the final value in an
+  `sr-only` twin);
+- the chosen stat tile's bar sliding to the next tile chosen (`StatTile`,
+  one `layoutId` per row);
+- a need arriving or leaving on the Overview, and a card sliding to its new
+  place in Customize;
+- a readiness tick landing in a request form's checklist, and the sign-in
+  panel's map branch drawing itself once.
+
+`app/providers.tsx` wraps the app in `LazyMotion strict` and
+`MotionConfig reducedMotion="user"`: components use `m.*`, never `motion.*`,
+and the features load in their own chunk after the first paint
+(`lib/motion-features.ts`, ~28 KB gzipped) — the main bundle carries ~6 KB of
+it. The count roll is a plain frame loop, not motion's `animate`, which would
+put the animation engine back in the main bundle.
 
 The map has to work at ~207 systems and ~1100 applications. Three rules keep
 it usable there, and breaking any one of them makes it unusable again:
