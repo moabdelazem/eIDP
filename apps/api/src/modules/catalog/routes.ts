@@ -1,5 +1,6 @@
 import type { CatalogResponse } from '@eidp/contracts/catalog'
 import { Hono } from 'hono'
+import { etag } from 'hono/etag'
 import { ApiError } from '../../lib/errors.ts'
 import { accessFrom, requireAuth, requirePermission, type AppEnv } from '../../middleware/auth.ts'
 import { catalogReach } from '../access/index.ts'
@@ -20,7 +21,10 @@ export const catalogRoutes = new Hono<AppEnv>()
    * Each person gets the projects their teams own (`catalogReach`), not the
    * whole map; `catalog.view_all` gets every one.
    */
-  .get('/', async (c) => {
+  .get('/', etag(), async (c) => {
+    // The catalog changes when a sync lands, not every time the map asks: the browser
+    // revalidates with the ETag, and an unchanged catalog comes back as a 304 with no body.
+    c.header('Cache-Control', 'private, no-cache')
     const [systems, sync, access] = await Promise.all([readCatalog(), readSyncState(), accessFrom(c)])
 
     if (systems.length === 0) {

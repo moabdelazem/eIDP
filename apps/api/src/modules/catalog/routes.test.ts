@@ -87,3 +87,27 @@ test('an application in a project not yours answers as one that does not exist',
   assert.equal(other.status, 404)
   assert.equal((await get('alice', '/catalog/systems/__scope_nb/applications/__scope_nb-api')).status, 200)
 })
+
+// ---- what the map costs on the wire ---------------------------------------------
+
+test('the catalog crosses the network gzipped when the browser accepts it', async () => {
+  const res = await app.request('/catalog', { headers: { authorization: `Bearer ${tokens.alice}`, 'accept-encoding': 'gzip' } })
+  assert.equal(res.status, 200)
+  assert.equal(res.headers.get('content-encoding'), 'gzip')
+  const body = (await new Response(res.body!.pipeThrough(new DecompressionStream('gzip'))).json()) as CatalogResponse
+  assert.ok(body.systems.some((s) => s.id === '__scope_pay'))
+  // Without it (a test, a script) the body is plain.
+  assert.equal((await get('alice', '/catalog')).headers.get('content-encoding'), null)
+})
+
+test('an unchanged catalog revalidates as a 304, with no body to send again', async () => {
+  const first = await get('alice', '/catalog')
+  const tag = first.headers.get('etag')
+  assert.ok(tag, 'the catalog carries an ETag')
+  assert.match(first.headers.get('cache-control') ?? '', /no-cache/)
+  const again = await app.request('/catalog', { headers: { authorization: `Bearer ${tokens.alice}`, 'if-none-match': tag! } })
+  assert.equal(again.status, 304)
+  assert.equal(await again.text(), '')
+  // Someone who sees other projects gets another document, and another tag.
+  assert.notEqual((await get('bob', '/catalog')).headers.get('etag'), tag)
+})

@@ -84,51 +84,78 @@ function Canvas({ root, expanded, selected, query, fitKey, focusKey, onToggle: t
   const flow = useReactFlow()
   // A branch just opened by hand: once it is laid out, its children are brought into view (below).
   const opened = useRef<string | null>(null)
-  const onToggle = useCallback(
-    (id: string) => {
-      opened.current = expanded.has(id) ? null : id
-      toggleBranch(id)
-    },
-    [expanded, toggleBranch],
-  )
+  // The page's callbacks change every render; the cards get stable ones that read the latest, so choosing one card does not redraw them all.
+  const latest = useRef({ expanded, toggleBranch, onSelect })
+  useEffect(() => {
+    latest.current = { expanded, toggleBranch, onSelect }
+  })
+  const onToggle = useCallback((id: string) => {
+    opened.current = latest.current.expanded.has(id) ? null : id
+    latest.current.toggleBranch(id)
+  }, [])
+  const choose = useCallback((id: string) => latest.current.onSelect(id), [])
   // Open all and Close all change the whole shape: they refit, as a filter does.
   const [shape, setShape] = useState(0)
 
-  const { nodes, edges } = useMemo(() => {
+  // The layout: only when the shape changes (filters, a branch opened or closed) — never for a choice.
+  const laid = useMemo(() => {
     const prune = (node: MapNode): Laid => ({
       ...node,
       childCount: node.children?.length ?? 0,
       children: expanded.has(node.id) ? node.children?.map(prune) : undefined,
     })
-    const laid = tree<Laid>()
+    return tree<Laid>()
       .nodeSize([ROW, COL])
       .separation((a, b) => (a.parent === b.parent ? 1 : 1.25))(hierarchy(prune(root)))
-    const lit = new Set(selected ? (pathTo(root, selected) ?? []) : [])
+  }, [root, expanded])
 
+  /**
+   * The cards and lines, decorated with what is chosen. A card whose place
+   * and look did not change keeps the very same object, which is how React
+   * Flow knows to leave it alone: choosing a card redraws that card and the
+   * path to it, not the 1,500 on the map.
+   */
+  const cache = useRef(new Map<string, { sig: string; card: MapCard }>())
+  const lines = useRef(new Map<string, Edge>())
+  const { nodes, edges } = useMemo(() => {
+    const lit = new Set(selected ? (pathTo(root, selected) ?? []) : [])
+    const nextCache = new Map<string, { sig: string; card: MapCard }>()
     const nodes: MapCard[] = laid.descendants().map((d) => {
       const size = SIZE[d.data.kind]
-      return {
-        id: d.data.id,
-        type: d.data.kind,
-        position: { x: d.y, y: d.x - size.h / 2 },
-        width: size.w,
-        height: size.h,
-        data: { node: d.data, open: expanded.has(d.data.id), selected: d.data.id === selected, onPath: lit.has(d.data.id), query, onToggle, onSelect },
-        draggable: false,
-        selectable: false,
-        focusable: false,
-      }
+      const x = d.y, y = d.x - size.h / 2
+      const open = expanded.has(d.data.id), chosen = d.data.id === selected, onPath = lit.has(d.data.id)
+      const sig = [x, y, open, chosen, onPath, query, d.data.label, d.data.meta, d.data.childCount, d.data.app?.environments.join()].join('|')
+      const prev = cache.current.get(d.data.id)
+      const card =
+        prev && prev.sig === sig
+          ? prev.card
+          : {
+              id: d.data.id,
+              type: d.data.kind,
+              position: { x, y },
+              width: size.w,
+              height: size.h,
+              data: { node: d.data, open, selected: chosen, onPath, query, onToggle, onSelect: choose },
+              draggable: false,
+              selectable: false,
+              focusable: false,
+            }
+      nextCache.set(d.data.id, { sig, card })
+      return card
     })
-    const edges: Edge[] = laid.links().map((link) => ({
-      id: `e:${link.target.data.id}`,
-      source: link.source.data.id,
-      target: link.target.data.id,
-      className: lit.has(link.target.data.id) ? 'map-edge map-edge-lit' : 'map-edge',
-      focusable: false,
-      selectable: false,
-    }))
+    cache.current = nextCache
+    const nextLines = new Map<string, Edge>()
+    const edges: Edge[] = laid.links().map((link) => {
+      const id = `e:${link.target.data.id}`
+      const className = lit.has(link.target.data.id) ? 'map-edge map-edge-lit' : 'map-edge'
+      const prev = lines.current.get(id)
+      const edge = prev && prev.source === link.source.data.id && prev.className === className ? prev : { id, source: link.source.data.id, target: link.target.data.id, className, focusable: false, selectable: false }
+      nextLines.set(id, edge)
+      return edge
+    })
+    lines.current = nextLines
     return { nodes, edges }
-  }, [root, expanded, selected, query, onToggle, onSelect])
+  }, [laid, root, expanded, selected, query, onToggle, choose])
 
   /**
    * Brings the tree into view. `automatic` refuses to shrink past

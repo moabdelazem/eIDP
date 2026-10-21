@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { ChevronRight, Plus } from 'lucide-react'
 import { Link } from 'react-router'
 import { cn } from 'cn'
@@ -45,10 +46,57 @@ export function MapList({
     )
   }
 
+  return <Progressive systems={systems} query={query} selected={selected} onSelect={onSelect} />
+}
+
+/** How many systems the list draws at a time. */
+const STEP = 24
+
+/**
+ * The list, drawn a step at a time: the first systems at once, the next as
+ * the reader scrolls near the end (or presses Show more). Every system at
+ * once was 21,000 elements on a full catalog — half a second of a frozen
+ * page before anything showed. A new filter starts again at the first step.
+ * Each card is also `content-visibility: auto`, so one scrolled out of view
+ * costs no layout or paint.
+ */
+function Progressive({
+  systems,
+  query,
+  selected,
+  onSelect,
+}: {
+  systems: { system: System; apps: Application[] }[]
+  query: string
+  selected: string | null
+  onSelect: (id: string) => void
+}) {
+  const [limit, setLimit] = useState(STEP)
+  const [shownFor, setShownFor] = useState(systems)
+  if (shownFor !== systems) {
+    setShownFor(systems)
+    // The chosen card stays drawn when a filter narrows the list: its system is kept within reach.
+    const at = selected ? systems.findIndex(({ system, apps }) => systemId(system) === selected || apps.some((a) => appId(system, a) === selected)) : -1
+    setLimit(Math.max(STEP, at + 1))
+  }
+  const more = useRef<HTMLDivElement>(null)
+  const hasMore = limit < systems.length
+  useEffect(() => {
+    const sentinel = more.current
+    if (!sentinel || !hasMore) return
+    const observer = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && setLimit((n) => n + STEP), { rootMargin: '800px 0px' })
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [hasMore, limit])
+
   return (
     <div className="flex flex-col gap-4">
-      {systems.map(({ system, apps }) => (
-        <section key={system.id} aria-labelledby={`sys-${system.id}`} className="overflow-hidden rounded-xl border border-l-[3px] border-l-[var(--chart-1)] bg-card shadow-xs">
+      {systems.slice(0, limit).map(({ system, apps }) => (
+        <section
+          key={system.id}
+          aria-labelledby={`sys-${system.id}`}
+          className="overflow-hidden rounded-xl border border-l-[3px] border-l-[var(--chart-1)] bg-card shadow-xs [contain-intrinsic-size:auto_18rem] [content-visibility:auto]"
+        >
           <header className={cn('flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3', selected === systemId(system) && 'bg-secondary/50')}>
             <button type="button" onClick={() => onSelect(systemId(system))} className="min-w-0 text-left focus-visible:underline focus-visible:outline-none">
               <h2 id={`sys-${system.id}`} className="truncate font-semibold">
@@ -107,6 +155,13 @@ export function MapList({
           )}
         </section>
       ))}
+      {hasMore && (
+        <div ref={more} className="flex justify-center py-2">
+          <Button variant="outline" size="sm" onClick={() => setLimit((n) => n + STEP)}>
+            Show more — {systems.length - limit} more {systems.length - limit === 1 ? 'system' : 'systems'}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

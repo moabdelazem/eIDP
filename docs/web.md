@@ -199,6 +199,37 @@ The sidebar collapses to an icon rail
 (`collapsible="icon"`), and `AppShell` reads the `sidebar_state` cookie back
 itself — shadcn only writes it, since Next reads it server-side.
 
+## Staying fast
+
+Measured on a 207-system, 1,242-application catalog in a production build
+(long tasks over 50 ms, counted while typing and clicking). Each rule fixed a
+freeze someone could feel; undoing one brings it back.
+
+- **A search box commits when typing pauses** (`lib/use-debounced-search.ts`):
+  the box answers each keystroke, and what it feeds — the URL, a query key,
+  a filter over a thousand rows — follows 150–300 ms after the last one, at
+  once on Enter. Every search box in the app uses it. Typing on the map froze
+  the page for 2.5 s in all (one task of 1.1 s) before; none now.
+- **Choosing a card never reruns the layout.** `flow-map.tsx` lays the tree
+  out only when its shape changes, and reuses each card's object when its
+  place and look did not change, which is how React Flow knows to leave it;
+  the cards get stable callbacks (refs to the latest), and the map page keys
+  its filters on their own URL values, not the whole URL — `sel` changing
+  rebuilt the tree before.
+- **Long lists are drawn a step at a time.** The map's list draws 24 systems,
+  then more as the reader nears the end (an IntersectionObserver, with Show
+  more), and each card is `content-visibility: auto`: 21,000 elements and a
+  400 ms first render became 2,600 and none. It renders from
+  `useDeferredValue(filters)`, so the toolbar keeps answering.
+- **The libraries every page loads are their own chunks** (`vite.config.ts`,
+  `codeSplitting.groups`: React and the router; TanStack Query, next-themes,
+  sonner), so a deploy that changes only the portal's code leaves them
+  cached. Only those: a group catching all of `node_modules` would pull the
+  lazy libraries (charts, Shiki, React Flow) into the first load.
+- **What rarely changes is not asked for on every focus.** `useResource`
+  takes `staleMs`; the catalog is a minute fresh, and past that the API
+  answers an unchanged one with a 304 (below).
+
 ## Talking to the API
 
 **The shapes are shared, not copied.** `packages/contracts/src/<area>.ts`
@@ -234,6 +265,14 @@ answer and never retried, an unreachable portal or a proxy's 502/504 is
 tried once. Every change of session empties the cache (`tokenStore.onChange`),
 so one person's data never shows for the next. Writes still call the API
 and then `reload`.
+
+**What crosses the wire is small.** The API gzips every text response over
+1 KB (Hono's `compress`, in `app.ts`) — the HTTPRoute sends `/api` straight
+to it, past nginx's gzip, and the full catalog is 1.2 MB of JSON, 59 KB
+gzipped. Its content filter leaves the chatbot's `text/event-stream` alone, so
+the stream is not held back for a gzip block. `/catalog` carries an ETag with
+`Cache-Control: private, no-cache`: the browser revalidates, and an unchanged
+catalog is a 304 with no body (`modules/catalog/routes.test.ts`).
 
 `lib/api-client.ts` is the only thing that calls `fetch`. It attaches the
 session token, and turns a failure into an `ApiError` carrying the message the

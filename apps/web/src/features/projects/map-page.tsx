@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { FileWarning } from 'lucide-react'
 import { PageHeader } from '@/components/page-layout.tsx'
@@ -39,7 +39,9 @@ export function ProjectMapPage() {
   const { can } = useProfile()
   const [params, setParams] = useSearchParams()
 
-  const filters = useMemo(() => readFilters(params), [params])
+  // Keyed on the filter values themselves, not the whole URL: choosing a card changes `sel`, and must not rebuild the tree.
+  const [q, tech, env] = [params.get('q') ?? '', params.get('tech') ?? '', params.get('env') ?? '']
+  const filters = useMemo(() => readFilters(q, tech, env), [q, tech, env])
   const selected = params.get('sel')
   // A tree needs width a phone does not have; the list reads fine there.
   const view: 'map' | 'list' = params.get('view') === 'list' || params.get('view') === 'map' ? (params.get('view') as 'map' | 'list') : window.matchMedia('(max-width: 767px)').matches ? 'list' : 'map'
@@ -50,7 +52,9 @@ export function ProjectMapPage() {
     return company && systems.every((system) => system.company === company) ? company : 'Organization'
   }, [systems])
   const root = useMemo(() => buildTree(systems, rootLabel, filters), [systems, rootLabel, filters])
-  const kept = useMemo(() => filterSystems(systems, filters), [systems, filters])
+  // The list renders from a deferred copy: React draws a thousand rows in the background and keeps the toolbar answering.
+  const listFilters = useDeferredValue(filters)
+  const kept = useMemo(() => filterSystems(systems, listFilters), [systems, listFilters])
   const facets = useMemo(() => facetsOf(systems), [systems])
   const total = useMemo(() => ({ systems: systems.length, applications: systems.reduce((n, s) => n + s.applications.length, 0) }), [systems])
   const showing = { systems: kept.length, applications: kept.reduce((n, k) => n + k.apps.length, 0) }
@@ -235,13 +239,13 @@ export function ProjectMapPage() {
   )
 }
 
-function readFilters(params: URLSearchParams): Filters {
-  const list = (key: string) => (params.get(key) ?? '').split(',').filter(Boolean)
+function readFilters(q: string, tech: string, env: string): Filters {
+  const list = (value: string) => value.split(',').filter(Boolean)
   return {
-    query: params.get('q') ?? '',
-    technologies: list('tech'),
+    query: q,
+    technologies: list(tech),
     // Only environments this build knows: a link from elsewhere cannot filter on a typo.
-    environments: list('env').filter((env): env is Environment => (ENV_ORDER as string[]).includes(env)),
+    environments: list(env).filter((e): e is Environment => (ENV_ORDER as string[]).includes(e)),
   }
 }
 

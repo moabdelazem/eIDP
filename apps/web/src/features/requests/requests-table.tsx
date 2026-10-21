@@ -9,6 +9,7 @@ import { whereOf, type PortalRequest, type RequestKind, type RequestStatus } fro
 import { STATUS_NAME } from './request-stats.tsx'
 import { RequestPreview } from './request-preview.tsx'
 import { kindIcon, kindLabel, StatusBadge } from './status.tsx'
+import { useDebouncedSearch } from '@/lib/use-debounced-search.ts'
 
 const PAGE_SIZE = 20
 
@@ -76,6 +77,9 @@ export function RequestsTable({
     setPage(0)
   }
 
+  // The table filters, sorts and pages once typing pauses, not per keystroke.
+  const search = useDebouncedSearch(query, (value) => reset(setQuery)(value), 200)
+
   const kinds = [...new Set(requests.map((r) => r.kind))]
 
   return (
@@ -86,8 +90,9 @@ export function RequestsTable({
           <Input
             aria-label="Search requests"
             placeholder="Search by name, project or person"
-            value={query}
-            onChange={(e) => reset(setQuery)(e.target.value)}
+            value={search.text}
+            onChange={(e) => search.setText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && search.flush()}
             className="pl-8"
           />
         </div>

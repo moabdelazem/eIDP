@@ -18,6 +18,7 @@ import { ApiError } from '@/lib/api-client.ts'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
 import { activityApi, WINDOW_LABEL, type Activity, type ActivityWindow, type Group, type Overview, type Person } from './api.ts'
+import { useDebouncedSearch } from '@/lib/use-debounced-search.ts'
 
 const ActivePeopleChart = lazy(() => import('./charts.tsx').then((m) => ({ default: m.ActivePeopleChart })))
 const PagesChart = lazy(() => import('./charts.tsx').then((m) => ({ default: m.PagesChart })))
@@ -261,12 +262,7 @@ function FeedTab({
   const [error, setError] = useState<string | null>(null)
   const [more, setMore] = useState(false)
   // Typed words reach the URL (and the API) once typing pauses.
-  const [words, setWords] = useState(q)
-  useEffect(() => {
-    if (words === q) return
-    const timer = setTimeout(() => set({ q: words.trim() || null }), 300)
-    return () => clearTimeout(timer)
-  }, [words, q, set])
+  const { text: words, setText: setWords, flush } = useDebouncedSearch(q, (value) => set({ q: value.trim() || null }), 300)
 
   useEffect(() => {
     let stale = false
@@ -318,7 +314,7 @@ function FeedTab({
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-56 flex-1 sm:max-w-sm">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input aria-label="Search the feed" placeholder="A name, a job, a project…" value={words} onChange={(e) => setWords(e.target.value)} className="pl-8" />
+          <Input aria-label="Search the feed" placeholder="A name, a job, a project…" value={words} onChange={(e) => setWords(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && flush()} className="pl-8" />
         </div>
         <ToggleGroup type="single" variant="outline" size="sm" value={group ?? 'all'} onValueChange={(v) => v && set({ group: v === 'all' ? null : v })} aria-label="What happened" className="flex-wrap">
           <ToggleGroupItem value="all" className="px-3">
@@ -427,6 +423,7 @@ function Line({ run: { item, times }, onPerson }: { run: Run; onPerson: (uid: st
 function PeopleTab({ window, onPerson, retentionDays }: { window: ActivityWindow; onPerson: (uid: string) => void; retentionDays: number | null }) {
   const people = useResource(['activity', 'people', window], () => activityApi.people(window))
   const [q, setQ] = useState('')
+  const find = useDebouncedSearch(q, setQ, 150)
   if (people.error && !people.data) return <p className="text-sm text-destructive">{people.error}</p>
   if (!people.data) {
     return (
@@ -443,7 +440,7 @@ function PeopleTab({ window, onPerson, retentionDays }: { window: ActivityWindow
     <div className="space-y-4">
       <div className="relative min-w-56 sm:max-w-sm">
         <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-        <Input aria-label="Find a person" placeholder="Name or login" value={q} onChange={(e) => setQ(e.target.value)} className="pl-8" />
+        <Input aria-label="Find a person" placeholder="Name or login" value={find.text} onChange={(e) => find.setText(e.target.value)} className="pl-8" />
       </div>
       {shown.length === 0 ? (
         <p className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
