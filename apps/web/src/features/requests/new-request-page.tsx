@@ -240,7 +240,7 @@ export function NewRequestPage({ kind }: { kind: CreationKind }) {
 
         {kind === 'create_repository' && (
           <Field label="Project" htmlFor="project">
-            <ProjectPicker id="project" projects={projects.data ?? []} value={project} onChange={setProject} loading={!collection || projects.loading} />
+            <ProjectPicker id="project" projects={projects.data ?? []} value={project} onChange={setProject} loading={projects.loading} after={!collection ? 'a collection' : undefined} />
           </Field>
         )}
       </FormSection>

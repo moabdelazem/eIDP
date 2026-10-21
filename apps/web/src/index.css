@@ -99,8 +99,8 @@
 }
 
 @theme inline {
-  --font-sans: 'Archivo', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-sans: 'Archivo Variable', 'Archivo', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -141,6 +141,7 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-indicator: var(--sidebar-indicator);
 
   --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
@@ -160,6 +161,22 @@
   code, kbd, samp {
     @apply font-mono;
   }
+  /*
+   * Each page's one h1 is set in Archivo's wider cut (its width axis), so a
+   * title reads as a sign over the page and not as one more line of body
+   * text. Only the h1: everything under it keeps the normal width. A mono
+   * title (a repository's name) ignores it — JetBrains Mono has no width axis.
+   */
+  h1 {
+    font-stretch: 112%;
+    letter-spacing: -0.012em;
+  }
+}
+
+/* The display cut, for the few large words that are not the h1 (the sign-in panel's). */
+@utility font-display {
+  font-stretch: 118%;
+  letter-spacing: -0.02em;
 }
 
 /*
@@ -304,6 +321,61 @@
   }
 }
 
+/*
+ * The projects map's canvas (features/projects/flow-map.tsx): React Flow in
+ * our tokens, like the stage graph. Lines are the border's ink; the line
+ * from the root to what is chosen is drawn in the ring colour, thicker. The
+ * connection handles are React Flow's plumbing, not ours to show.
+ */
+.project-map .react-flow {
+  --xy-background-color: transparent;
+  --xy-background-pattern-dots-color-default: color-mix(in oklab, var(--muted-foreground) 20%, transparent);
+  --xy-minimap-background-color-default: var(--card);
+  --xy-minimap-mask-background-color-default: color-mix(in oklab, var(--foreground) 6%, transparent);
+  --xy-minimap-mask-stroke-color-default: var(--ring);
+  --xy-minimap-mask-stroke-width-default: 1;
+  font-family: inherit;
+}
+.project-map {
+  --map-mini-branch: var(--chart-1);
+  --map-mini-app: color-mix(in oklab, var(--muted-foreground) 45%, var(--card));
+}
+.project-map .react-flow__minimap {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 10%, transparent);
+}
+.project-map .react-flow__node {
+  cursor: default;
+}
+.project-map .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+  min-width: 0;
+  min-height: 0;
+  width: 1px;
+  height: 1px;
+  border: 0;
+}
+.project-map .map-edge .react-flow__edge-path {
+  stroke: color-mix(in oklab, var(--muted-foreground) 40%, var(--card));
+  stroke-width: 1.5;
+}
+.project-map .map-edge-lit .react-flow__edge-path {
+  stroke: var(--ring);
+  stroke-width: 2.5;
+}
+/* A branch opening moves the cards below it: they slide to their new rows rather than jump. */
+@media (prefers-reduced-motion: no-preference) {
+  .project-map .react-flow__node {
+    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .project-map .react-flow__edge-path {
+    transition: stroke 180ms ease-out;
+  }
+}
+
 @keyframes graph-pulse {
   0% {
     box-shadow: 0 0 0 0 color-mix(in oklab, var(--info) 45%, transparent);
@@ -381,6 +453,36 @@
 [data-slot='command-item'][data-selected='true'] {
   background-color: var(--secondary);
   color: var(--foreground);
+}
+
+/*
+ * A linked shadcn Item hovers with --accent/50 — the rail's eggplant again,
+ * a dark smear across a card. The ground's soft tint instead, as the menus.
+ */
+a[data-slot='item']:hover {
+  background-color: color-mix(in oklab, var(--secondary) 70%, transparent);
+}
+
+/*
+ * shadcn's Progress fills with --primary, which here is red, and red means
+ * "act". A bar counts how far along something is, so it fills eggplant (the
+ * chart colour), and eases as it grows only where motion is welcome.
+ */
+[data-slot='progress'] {
+  background-color: var(--secondary);
+}
+[data-slot='progress-indicator'] {
+  background-color: var(--chart-1);
+  transition: none;
+}
+/* A full bar is done: green, the meaning colour for done. The caller marks it (data-complete): shadcn's Progress never passes its value to Radix, so Radix's own data-state stays indeterminate. */
+[data-slot='progress'][data-complete] > [data-slot='progress-indicator'] {
+  background-color: var(--success);
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot='progress-indicator'] {
+    transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
 }
 
 /*

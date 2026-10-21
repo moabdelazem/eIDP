@@ -95,7 +95,7 @@ export function BuildPage() {
     <div className={PAGE}>
       <PageHeader
         title={
-          <h1 className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-lg font-semibold tracking-tight">
+          <h1 className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xl font-semibold tracking-tight">
             <JobName name={job} /> <span className="font-mono text-muted-foreground">#{number}</span>
             <ResultBadge result={r.result} />
           </h1>

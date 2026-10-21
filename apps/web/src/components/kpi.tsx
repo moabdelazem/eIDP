@@ -1,4 +1,5 @@
 import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
+import { AnimatedNumber } from './animated-number.tsx'
 
 /** "+3", "−2", "0" — with a real minus sign. */
 export function signed(n: number): string {
@@ -33,9 +34,11 @@ export function Kpi({
   }
   const Icon = !delta || delta.change === 0 ? Minus : delta.change > 0 ? ArrowUpRight : ArrowDownRight
   return (
-    <div className="rounded-xl border bg-card px-4 py-3 shadow-sm">
+    <div className="rounded-xl border bg-card px-4 py-3 shadow-xs">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold ${alarm ? 'text-primary' : ''}`}>{value}</p>
+      <p className={`mt-1 text-2xl font-semibold ${alarm ? 'text-primary' : ''}`}>
+        <AnimatedNumber value={value} />
+      </p>
       <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
         {delta && (
           <span className={`inline-flex items-center gap-0.5 font-medium ${tone}`}>

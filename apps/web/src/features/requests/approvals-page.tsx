@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
+import { Inbox } from 'lucide-react'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSession } from '@/features/auth/session-context.tsx'
@@ -89,7 +91,7 @@ export function ApprovalsPage() {
     <div className={PAGE}>
       <PageHeader
         title="Approvals"
-        description="Requests you can decide. Approving acts in Azure DevOps or Jira straight away."
+        description="Requests you can decide. Approving acts straight away, in Azure DevOps, Jira or Jenkins."
       />
 
       <div className="mt-6">
@@ -172,9 +174,15 @@ export function ApprovalsPage() {
                 Waiting for a decision{waiting.length > 0 && ` (${waiting.length})`}
               </h2>
               {waiting.length === 0 ? (
-                <p className="mt-2 rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
-                  Nothing waiting. New requests show up here as they arrive.
-                </p>
+                <Empty className="mt-2 border border-dashed">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <Inbox />
+                    </EmptyMedia>
+                    <EmptyTitle>Nothing waiting for you</EmptyTitle>
+                    <EmptyDescription>New requests show up here as they arrive. Past decisions are under History.</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
               ) : (
                 // Two across once there is room: a card is short, and a long queue
                 // should not become one long scroll.

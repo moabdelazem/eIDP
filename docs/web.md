@@ -104,10 +104,59 @@ declare nullable.
 Motion explains a change and nothing more, and all of it lives inside
 `prefers-reduced-motion: no-preference` (`index.css`), so reduced motion is
 the default rather than an override. `page-enter` plays once per path, `reveal`
-(opacity only — a transform would clobber an SVG node's position) fades in
-new map nodes and timeline steps, and `lib/view-transition.ts` wraps a state
+(opacity only — a transform would clobber a node's position) fades in
+new map cards and timeline steps, and `lib/view-transition.ts` wraps a state
 change in the native View Transitions API — a decided approval leaves and the
-cards below slide up. No animation library.
+cards below slide up.
+
+What CSS cannot do is `motion` (`motion/react`), and only for a change
+someone caused or is watching:
+- a count rolling to its new value (`components/animated-number.tsx`; the
+  first value is shown as it is, never counted up from zero, and the digits
+  are written to an element React leaves empty, with the final value in an
+  `sr-only` twin);
+- the chosen stat tile's bar sliding to the next tile chosen (`StatTile`,
+  one `layoutId` per row);
+- a need arriving or leaving on the Overview, and a card sliding to its new
+  place in Customize;
+- a readiness tick landing in a request form's checklist, and the sign-in
+  panel's map branch drawing itself once.
+
+`app/providers.tsx` wraps the app in `LazyMotion strict` and
+`MotionConfig reducedMotion="user"`: components use `m.*`, never `motion.*`,
+and the features load in their own chunk after the first paint
+(`lib/motion-features.ts`, ~28 KB gzipped) — the main bundle carries ~6 KB of
+it. The count roll is a plain frame loop, not motion's `animate`, which would
+put the animation engine back in the main bundle.
+
+**The projects map** (`/map`, `features/projects/`) answers "where is it, who
+owns it, where does it run" without leaving the page: a canvas of cards — the
+organization, its systems, their applications with their technology and
+environment pills — and a panel beside it for whatever is chosen (owners per
+environment, the repository, what you can do: add an application, ask for
+access, its builds, open it). With nothing chosen the panel says what the map
+holds, each technology and environment a filter. The List view is the same
+catalog as a card per system and a row per application, choosing into the same
+panel; phones open on it, and there the panel rises as a sheet.
+
+- `flow-map.tsx` is the canvas: React Flow (`@xyflow/react`, shared with the
+  build page's stage graph, lazy-loaded so a phone on the list never fetches
+  it), laid out by `d3-hierarchy` as a tree read left to right, with
+  `onlyRenderVisibleElements`. Its cards are buttons; React Flow switches
+  pointer events off on a node that is neither draggable nor selectable, so
+  the canvas passes a no-op `onNodeClick` — without it nothing on the map can
+  be clicked. Choosing a card selects it, and a closed system opens too; the
+  round button on a card's edge opens or closes without choosing. Opening a
+  branch by hand pans (never zooms) just enough to show it and its children.
+  The line from the root to what is chosen is drawn in the ring colour.
+- `tree.ts` is the model, tested in `tree.test.ts`: `filterSystems` (what the
+  filters keep — the map and the list both read it), `buildTree`, `pathTo`,
+  `resolve`. Ids carry their kind, and an application's is scoped by its
+  system (`app:<system>/<name>`): an application's own id is its name, which
+  two systems may share.
+- `map-panel.tsx`, `map-list.tsx`, `map-toolbar.tsx` and `map-parts.tsx`
+  (environment pills, the technology tag, search highlighting) are the rest.
+  Production (`prd`, `prd_dr`) is marked by an eggplant dot, never red.
 
 The map has to work at ~207 systems and ~1100 applications. Three rules keep
 it usable there, and breaking any one of them makes it unusable again:
@@ -122,18 +171,14 @@ it usable there, and breaking any one of them makes it unusable again:
   fits but renders at 6px is worse than one you pan through. The fit button
   overrides it, because asking for the whole shape is explicit.
 
-`features/projects/catalog.ts` is placeholder data shaped to match what the
-API's inventories parser produces — replace the rows, keep the types.
-`tree.ts` turns a catalog into the map's node tree; `mind-map.tsx` lays it out
-with `d3-hierarchy` and pans/zooms with `d3-zoom`, rendering plain SVG so it
-inherits the theme. Links are hand-written cubic beziers rather than pulling
-in `d3-shape` for one function.
+Open all and Close all refit as a filter does (they change the whole shape);
+opening one branch does not, so the view never jumps from under the reader.
 
-The map prunes collapsed branches before layout, so a node's `children` is
-gone while collapsed — `childCount` is carried alongside, or a collapsed node
-looks like a leaf and loses its toggle. The map is a `role="tree"` of
-focusable nodes, and the List view beside it is the plain, screen-reader
-friendly path to the same data.
+`features/projects/catalog.ts` holds the catalog's types as the map uses
+them. The map prunes closed branches before layout, so a node's `children` is
+gone while closed — `childCount` is carried alongside, or a closed system
+looks like a leaf and loses its button. The List view is the plain,
+screen-reader friendly path to the same data.
 
 Sidebar links: hover (`--sidebar-hover`) is lighter than the current page
 (`--sidebar-accent`), which also carries a lilac bar (`--sidebar-indicator`),

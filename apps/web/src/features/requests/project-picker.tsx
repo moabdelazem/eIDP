@@ -25,6 +25,7 @@ export function ProjectPicker({
   onChange,
   loading,
   noun = 'project',
+  after,
 }: {
   id: string
   projects: Project[]
@@ -32,8 +33,11 @@ export function ProjectPicker({
   onChange: (name: string) => void
   loading: boolean
   noun?: string
+  /** What has to be chosen first ("a project"): until then the picker says so instead of looking like it loads. */
+  after?: string
 }) {
   const [open, setOpen] = useState(false)
+  const nouns = noun.endsWith('y') ? `${noun.slice(0, -1)}ies` : `${noun}s`
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -43,18 +47,18 @@ export function ProjectPicker({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          disabled={loading}
+          disabled={loading || Boolean(after)}
           className="w-full justify-between font-normal"
         >
           <span className={value ? '' : 'text-muted-foreground'}>
-            {loading ? `Loading ${noun}s…` : value || `Choose a ${noun}`}
+            {after ? `Choose ${after} first` : loading ? `Loading ${nouns}…` : value || `Choose a ${noun}`}
           </span>
           <ChevronsUpDown className="opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-(--radix-popover-trigger-width) p-0" align="start">
         <Command>
-          <CommandInput placeholder={`Search ${noun}s`} />
+          <CommandInput placeholder={`Search ${nouns}`} />
           <CommandList>
             <CommandEmpty>No {noun} by that name.</CommandEmpty>
             <CommandGroup>

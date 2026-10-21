@@ -124,7 +124,7 @@ function Dock() {
           <button
             type="button"
             onClick={() => setOpen(true)}
-            aria-label="Open the chatbot"
+            aria-label={`Ask the ${AGENT}`}
             aria-keyshortcuts="Control+J Meta+J"
             className="chat-launcher fixed right-6 bottom-6 z-40 flex size-12 items-center justify-center rounded-full bg-[var(--rail)] text-[var(--rail-foreground)] shadow-lg ring-1 ring-[var(--rail-border)] transition-transform hover:scale-105 focus-visible:ring-[3px] focus-visible:ring-ring/60 focus-visible:outline-none motion-reduce:transition-none motion-reduce:hover:scale-100 data-[busy=true]:animate-pulse"
             data-busy={chat.busy && !open}
@@ -133,7 +133,7 @@ function Dock() {
           </button>
         </TooltipTrigger>
         <TooltipContent side="left">
-          Chatbot <Kbd>Ctrl J</Kbd>
+          Ask the {AGENT} <Kbd>Ctrl J</Kbd>
         </TooltipContent>
       </Tooltip>
 

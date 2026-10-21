@@ -52,7 +52,19 @@ The Jenkins **pipeline** request is listed as Soon (`kind: null`) — what it
 does is still to be specified, so it has no form, route or API kind yet.
 
 Archivo for UI, JetBrains Mono for identifiers the user can copy (repo paths,
-DNs, pipeline ids) and nothing else.
+DNs, pipeline ids) and nothing else. Both ship with the app
+(`@fontsource-variable/*`, imported in `main.tsx`), not from Google Fonts: an
+internal network often cannot reach it, and the portal quietly fell back to
+the system font. Archivo is loaded with its width axis, and each page's one
+`h1` is set wider (`font-stretch: 112%` in `index.css`), so a title reads as a
+sign over the page; `font-display` (118%) is for the few large words that are
+not an h1, the sign-in panel's. Only those: body text keeps the normal width.
+Labels are sentence case — no all-caps eyebrows.
+
+The Overview's greeting is the one loud thing in the portal: large, wide, the
+date above and a live count of what needs you below, with a red dot that
+pings three times (red because those are things to act on). Everything else
+stays quiet.
 
 `apps/web/src/assets/logo.png` is the logo the app uses: the supplied mark
 with its baked `rgb(240,243,250)` background knocked out and the padding

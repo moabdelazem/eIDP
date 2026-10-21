@@ -274,7 +274,8 @@ export function PipelineRequestPage() {
               setProject(value)
               setRepository('')
             }}
-            loading={!collection || projects.loading}
+            loading={projects.loading}
+            after={!collection ? 'a collection' : undefined}
           />
         </Field>
         <Field label="Repository" htmlFor="repository">
@@ -284,7 +285,8 @@ export function PipelineRequestPage() {
             projects={(repositories.data ?? []).map((r) => ({ name: r.name, description: null }))}
             value={repository}
             onChange={setRepository}
-            loading={!project || repositories.loading}
+            loading={repositories.loading}
+            after={!project ? 'a project' : undefined}
           />
         </Field>
       </FormSection>

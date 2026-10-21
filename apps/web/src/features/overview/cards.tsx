@@ -1,15 +1,16 @@
 import { lazy, Suspense, useMemo, type ReactNode } from 'react'
-import { AlertCircle, ArrowRight, Boxes, ChevronDown, CircleCheck, Inbox, ListChecks, Plus, Server, TriangleAlert, Users, Workflow, type LucideIcon } from 'lucide-react'
+import { AlertCircle, ArrowRight, Boxes, ChevronDown, ChevronRight, CircleCheck, Inbox, ListChecks, Plus, Server, TriangleAlert, Users, Workflow, type LucideIcon } from 'lucide-react'
+import { AnimatePresence, m } from 'motion/react'
 import { Link, useNavigate } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import { Skeleton } from '@/components/ui/skeleton'
 import { BarsSkeleton, Loading, RowsSkeleton } from '@/components/skeletons.tsx'
 import type { Profile } from '@eidp/contracts/auth'
 import { buildPath, jenkinsApi } from '@/features/jenkins/api.ts'
-import { JobName, ResultBadge } from '@/features/jenkins/result.tsx'
+import { JobName, RESULT, ResultBadge } from '@/features/jenkins/result.tsx'
 import { isBroken, pipelinesApi } from '@/features/pipelines/api.ts'
 import { useCatalog } from '@/features/projects/catalog-context.tsx'
 import { isInFlight, requestsApi } from '@/features/requests/api.ts'
@@ -18,6 +19,7 @@ import { RequestRow } from '@/features/requests/request-row.tsx'
 import { since } from '@/features/requests/status.tsx'
 import { useResource } from '@/lib/use-resource.ts'
 import { CARDS, topWithOther, type CardInfo, type Viewer } from './card-list.ts'
+import { StatTile } from '@/components/stat-tile.tsx'
 
 // Recharts is most of the weight of the catalog card and nothing else's.
 const RankedBars = lazy(() => import('./charts.tsx').then((module) => ({ default: module.RankedBars })))
@@ -63,7 +65,8 @@ const useJenkins = (on: boolean) =>
 
 // ---- Needs you --------------------------------------------------------------
 
-type Need = { key: string; icon: LucideIcon; text: ReactNode; to: string; tone: 'act' | 'look' }
+/** One thing to do: what it is, what opening it does (`hint`), and whether it asks someone to act or to read. */
+type Need = { key: string; icon: LucideIcon; text: ReactNode; hint: string; to: string; tone: 'act' | 'look' }
 
 /** Everything someone could act on now, from each part of the portal they can see. A count of it heads the page. */
 export function useNeeds(v: Viewer): { needs: Need[]; loading: boolean } {
@@ -74,27 +77,27 @@ export function useNeeds(v: Viewer): { needs: Need[]; loading: boolean } {
   const needs = useMemo(() => {
     const out: Need[] = []
     const pending = pool.data?.open.filter((r) => r.status === 'pending') ?? []
-    if (pending.length) out.push({ key: 'decide', icon: ListChecks, text: `${pending.length} ${pending.length === 1 ? 'request waits' : 'requests wait'} for your decision`, to: '/approvals', tone: 'act' })
+    if (pending.length) out.push({ key: 'decide', icon: ListChecks, text: `${pending.length} ${pending.length === 1 ? 'request waits' : 'requests wait'} for your decision`, to: '/approvals', hint: 'Decide in Approvals', tone: 'act' })
     const failedPool = pool.data?.open.filter((r) => r.status === 'failed') ?? []
-    if (failedPool.length) out.push({ key: 'retry', icon: AlertCircle, text: `${failedPool.length} approved ${failedPool.length === 1 ? 'request' : 'requests'} failed and need a retry`, to: '/approvals', tone: 'act' })
+    if (failedPool.length) out.push({ key: 'retry', icon: AlertCircle, text: `${failedPool.length} approved ${failedPool.length === 1 ? 'request' : 'requests'} failed and need a retry`, to: '/approvals', hint: 'Retry from Approvals', tone: 'act' })
     // A pushed pipeline whose provisioning or test build failed in Jenkins: the request is done, the step is not.
     for (const r of [...(pool.data?.open ?? []), ...(pool.data?.recent ?? [])].filter((r) => r.steps?.some((s) => s.status === 'failed')).slice(0, 5)) {
       const step = r.steps.find((s) => s.status === 'failed')!
-      out.push({ key: `step-${r.id}`, icon: Workflow, text: <>{step.step === 'provision' ? 'Provisioning' : 'The first test build'} of <b className="font-medium">{r.pipeline?.application ?? r.repository}</b> failed in Jenkins</>, to: `/requests/${r.id}`, tone: 'act' })
+      out.push({ key: `step-${r.id}`, icon: Workflow, text: <>{step.step === 'provision' ? 'Provisioning' : 'The first test build'} of <b className="font-medium">{r.pipeline?.application ?? r.repository}</b> failed in Jenkins</>, to: `/requests/${r.id}`, hint: 'Run it again from the request', tone: 'act' })
     }
     // Your own requests that went wrong in the last week: rejected (read why) or failed (DevOps retries; you may want to know).
     const week = Date.now() - 7 * 86_400_000
     for (const r of mine.data ?? []) {
       if ((r.status === 'rejected' || r.status === 'failed') && new Date(r.requestedAt).getTime() > week) {
-        out.push({ key: `req-${r.id}`, icon: TriangleAlert, text: <>Your request for <b className="font-medium">{r.repository ?? r.project}</b> {r.status === 'rejected' ? 'was rejected' : 'failed'}</>, to: `/requests/${r.id}`, tone: 'look' })
+        out.push({ key: `req-${r.id}`, icon: TriangleAlert, text: <>Your request for <b className="font-medium">{r.repository ?? r.project}</b> {r.status === 'rejected' ? 'was rejected' : 'failed'}</>, to: `/requests/${r.id}`, hint: r.status === 'rejected' ? 'Read why' : 'See what happened', tone: 'look' })
       }
     }
     for (const p of (pipes.data?.pipelines ?? []).filter((p) => isBroken(p.last.result)).slice(0, 5)) {
-      out.push({ key: `pipe-${p.key}`, icon: Workflow, text: <><b className="font-medium">{p.job}</b>{p.applications.length ? ` (${p.applications.join(', ')})` : ''} is {p.last.result === 'unstable' ? 'unstable' : 'failing'}</>, to: buildPath(p.last, '/pipelines'), tone: 'act' })
+      out.push({ key: `pipe-${p.key}`, icon: Workflow, text: <><b className="font-medium">{p.job}</b>{p.applications.length ? ` (${p.applications.join(', ')})` : ''} is {p.last.result === 'unstable' ? 'unstable' : 'failing'}</>, to: buildPath(p.last, '/pipelines'), hint: 'Open the last build', tone: 'act' })
     }
     const j = jenkins.data
-    if (j && j.counts.failing > 0) out.push({ key: 'jenkins-failing', icon: Server, text: `${j.counts.failing} Jenkins ${j.counts.failing === 1 ? 'job is' : 'jobs are'} failing`, to: '/jenkins?tab=failures', tone: 'act' })
-    if (j && j.counts.agentsOffline > 0) out.push({ key: 'agents', icon: Server, text: `${j.counts.agentsOffline} Jenkins ${j.counts.agentsOffline === 1 ? 'agent is' : 'agents are'} offline`, to: '/jenkins?tab=agents', tone: 'act' })
+    if (j && j.counts.failing > 0) out.push({ key: 'jenkins-failing', icon: Server, text: `${j.counts.failing} Jenkins ${j.counts.failing === 1 ? 'job is' : 'jobs are'} failing`, to: '/jenkins?tab=failures', hint: 'See them in Jenkins', tone: 'act' })
+    if (j && j.counts.agentsOffline > 0) out.push({ key: 'agents', icon: Server, text: `${j.counts.agentsOffline} Jenkins ${j.counts.agentsOffline === 1 ? 'agent is' : 'agents are'} offline`, to: '/jenkins?tab=agents', hint: 'See the agents', tone: 'act' })
     return out
   }, [mine.data, pool.data, pipes.data, jenkins.data])
   const loading = !mine.data && !mine.error
@@ -108,23 +111,37 @@ export function NeedsYouCard({ viewer }: { viewer: Viewer }) {
       {loading ? (
         <RowsSkeleton rows={2} bordered={false} />
       ) : needs.length === 0 ? (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <CircleCheck className="size-4 text-success" aria-hidden /> Nothing needs you right now.
+        // The greeting above already says nothing needs you; here, what would show up if something did.
+        <p className="flex items-start gap-2 text-sm text-muted-foreground">
+          <CircleCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+          <span>All clear. Failing pipelines, requests waiting on you and anything of yours that went wrong show up here as they happen.</span>
         </p>
       ) : (
         <ul className="grid gap-2 sm:grid-cols-2">
-          {needs.map((n) => (
-            <li key={n.key}>
-              <Link
-                to={n.to}
-                className="flex items-start gap-2.5 rounded-lg border px-3 py-2 text-sm hover:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-              >
-                {/* Red only for what asks someone to act; the rest is to read. Never colour alone: an icon and the words. */}
-                <n.icon className={`mt-0.5 size-4 shrink-0 ${n.tone === 'act' ? 'text-destructive' : 'text-warning'}`} aria-hidden />
-                <span className="min-w-0">{n.text}</span>
-              </Link>
-            </li>
-          ))}
+          {/* Needs come and go as the portal polls: one arriving fades in, one dealt with fades out, and the rest close up. */}
+          <AnimatePresence initial={false}>
+            {needs.map((n) => (
+              <m.li key={n.key} layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} transition={{ duration: 0.2 }}>
+                <Item asChild variant="outline" size="sm" className="h-full bg-card">
+                  <Link to={n.to}>
+                    {/* Red only for what asks someone to act; the rest is to read. Never colour alone: an icon and the words. */}
+                    <ItemMedia variant="icon" className={n.tone === 'act' ? 'border-destructive/20 bg-destructive/5 text-destructive' : 'border-warning/25 bg-warning-soft text-warning'}>
+                      <n.icon aria-hidden />
+                    </ItemMedia>
+                    <ItemContent>
+                      <ItemTitle className="font-normal">
+                        <span className="min-w-0">{n.text}</span>
+                      </ItemTitle>
+                      <ItemDescription className="text-xs">{n.hint}</ItemDescription>
+                    </ItemContent>
+                    <ItemActions>
+                      <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover/item:translate-x-0.5 motion-reduce:transition-none" aria-hidden />
+                    </ItemActions>
+                  </Link>
+                </Item>
+              </m.li>
+            ))}
+          </AnimatePresence>
         </ul>
       )}
     </CardFrame>
@@ -165,11 +182,12 @@ export function ApprovalsCard() {
 export function JenkinsCard() {
   const jenkins = useJenkins(true)
   const j = jenkins.data
-  const tiles: { label: string; n: number | undefined; to: string; alarm: boolean }[] = [
-    { label: 'Failing', n: j?.counts.failing, to: '/jenkins?tab=failures', alarm: (j?.counts.failing ?? 0) > 0 },
-    { label: 'Running', n: j?.counts.running, to: '/jenkins?tab=runs', alarm: false },
-    { label: 'In queue', n: j?.counts.queued, to: '/jenkins?tab=queue', alarm: false },
-    { label: 'Agents down', n: j?.counts.agentsOffline, to: '/jenkins?tab=agents', alarm: (j?.counts.agentsOffline ?? 0) > 0 },
+  // The same dots as Jenkins' own tiles, so the two read alike.
+  const tiles: { label: string; n: number | undefined; to: string; dot: string; alarm: boolean }[] = [
+    { label: 'Failing', n: j?.counts.failing, to: '/jenkins?tab=failures', dot: RESULT.failure.dot, alarm: (j?.counts.failing ?? 0) > 0 },
+    { label: 'Running', n: j?.counts.running, to: '/jenkins?tab=runs', dot: RESULT.running.dot, alarm: false },
+    { label: 'In queue', n: j?.counts.queued, to: '/jenkins?tab=queue', dot: 'bg-warning', alarm: false },
+    { label: 'Agents down', n: j?.counts.agentsOffline, to: '/jenkins?tab=agents', dot: 'bg-destructive', alarm: (j?.counts.agentsOffline ?? 0) > 0 },
   ]
   return (
     <CardFrame info={CARDS.jenkins} action={<MoreLink to="/jenkins" label="Jenkins" />}>
@@ -178,14 +196,7 @@ export function JenkinsCard() {
       ) : (
         <div className="grid grid-cols-2 gap-2">
           {tiles.map((t) => (
-            <Link key={t.label} to={t.to} className="rounded-lg border px-3 py-2 hover:bg-muted/50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none">
-              <span className="text-xs text-muted-foreground">{t.label}</span>
-              {t.n === undefined ? (
-                <Skeleton className="mt-1 h-6 w-8" />
-              ) : (
-                <span className={`block text-xl font-semibold tabular-nums ${t.alarm ? 'text-primary' : ''}`}>{t.n}</span>
-              )}
-            </Link>
+            <StatTile key={t.label} size="sm" label={t.label} value={t.n} dot={t.dot} alarm={t.alarm} to={t.to} />
           ))}
         </div>
       )}
@@ -301,7 +312,8 @@ export function ProjectsCard({ profile }: { profile: Profile | undefined }) {
       ) : yours.length === 0 ? (
         <p className="flex items-start gap-2 border-t px-6 py-6 text-sm text-muted-foreground">
           <Users className="mt-0.5 size-4 shrink-0" aria-hidden />
-          None of your groups is named in a project’s <code>team.yml</code> yet.
+          {/* One span: as loose flex children the words broke into columns on a phone. */}
+          <span>No project lists one of your teams as an owner yet.</span>
         </p>
       ) : (
         <ul className="divide-y border-t">

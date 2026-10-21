@@ -8,7 +8,7 @@ import { RefreshCatalogButton } from './refresh-catalog-button.tsx'
 export function CatalogUnavailable({ error, onRetry }: { error: string; onRetry: () => void }) {
   return (
     <div className="max-w-prose">
-      <h1 className="text-lg font-semibold tracking-tight">Can’t reach the projects right now</h1>
+      <h1 className="text-xl font-semibold tracking-tight">Can’t reach the projects right now</h1>
       <p className="mt-2 text-muted-foreground">{error}</p>
       <div className="mt-5 flex flex-wrap gap-2">
         {/* For DevOps an empty map is one click from built, not a dead end. */}
