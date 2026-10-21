@@ -11,6 +11,7 @@ import { onAskChatbot } from '@/lib/ask-chatbot.ts'
 import { chatbotApi, type Conversation, type Home } from './api.ts'
 import { ChatThread } from './chat-thread.tsx'
 import { currentPage, useChat } from './use-chat.ts'
+import { AGENT } from '@/lib/agent.ts'
 
 const KEPT = 'eidp.chatbot.dock'
 
@@ -151,7 +152,7 @@ function Dock() {
             </span>
             <div className="min-w-0 flex-1">
               <SheetTitle className="truncate text-sm">{conversation?.title ?? 'Chatbot'}</SheetTitle>
-              <SheetDescription className="truncate text-xs">{home?.ai.model ?? 'The model'} on our own Ollama — it can be wrong</SheetDescription>
+              <SheetDescription className="truncate text-xs">{AGENT} — it can be wrong</SheetDescription>
             </div>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -181,7 +182,7 @@ function Dock() {
           </SheetHeader>
 
           {home && !home.ai.configured ? (
-            <p className="p-4 text-sm text-muted-foreground">The chatbot is not set up: it needs the portal’s Ollama, and OLLAMA_URL is not set on the API.</p>
+            <p className="p-4 text-sm text-muted-foreground">The {AGENT} is not set up yet. Ask DevOps to turn it on.</p>
           ) : (
             <ChatThread
               chat={chat}

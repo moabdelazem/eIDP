@@ -54,7 +54,7 @@ export function FailingNow({ failing, model, onShowAll }: { failing: Failing[]; 
           Failing now — what went wrong
         </span>
       }
-      description={`${model} on our own Ollama read each failure’s log and says what it thinks happened and what to try. It can be wrong — the build page shows the lines it rests on.`}
+      description={`The ${model} read each failure’s log and says what it thinks happened and what to try. It can be wrong — the build page shows the lines it rests on.`}
     >
       <ul className="divide-y">
         {shown.map((f) => (

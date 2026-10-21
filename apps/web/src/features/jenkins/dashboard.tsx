@@ -9,6 +9,7 @@ import { since } from '@/features/requests/status.tsx'
 import { useResource } from '@/lib/use-resource.ts'
 import { CATEGORY, duration, jenkinsApi, percent, WINDOW_LABEL, type Stats, type Totals, type Window } from './api.ts'
 import { JobName } from './result.tsx'
+import { AGENT } from '@/lib/agent.ts'
 
 // The charts pull in recharts; only this tab needs them. Import nothing else
 // from charts.tsx statically, or it rejoins the main bundle.
@@ -121,13 +122,13 @@ export function Dashboard({
               <Sparkles className="size-4 text-[var(--chart-1)]" aria-hidden /> Why builds failed
             </span>
           }
-          description="The model’s reading of each explained failure — a lead, not a fact."
+          description={`The ${AGENT}’s reading of each explained failure — a lead, not a fact.`}
         >
           {s.categories.length === 0 ? (
             <p className="text-sm text-muted-foreground">No failure in this window has been explained yet.</p>
           ) : (
             <Suspense fallback={<BarsSkeleton bars={4} />}>
-              <RankedBars rows={s.categories.map((c) => ({ label: CATEGORY[c.category] ?? c.category, value: c.builds }))} caption="Why builds failed, by the model's category" unit="failures" />
+              <RankedBars rows={s.categories.map((c) => ({ label: CATEGORY[c.category] ?? c.category, value: c.builds }))} caption={`Why builds failed, by the ${AGENT}’s category`} unit="failures" />
             </Suspense>
           )}
         </Section>

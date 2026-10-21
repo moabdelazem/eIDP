@@ -24,9 +24,9 @@ export async function checkPipeline(input: PipelineTarget, except?: string): Pro
 
   if (spec.application.length > APPLICATION_MAX) return fail(`An application name is at most ${APPLICATION_MAX} characters; this one is ${spec.application.length}.`)
   if (!APPLICATION_NAME.test(spec.application)) return fail('An application name is letters, digits, dots, dashes and underscores, starting with a letter or digit — no spaces.')
-  if (spec.application.toLowerCase() === 'all') return fail('“all” holds a project’s own files in inventories; choose another name.')
+  if (spec.application.toLowerCase() === 'all') return fail('“all” is a reserved name; choose another.')
   const prefix = overridePrefix(spec.application)
-  if (prefix) return fail(`Inventories reads a name starting with “${prefix}_” as the ${prefix} override of another application. Choose a name without it.`)
+  if (prefix) return fail(`A name starting with “${prefix}_” is reserved. Choose a name without it.`)
 
   const template = await technology(spec.technology)
   if (!template) return fail(`Pipelines for ${spec.technology} are not set up in the portal.`)
@@ -47,8 +47,8 @@ export async function checkPipeline(input: PipelineTarget, except?: string): Pro
   if (!repos.some((r) => same(r.name, input.repository))) return fail(`${input.project} has no repository called ${input.repository}.`)
 
   const project = await pipelineProject(input.project)
-  if (project.exists && spec.newProject) return fail(`${input.project} already has its project files in inventories; they are reused, so its teams are not asked for.`)
-  if (!project.exists && !spec.newProject) return fail(`${input.project} is new to inventories: its teams and namespaces are needed.`)
+  if (project.exists && spec.newProject) return fail(`${input.project} is already set up for pipelines, so its teams are not asked for.`)
+  if (!project.exists && !spec.newProject) return fail(`${input.project} has no pipelines yet: its teams and environments are needed.`)
   if (spec.newProject) {
     const t = spec.newProject.teams
     const missing = (

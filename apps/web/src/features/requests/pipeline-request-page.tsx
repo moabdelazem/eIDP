@@ -162,7 +162,7 @@ export function PipelineRequestPage() {
     }
   }
 
-  const lead = 'A build and deploy pipeline for an application, written into inventories once someone in DevOps approves it.'
+  const lead = 'A build and deploy pipeline for an application, set up for you once someone in DevOps approves it.'
   if (collections.error) {
     return <Unreachable type={type} lead={lead} message="Azure DevOps can’t be reached right now, so there is no repository to choose." error={collections.error} onRetry={collections.reload} />
   }
@@ -203,7 +203,6 @@ export function PipelineRequestPage() {
     { label: 'Team chosen', done: team !== '', missing: 'Choose your team.' },
     { label: 'Reason given', done: justification.trim() !== '', missing: 'Say why it is needed.' },
   ]
-  const system = inventory.data?.system ?? project
 
   return (
     <RequestFormPage
@@ -214,19 +213,17 @@ export function PipelineRequestPage() {
         <ReviewPanel
           ready={ready}
           steps={[
-            'Someone in DevOps reads the files it will write.',
-            'They are pushed to inventories, checked against it as it is then.',
-            'The commit appears on your request, and the application on the map.',
+            'Someone in DevOps reviews your request.',
+            'Once approved, your pipeline is set up and a first build runs.',
+            'You can follow each step on your request, and the application appears on the map.',
           ]}
         >
           <SummaryItem label="You’re asking for">
             <TargetPath parts={[collection || '…', project || '…', repository || '…']} className="block text-[15px]" />
           </SummaryItem>
           {application && (
-            <SummaryItem label="Written to inventories at">
-              <code className="block text-xs break-words">
-                {system || '…'}/group_vars/{application}/
-              </code>
+            <SummaryItem label="Application">
+              <span className="block text-sm break-words">{application}</span>
             </SummaryItem>
           )}
           {technology && (
@@ -292,8 +289,8 @@ export function PipelineRequestPage() {
         </Field>
       </FormSection>
 
-      <FormSection step={2} title="Application" description="How it is named in inventories, built and deployed.">
-        <Field label="Application name" htmlFor="application" hint="Its directory in inventories. The repository’s name unless the application is called something else.">
+      <FormSection step={2} title="Application" description="What it is called, and how it is built and deployed.">
+        <Field label="Application name" htmlFor="application" hint="The repository’s name, unless the application is called something else.">
           <Input
             id="application"
             value={application}
@@ -393,13 +390,13 @@ export function PipelineRequestPage() {
             ))}
           </>
         )}
-        <CheckMessage id="pipeline-check" check={checkState(verdict, 'Checking Azure DevOps, the registry and inventories…', 'Nothing in the way — this pipeline can be asked for.')} />
+        <CheckMessage id="pipeline-check" check={checkState(verdict, 'Checking your pipeline can be set up…', 'Nothing in the way — this pipeline can be asked for.')} />
       </FormSection>
 
       <FormSection
         step={3}
-        title="Project in inventories"
-        description={!project ? 'Whether the project already has its files in inventories.' : isNew ? 'New to inventories: its teams and namespaces are written with the application.' : 'Already in inventories: its project files are reused as they are.'}
+        title="Project"
+        description={!project ? 'Whether the project is already set up for pipelines.' : isNew ? 'This project’s first pipeline: tell us who works on it and where it deploys.' : 'Already set up for pipelines: nothing more is needed.'}
       >
         {!project ? (
           <p className="text-sm text-muted-foreground">Choose a project first.</p>
@@ -407,7 +404,7 @@ export function PipelineRequestPage() {
           <Skeleton className="h-9 w-full" />
         ) : !isNew ? (
           <p className="text-sm">
-            <code>{inventory.data?.system}</code> already has its <code>team.yml</code> and namespaces.
+            <span className="font-medium">{inventory.data?.system}</span> already has its teams and environments.
           </p>
         ) : (
           <>
@@ -457,7 +454,7 @@ export function PipelineRequestPage() {
             </div>
             {needsNamespaces && (
               <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">Each environment’s namespace. Its token is written as a placeholder and set by DevOps.</p>
+                <p className="text-sm text-muted-foreground">Each environment’s namespace. DevOps sets up its access.</p>
                 {environments.map((env) => (
                   <div key={env.key} className="grid gap-4 sm:grid-cols-2">
                     <Field label={`${env.label} namespace`} htmlFor={`ns-${env.key}`}>
