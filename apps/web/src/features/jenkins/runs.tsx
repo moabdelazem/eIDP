@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router'
 import { ChevronLeft, ChevronRight, RotateCcw, Search, SlidersHorizontal, Square, X } from 'lucide-react'
 import { Loading, RowsSkeleton } from '@/components/skeletons.tsx'
@@ -14,6 +14,7 @@ import { useResource } from '@/lib/use-resource.ts'
 import type { Pending } from './actions.tsx'
 import { buildKey, buildPath, duration, jenkinsApi, lastOpenedBuild, WINDOW_LABEL, type Parameter, type Result, type Run, type Window } from './api.ts'
 import { JobName, OpenedLast, RESULT, ResultBadge } from './result.tsx'
+import { useDebouncedSearch } from '@/lib/use-debounced-search.ts'
 
 const PAGE_SIZE = 50
 /** Parameters shown in a row before the rest fold into "+N". */
@@ -49,19 +50,8 @@ export function Runs({
   canOperate: boolean
   onAct: (pending: Pending) => void
 }) {
-  // Typed text settles for a moment before it becomes the search.
-  const [text, setText] = useState(q)
-  // The URL can change under the box (a chip clicked, back pressed): follow it.
-  const [shownQ, setShownQ] = useState(q)
-  if (q !== shownQ) {
-    setShownQ(q)
-    setText(q)
-  }
-  useEffect(() => {
-    if (text === q) return
-    const timer = setTimeout(() => onChange({ q: text }), 300)
-    return () => clearTimeout(timer)
-  }, [text, q, onChange])
+  // Typed text settles for a moment before it becomes the search — and the API request; a chip or back follows the URL.
+  const { text, setText, flush } = useDebouncedSearch(q, (value) => onChange({ q: value }), 300)
 
   // A new search starts at the newest builds: the page (jenkins-page.tsx) drops `page` when the filters change.
   const offset = (pageNumber - 1) * PAGE_SIZE
@@ -84,6 +74,7 @@ export function Runs({
           <Input
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && flush()}
             placeholder="Job, parameter value, agent, #build — or NAME=value"
             className="pr-8 pl-8 font-mono text-sm"
             aria-label="Search builds"

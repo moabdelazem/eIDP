@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Input } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
+import { useDebouncedSearch } from '@/lib/use-debounced-search.ts'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
@@ -30,6 +31,8 @@ type Props = {
  */
 export function MapToolbar({ filters, onChange, facets, showing, total, view, onView }: Props) {
   const search = useRef<HTMLInputElement>(null)
+  // The box answers each keystroke; the map is rebuilt only once typing pauses (or on Enter).
+  const { text, setText, flush } = useDebouncedSearch(filters.query, (query) => onChange({ ...filters, query }))
   const narrowed = filters.technologies.length + filters.environments.length > 0 || filters.query.trim() !== ''
 
   useEffect(() => {
@@ -50,15 +53,30 @@ export function MapToolbar({ filters, onChange, facets, showing, total, view, on
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <Input
             ref={search}
-            value={filters.query}
-            onChange={(event) => onChange({ ...filters, query: event.target.value })}
-            onKeyDown={(event) => event.key === 'Escape' && filters.query && onChange({ ...filters, query: '' })}
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') flush()
+              if (event.key === 'Escape' && text) {
+                setText('')
+                onChange({ ...filters, query: '' })
+              }
+            }}
             placeholder="Search systems, applications, repositories"
             aria-label="Search systems, applications and repositories"
             className="bg-card pr-10 pl-9"
           />
-          {filters.query ? (
-            <Button size="icon" variant="ghost" className="absolute top-1/2 right-1 size-7 -translate-y-1/2" onClick={() => onChange({ ...filters, query: '' })} aria-label="Clear the search">
+          {text ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="absolute top-1/2 right-1 size-7 -translate-y-1/2"
+              onClick={() => {
+                setText('')
+                onChange({ ...filters, query: '' })
+              }}
+              aria-label="Clear the search"
+            >
               <X />
             </Button>
           ) : (

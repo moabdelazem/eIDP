@@ -22,6 +22,7 @@ import { failingOf, FailingNow } from './failing-now.tsx'
 import { PipelineRow, RunRow, sameRow } from './rows.tsx'
 import { AGENT } from '@/lib/agent.ts'
 import { StatTile } from '@/components/stat-tile.tsx'
+import { useDebouncedSearch } from '@/lib/use-debounced-search.ts'
 
 type Show = 'all' | 'failed' | 'running' | 'operable'
 type View = 'runs' | 'pipelines'
@@ -85,6 +86,8 @@ export function PipelinesPage() {
       },
       { replace: true },
     )
+  // The URL (and the filtering of every run) follows the box once typing pauses.
+  const search = useDebouncedSearch(q, (value) => set('q', value))
 
   const header = (
     <PageHeader
@@ -262,13 +265,14 @@ export function PipelinesPage() {
             <div className="relative max-w-sm">
               <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
               <Input
-                value={q}
-                onChange={(e) => set('q', e.target.value)}
+                value={search.text}
+                onChange={(e) => search.setText(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && search.flush()}
                 placeholder="Job, app, parameter or #number"
                 aria-label="Search your runs"
                 className="h-8 pr-8 pl-8"
               />
-              {q && (
+              {search.text && (
                 <button
                   type="button"
                   onClick={() => set('q', '')}

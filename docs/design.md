@@ -68,6 +68,8 @@ stays quiet.
 
 `apps/web/src/assets/logo.png` is the logo the app uses: the supplied mark
 with its baked `rgb(240,243,250)` background knocked out and the padding
-trimmed, so it sits on the eggplant rail and on paper without a visible box.
+trimmed, so it sits on the eggplant rail and on paper without a visible box,
+and scaled to 128 px — over three times the 36 px it is ever shown at, sharp on
+a high-density screen, 7 KB instead of 21 on every first load.
 `logo-source.png` beside it is the untouched original. Replacing the logo
 means repeating that knockout, or supplying one with real transparency.

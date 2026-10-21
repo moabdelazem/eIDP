@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { compress } from 'hono/compress'
 import { onError } from './lib/errors.ts'
 import type { AppEnv } from './middleware/auth.ts'
 import { observe } from './middleware/observe.ts'
@@ -24,6 +25,15 @@ export function createApp() {
   const app = new Hono<AppEnv>()
 
   app.use(observe)
+  /*
+   * Gzip what is worth it (over 1 KB, a text type). The HTTPRoute sends /api
+   * to this process directly, past nginx's gzip, so without this the catalog
+   * — a JSON document per application — crossed the network uncompressed.
+   * Hono's own content filter leaves `text/event-stream` alone: the chatbot's
+   * stream must reach the browser as it is written, not when a gzip block
+   * fills.
+   */
+  app.use(compress())
   app.onError(onError)
 
   app.route('/health', healthRoutes)

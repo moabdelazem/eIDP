@@ -34,6 +34,7 @@ import { ApiError } from '@/lib/api-client.ts'
 import { rbacApi, type Binding, type Catalogue } from './api.ts'
 import { ExpiryField, expiryToIso, isoToDay } from './expiry-field.tsx'
 import { RoleBadge, roleLabel, ScopeBadge, STATUS, StatusBadge, statusOf, Subject, type Status } from './shared.tsx'
+import { useDebouncedSearch } from '@/lib/use-debounced-search.ts'
 
 type SortKey = 'who' | 'role' | 'added' | 'expires'
 
@@ -110,6 +111,8 @@ export function BindingsTab({
       return next
     })
   const filtering = q || role !== 'all' || who !== 'all' || status !== 'all'
+  // The URL and the table follow the box once typing pauses.
+  const search = useDebouncedSearch(q, (value) => set('q', value, ''), 200)
 
   return (
     <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
@@ -119,8 +122,9 @@ export function BindingsTab({
           <Input
             aria-label="Search bindings"
             placeholder="Search who, scope, reason or who granted it"
-            value={q}
-            onChange={(e) => set('q', e.target.value, '')}
+            value={search.text}
+            onChange={(e) => search.setText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && search.flush()}
             className="pl-8"
           />
         </div>

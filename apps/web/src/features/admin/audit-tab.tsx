@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { AuditEntry, Catalogue } from './api.ts'
 import { roleLabel, ScopeBadge, Subject } from './shared.tsx'
+import { useDebouncedSearch } from '@/lib/use-debounced-search.ts'
 
 type Action = AuditEntry['action']
 
@@ -26,6 +27,7 @@ const expiry = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString()
 export function AuditTab({ entries, catalogue }: { entries: AuditEntry[]; catalogue: Catalogue }) {
   const [action, setAction] = useState<Action | 'all'>('all')
   const [q, setQ] = useState('')
+  const search = useDebouncedSearch(q, setQ, 200)
 
   const days = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -45,7 +47,7 @@ export function AuditTab({ entries, catalogue }: { entries: AuditEntry[]; catalo
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-56 flex-1 sm:max-w-sm">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input aria-label="Search the audit log" placeholder="Who did it, to whom, or which role" value={q} onChange={(e) => setQ(e.target.value)} className="pl-8" />
+          <Input aria-label="Search the audit log" placeholder="Who did it, to whom, or which role" value={search.text} onChange={(e) => search.setText(e.target.value)} className="pl-8" />
         </div>
         <ToggleGroup type="single" variant="outline" size="sm" value={action} onValueChange={(v) => v && setAction(v as Action | 'all')} aria-label="What happened" className="flex-wrap">
           <ToggleGroupItem value="all" className="px-3">

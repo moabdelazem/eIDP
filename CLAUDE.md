@@ -116,6 +116,7 @@ The ones that have broken something before, or would quietly. Each doc says why.
 - **Log with `lib/log.ts`**, never `console` (the CLI scripts aside): one line per event, fields not prose, and the request id rides along. (`docs/operations.md`)
 - **The API's JSON shapes live in `packages/contracts`**, imported with `import type` only; a contract file holds no values and imports nothing outside the package. Routes that add a field say what they send with `satisfies`. (`docs/web.md`)
 - **Reads go through `useResource(key, …)`**; the same key is the same request, so name keys for what they fetch. (`docs/web.md`)
+- **A search box uses `useDebouncedSearch`** (`lib/use-debounced-search.ts`): it commits — to the URL, a query key, a filter over many rows — when typing pauses, never per keystroke. Choosing a map card must not rerun its layout. (`docs/web.md`, *Staying fast*)
 - **Pages are `lazyPage`s, charts and the stage graph are lazy too** — a static import puts them back in everyone's bundle. (`docs/web.md`)
 - **A guarded page is four edits**: `manageItems`, `<RequirePermission>`, `requirePermission`, and `DEVOPS_ONLY` in `modules/access/routes.test.ts`. A new permission is the contract's `Permission` plus its `PERMISSIONS` entry. (`docs/access.md`)
 - **Catalog data shown to a person goes through `catalogReach`** (access): each person sees the projects their teams own, not the whole map, and a page, chatbot tool or export that skips it leaks what `/catalog` withholds. (`docs/access.md`, `docs/platform.md`)

@@ -23,7 +23,8 @@ const CatalogContext = createContext<CatalogValue | null>(null)
  * while the new one comes.
  */
 export function CatalogProvider({ children }: { children: ReactNode }) {
-  const catalog = useResource(['catalog'], fetchCatalog)
+  // The catalog changes when a sync lands — minutes apart — so a minute fresh; past that the API answers an unchanged one with a 304 (ETag).
+  const catalog = useResource(['catalog'], fetchCatalog, { staleMs: 60_000 })
   const value = useMemo<CatalogValue>(
     () => ({
       status: catalog.data ? 'ready' : catalog.error ? 'error' : 'loading',

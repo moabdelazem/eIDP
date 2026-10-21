@@ -18,6 +18,7 @@ import { chatbotApi, type Conversation } from './api.ts'
 import { ChatThread } from './chat-thread.tsx'
 import { useChat } from './use-chat.ts'
 import { AGENT } from '@/lib/agent.ts'
+import { useDebouncedSearch } from '@/lib/use-debounced-search.ts'
 
 /**
  * The chatbot, full page: conversations listed beside the chat (in a sheet on
@@ -174,6 +175,7 @@ function ConversationList({
   onRename: (conversation: Conversation, title: string) => Promise<void>
 }) {
   const [search, setSearch] = useState('')
+  const box = useDebouncedSearch(search, setSearch, 150)
   const [editing, setEditing] = useState<string | null>(null)
   const needle = search.trim().toLowerCase()
   const shown = needle ? conversations.filter((c) => c.title.toLowerCase().includes(needle)) : conversations
@@ -190,7 +192,7 @@ function ConversationList({
       {conversations.length > 5 && (
         <div className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search conversations" aria-label="Search conversations" className="h-8 pl-8 text-sm" />
+          <Input value={box.text} onChange={(e) => box.setText(e.target.value)} placeholder="Search conversations" aria-label="Search conversations" className="h-8 pl-8 text-sm" />
         </div>
       )}
       {conversations.length === 0 ? (

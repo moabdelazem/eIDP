@@ -16,16 +16,19 @@ export type Resource<T> = {
  * components is one request and one answer — and carries everything the
  * fetch depends on, so a new value is a new fetch.
  *
- * `pollMs` refetches on an interval while the tab is visible; `null` stops
+ * `staleMs` overrides how long an answer stays fresh (`lib/query-client.ts`
+ * says five seconds). `pollMs` refetches on an interval while the tab is visible; `null` stops
  * polling, which is how a page watching an in-flight request stops once it
  * settles. While a new key loads, the previous key's data stays on screen
  * (`loading` says so), as a table keeps its rows while the next page comes.
  */
-export function useResource<T>(key: QueryKey, fetcher: () => Promise<T>, { pollMs = null as number | null } = {}): Resource<T> {
+export function useResource<T>(key: QueryKey, fetcher: () => Promise<T>, { pollMs = null as number | null, staleMs = undefined as number | undefined } = {}): Resource<T> {
   const query = useQuery({
     queryKey: key,
     queryFn: fetcher,
     refetchInterval: pollMs ?? false,
+    // How long an answer counts as fresh, when it is not the cache's five seconds: something that changes rarely (the catalog) need not be asked again on every tab focus.
+    ...(staleMs !== undefined ? { staleTime: staleMs } : {}),
     placeholderData: keepPreviousData,
   })
   const { refetch } = query

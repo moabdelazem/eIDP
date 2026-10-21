@@ -5,6 +5,25 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rolldownOptions: {
+      output: {
+        /*
+         * The libraries every page loads, in a chunk of their own: a deploy
+         * that changes only the portal's code leaves this file's hash — and
+         * every browser's cached copy — as it was. Only libraries the first
+         * page already needs: a group catching all of node_modules would pull
+         * the lazy ones (charts, Shiki, React Flow) into the first load.
+         */
+        codeSplitting: {
+          groups: [
+            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler|react-router)[\\/]/, priority: 20 },
+            { name: 'vendor', test: /node_modules[\\/](@tanstack[\\/]|next-themes|sonner)/, priority: 10 },
+          ],
+        },
+      },
+    },
+  },
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
