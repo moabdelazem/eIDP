@@ -241,12 +241,6 @@ importers:
       d3-hierarchy:
         specifier: ^3.1.2
         version: 3.1.2
-      d3-selection:
-        specifier: ^3.0.0
-        version: 3.0.0
-      d3-zoom:
-        specifier: ^3.0.0
-        version: 3.0.0
       lucide-react:
         specifier: ^1.48.0
         version: 1.48.0(react@19.3.0)
@@ -296,12 +290,6 @@ importers:
       '@types/d3-hierarchy':
         specifier: ^3.1.7
         version: 3.1.7
-      '@types/d3-selection':
-        specifier: ^3.0.12
-        version: 3.0.12
-      '@types/d3-zoom':
-        specifier: ^3.0.8
-        version: 3.0.8
       '@types/node':
         specifier: ^24.13.3
         version: 24.19.0

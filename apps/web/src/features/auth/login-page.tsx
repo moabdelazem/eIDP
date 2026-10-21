@@ -145,7 +145,7 @@ export function LoginPage() {
  * itself once when the page opens; with reduced motion it is simply there.
  */
 function BranchArt() {
-  // Root at the left, two levels of children: the shape mind-map.tsx draws.
+  // Root at the left, two levels of children: the shape flow-map.tsx draws.
   const root = { x: 60, y: 300 }
   const apps = [
     { x: 250, y: 150, envs: [70, 130, 190] },

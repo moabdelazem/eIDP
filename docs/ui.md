@@ -19,9 +19,13 @@ How pages are named, laid out and loaded; how identifiers wrap; dialogs; tables;
   value.** A handler that resets other fields (a collection emptying its
   project) must ignore the value it already has, or it wipes what a link
   prefilled.
-- **The map's search lives in the URL** (`/map?q=`), so links land on a filtered
-  map and back/forward keep it. Phones open the map on the List view — a tree
-  needs width a phone does not have.
+- **The map's whole state lives in the URL** — search (`q`), technologies
+  (`tech`), environments (`env`), the view and the chosen card (`sel`) — so a
+  link lands on exactly that map, opened down to what it chose, and
+  back/forward keep it. Which branches are open does not: it follows from the
+  filters and the choice. Phones open the map on the List view — a tree needs
+  width a phone does not have. `/` jumps to the search; Escape lets go of the
+  chosen card.
 - **`DataView` (`components/data-view.tsx`) shows any object as highlighted
   YAML or JSON**, with copy and download. shadcn has no code or syntax
   component — only a styled inline `<code>` — so it is built on Shiki, which
