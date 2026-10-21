@@ -290,7 +290,12 @@ test('a team lead decides access requests for their scope, and nothing else', as
   assert.ok(!seen.includes(creation), 'creating a repository stays with DevOps')
 
   // Opening one says whether dave may decide it; others are not dave's to see.
-  assert.equal((await json<{ canDecide: boolean }>(await call(dave, 'GET', `/requests/${inScope}`))).canDecide, true)
+  const opened = await json<{ canDecide: boolean; assessment?: unknown }>(await call(dave, 'GET', `/requests/${inScope}`))
+  assert.equal(opened.canDecide, true)
+  // The risk assessment is DevOps' alone, not a team lead's.
+  assert.equal(opened.assessment, undefined)
+  assert.ok(!('assessment' in (pool.open.find((r) => r.id === inScope) ?? {})))
+  assert.equal((await call(dave, 'POST', `/requests/${inScope}/assess`)).status, 403)
   assert.equal((await call(dave, 'GET', `/requests/${otherProject}`)).status, 404)
 
   assert.equal((await call(dave, 'POST', `/requests/${otherProject}/reject`, { note: 'no' })).status, 403)

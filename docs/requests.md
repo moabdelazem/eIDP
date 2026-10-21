@@ -294,9 +294,12 @@ the old generator's output, not its traps:
 | Approvers overrode names and YAML at approval, silently | Changes made before approving, each checked and recorded; the requester sees what was changed, by whom, from what |
 
 **Every request is assessed for its approver** (`modules/requests/risk.ts`),
-in the background the moment it is filed, and shown only to people who may
-decide it — on the approval card, in the approve dialog when it is not low,
-and in full on the request page ("Before you approve", with Assess again).
+in the background the moment it is filed, and shown only to DevOps
+(`requests.decide`) — on the approval card, in the approve dialog when it is
+not low, and in full on the request page ("Before you approve", with Assess
+again). Not the requester, and not a team lead deciding an access request:
+the API leaves `assessment` off for them (`lifecycle.ts`), refuses them
+Assess again, and the page shows the panel only when it is there.
 The **facts** are the portal's, checked in code: who gets access and whether
 they are in the teams that own the project (`teamsOwning`, from the catalog);
 whether that project deploys to `prd`/`prd_dr`; whether the requester is in
@@ -310,6 +313,14 @@ it fails, the facts and the level still stand and the page says why there is
 no summary. One row per request (`request_assessments`), replaced on Assess
 again; the risk tests live in `requests.test.ts`, because that file deletes
 every request, and take the catalog lock (4202) around their own system.
+
+**Requesters read plain words; DevOps read the mechanics.** A pipeline
+request reads "Setting up" / "Set up" (`PIPELINE_LABEL`, the tracker, the
+outcome), under Jenkins in its header; its form and its check messages never
+name inventories, commits, `group_vars` or `team.yml`. The commit link, the
+Jenkins job names, a step's note (settings, the manual command) and "Still to
+do by hand" show only to `requests.decide` (`pipeline-panel.tsx`); a
+requester whose step failed or was skipped reads that DevOps will finish it.
 
 **Every request form has one shape** (`features/requests/form-layout.tsx`):
 a header naming the kind and provider, the form as a card of numbered

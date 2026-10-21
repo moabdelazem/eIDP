@@ -71,7 +71,7 @@ export function isPipeline(request: Pick<PortalRequest, 'kind'>): boolean {
 
 /** Where a request acts, by name — for sentences like "created in Jira". */
 export function systemOf(request: Pick<PortalRequest, 'kind'>): string {
-  return isJira(request) ? 'Jira' : isPipeline(request) ? 'inventories' : 'Azure DevOps'
+  return isJira(request) ? 'Jira' : isPipeline(request) ? 'Jenkins' : 'Azure DevOps'
 }
 
 type Located = Pick<PortalRequest, 'kind' | 'collection' | 'project' | 'projectKey' | 'repository'> & { pipeline?: PortalRequest['pipeline'] }

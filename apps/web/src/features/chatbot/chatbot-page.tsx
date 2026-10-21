@@ -17,6 +17,7 @@ import { useResource } from '@/lib/use-resource.ts'
 import { chatbotApi, type Conversation } from './api.ts'
 import { ChatThread } from './chat-thread.tsx'
 import { useChat } from './use-chat.ts'
+import { AGENT } from '@/lib/agent.ts'
 
 /**
  * The chatbot, full page: conversations listed beside the chat (in a sheet on
@@ -86,7 +87,7 @@ export function ChatbotPage() {
     return (
       <div className={PAGE}>
         <EmptyState title="The chatbot is not set up" icon={Bot}>
-          It needs the portal’s Ollama, and OLLAMA_URL is not set on the API. Ask DevOps to configure it.
+          It is not set up yet. Ask DevOps to turn it on.
         </EmptyState>
       </div>
     )
@@ -108,7 +109,7 @@ export function ChatbotPage() {
               <Bot className="size-5 text-[var(--chart-1)]" aria-hidden />
               <span className="truncate">{current?.title ?? 'Chatbot'}</span>
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">{home.data.ai.model ?? 'The model'} on our own Ollama answers, and it can be wrong.</p>
+            <p className="mt-1 text-sm text-muted-foreground">The {AGENT} answers, and it can be wrong.</p>
           </div>
           <div className="flex gap-2">
             <Sheet>

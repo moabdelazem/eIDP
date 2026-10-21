@@ -17,6 +17,7 @@ import { ApiError } from '@/lib/api-client.ts'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
 import { digestApi, type Digest, type DigestIndex, type RequestItem } from './api.ts'
+import { AGENT } from '@/lib/agent.ts'
 
 /**
  * A team's week (modules/digest/service.ts): how its builds went against the week
@@ -227,12 +228,12 @@ function Summary({ digest: d }: { digest: Digest }) {
           )}
           <p className="mt-3 flex items-center gap-1.5 border-t pt-3 text-xs text-muted-foreground">
             <Sparkles className="size-3 text-[var(--chart-1)]" aria-hidden />
-            Written by {d.model} from the numbers below, {since(d.createdAt)}. It can be wrong; the numbers are the portal’s.
+            Written by the {AGENT} from the numbers below, {since(d.createdAt)}. It can be wrong; the numbers are the portal’s.
           </p>
         </>
       ) : (
         <p className="text-sm text-muted-foreground">
-          No summary for this week — {d.error ? `the model could not write one: ${d.error}` : 'no model was configured when it was written'}. The numbers below are
+          No summary for this week — {d.error ? `the ${AGENT} could not write one: ${d.error}` : `the ${AGENT} was not set up when it was written`}. The numbers below are
           the portal’s own.
         </p>
       )}

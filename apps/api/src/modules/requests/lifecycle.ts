@@ -99,7 +99,11 @@ function filed(request: RequestRecord): RequestRecord {
   return request
 }
 
-/** The records with their assessments attached — only ever called for people who may decide them. */
+/**
+ * The records with their assessments attached — only ever called for DevOps
+ * (`requests.decide`). The assessment is DevOps' tool for weighing a request;
+ * nobody else sees it, not even a team lead deciding their own team's access.
+ */
 async function withAssessments(requests: RequestRecord[]): Promise<RequestRecord[]> {
   const found = await assessmentsOf(requests.map((r) => r.id))
   return requests.map((r) => ({ ...r, assessment: found.get(r.id) ?? null }))
@@ -108,6 +112,7 @@ async function withAssessments(requests: RequestRecord[]): Promise<RequestRecord
 /** Assesses a request again — the directory and the catalog may have changed since it was filed. */
 export async function reassess(id: string, access: Access): Promise<Assessment> {
   await assertCanDecide(id, access)
+  if (!can(access, 'requests.decide')) throw new ApiError(403, 'forbidden', 'The risk assessment is for DevOps.')
   return assess(await find(id))
 }
 
@@ -136,7 +141,7 @@ export async function listPool(access: Access): Promise<{ open: RequestRecord[];
   if (can(access, 'requests.decide')) return { open: await withAssessments(all.open), recent: all.recent }
   const decidable = await decidableBy(access, [...all.open, ...all.recent])
   return {
-    open: await withAssessments(all.open.filter((r) => decidable.has(r.id))),
+    open: all.open.filter((r) => decidable.has(r.id)),
     recent: all.recent.filter((r) => decidable.has(r.id)),
   }
 }
@@ -165,7 +170,8 @@ export async function get(id: string, actor: Actor, access: Access): Promise<Req
   if (request.requestedBy !== actor.uid && !canDecide) {
     throw new ApiError(404, 'request_not_found', 'There is no such request.')
   }
-  if (!canDecide) return { ...request, canDecide }
+  // The risk assessment is DevOps' alone: not the requester's, nor a team lead's.
+  if (!canDecide || !can(access, 'requests.decide')) return { ...request, canDecide }
   const [withAssessment] = await withAssessments([request])
   return { ...withAssessment!, canDecide }
 }

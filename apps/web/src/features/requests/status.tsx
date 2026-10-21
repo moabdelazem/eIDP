@@ -40,8 +40,8 @@ export const statusLabel = (status: string): string => STATUS_LABEL[status as Re
 
 /** Nothing is created by an access request, so its badge says what it does. */
 const GRANT_LABEL: Partial<Record<RequestStatus, string>> = { approved: 'Granting', completed: 'Granted' }
-/** Nor by a pipeline request: its files are pushed to inventories. */
-const PIPELINE_LABEL: Partial<Record<RequestStatus, string>> = { approved: 'Pushing', completed: 'Pushed' }
+/** Nor by a pipeline request: it is set up, in words a requester knows. */
+const PIPELINE_LABEL: Partial<Record<RequestStatus, string>> = { approved: 'Setting up', completed: 'Set up' }
 
 /**
  * What each status looks like: a badge fill and a dot. Red only where someone

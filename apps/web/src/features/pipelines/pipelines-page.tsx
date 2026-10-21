@@ -20,6 +20,7 @@ import { groupsOf, isBroken, isPersonal, pipelinesApi, RUN_WINDOW_LABEL, type My
 import { Aside } from './aside.tsx'
 import { failingOf, FailingNow } from './failing-now.tsx'
 import { PipelineRow, RunRow, sameRow } from './rows.tsx'
+import { AGENT } from '@/lib/agent.ts'
 
 type Show = 'all' | 'failed' | 'running' | 'operable'
 type View = 'runs' | 'pipelines'
@@ -226,7 +227,7 @@ export function PipelinesPage() {
         <div className="mt-6">
           <FailingNow
             failing={failingOf(data.pipelines.filter(inGroup), data.runs)}
-            model={data.ai.model ?? 'The model'}
+            model={AGENT}
             onShowAll={() =>
               setParams(
                 (prev) => {

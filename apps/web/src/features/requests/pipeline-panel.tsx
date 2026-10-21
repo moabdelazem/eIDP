@@ -32,7 +32,7 @@ export function PipelinePanel({ request: r, onChanged }: { request: PortalReques
           ['Build technology', `${spec.technology}${spec.version ? ` ${spec.version}` : ''}${spec.library ? ', a library' : ''}`],
           ['Deploy target', spec.deployTarget === 'OCP' ? 'OpenShift' : 'Kubernetes'],
           ...Object.entries(spec.fields).map(([name, value]) => [name.replaceAll('_', ' '), <code>{value}</code>] as [string, React.ReactNode]),
-          ['Project in inventories', spec.newProject ? 'New — its team.yml and namespaces are written too' : 'Already there; reused'],
+          ['Project', spec.newProject ? 'New — set up with this pipeline' : 'Already set up'],
           ...(r.editedFiles.length ? ([['Files', `${r.editedFiles.length} edited by DevOps before approving`]] as [string, React.ReactNode][]) : []),
         ]}
       />
@@ -210,13 +210,13 @@ function FileList({
 
 // ---- after the push: Jenkins -----------------------------------------------------------
 
-const STEP_NAME: Record<RequestStep['step'], string> = { provision: 'Provisioning', test: 'First test build' }
+const STEP_NAME: Record<RequestStep['step'], string> = { provision: 'Preparing the repository', test: 'First build' }
 
 /** Each status with an icon and a word, never colour alone; red only where someone should act. */
 const LOOK: Record<StepStatus, { icon: LucideIcon; word: string; tone: string; spin?: boolean }> = {
   waiting: { icon: Clock, word: 'Waiting', tone: 'text-muted-foreground' },
   pending: { icon: Loader2, word: 'Starting', tone: 'text-info', spin: true },
-  queued: { icon: Loader2, word: 'Queued in Jenkins', tone: 'text-info', spin: true },
+  queued: { icon: Loader2, word: 'Queued', tone: 'text-info', spin: true },
   running: { icon: Loader2, word: 'Running', tone: 'text-info', spin: true },
   succeeded: { icon: Check, word: 'Passed', tone: 'text-success' },
   failed: { icon: TriangleAlert, word: 'Failed', tone: 'text-destructive' },
@@ -233,6 +233,8 @@ const lookOf = (status: string) => LOOK[status as StepStatus] ?? { icon: CircleD
  */
 function Steps({ request: r, onChanged }: { request: PortalRequest; onChanged: () => void }) {
   const { can } = useProfile()
+  // Job names, settings and commands are DevOps'; a requester sees the steps and how they went.
+  const devops = can('requests.decide')
   const [busy, setBusy] = useState<string | null>(null)
   if (r.steps.length === 0) return null
   const provision = r.steps.find((s) => s.step === 'provision')
@@ -250,7 +252,7 @@ function Steps({ request: r, onChanged }: { request: PortalRequest; onChanged: (
   }
   return (
     <div className="mt-4 space-y-2">
-      <h3 className="text-sm font-semibold">After the push, in Jenkins</h3>
+      <h3 className="text-sm font-semibold">{devops ? 'After the push, in Jenkins' : 'Setting it up'}</h3>
       <ul className="divide-y rounded-md border">
         {r.steps.map((s) => {
           const look = lookOf(s.status)
@@ -262,16 +264,15 @@ function Steps({ request: r, onChanged }: { request: PortalRequest; onChanged: (
               <Icon className={`mt-0.5 size-4 shrink-0 ${look.tone} ${look.spin ? 'animate-spin motion-reduce:animate-none' : ''}`} aria-hidden />
               <div className="min-w-0 flex-1">
                 <p>
-                  <span className="font-medium">{STEP_NAME[s.step] ?? s.step}</span> <span className={look.tone}>· {s.step === 'test' && s.status === 'waiting' ? 'Waits for provisioning' : look.word}</span>
+                  <span className="font-medium">{STEP_NAME[s.step] ?? s.step}</span> <span className={look.tone}>· {s.step === 'test' && s.status === 'waiting' ? 'Waits for the step above' : look.word}</span>
                   {s.attempts > 1 && <span className="text-muted-foreground"> · try {s.attempts}</span>}
                 </p>
-                {s.job && (
+                {s.job && (devops || s.number !== null) && (
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    <code className="break-words">{s.job}</code>
+                    {devops && <code className="break-words">{s.job}</code>}
                     {s.number !== null && (
                       <>
-                        {' '}
-                        #{s.number} ·{' '}
+                        {devops ? ` #${s.number} · ` : null}
                         {can('jenkins.view') ? (
                           <Link className="underline underline-offset-2" to={`/jenkins/build?${new URLSearchParams({ job: s.job, number: String(s.number) })}`}>
                             Open the build
@@ -287,7 +288,9 @@ function Steps({ request: r, onChanged }: { request: PortalRequest; onChanged: (
                     )}
                   </p>
                 )}
-                {s.note && <p className="mt-1 text-xs break-words text-muted-foreground">{s.note}</p>}
+                {devops
+                  ? s.note && <p className="mt-1 text-xs break-words text-muted-foreground">{s.note}</p>
+                  : again && <p className="mt-1 text-xs text-muted-foreground">DevOps will finish this step.</p>}
               </div>
               {r.canDecide && (again || byHand) && (
                 <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void run(s.step)}>
@@ -310,9 +313,11 @@ function Steps({ request: r, onChanged }: { request: PortalRequest; onChanged: (
  * runs it, and says what to run by hand when it does not.
  */
 function ByHand({ request: r }: { request: PortalRequest }) {
+  const { can } = useProfile()
   const spec = r.pipeline!
   const namespaces = Object.entries(spec.newProject?.namespaces ?? {})
-  if (namespaces.length === 0) return null
+  // DevOps' own to-do: nothing a requester does or needs to read.
+  if (namespaces.length === 0 || !can('requests.decide')) return null
   const env = (key: string) => key.toUpperCase().replace('_', '-')
   return (
     <div className="mt-4 space-y-2">

@@ -6,6 +6,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { ApiError } from '@/lib/api-client.ts'
 import { requestsApi, type Assessment } from './api.ts'
 import { since } from './status.tsx'
+import { AGENT } from '@/lib/agent.ts'
 
 /**
  * What an approver should weigh, from modules/requests/risk.ts: facts the
@@ -109,7 +110,7 @@ export function RiskPanel({ requestId, assessment, onChange }: { requestId: stri
       {a.reasonConcerns.length > 0 && (
         <div>
           <p className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Sparkles className="size-3 text-[var(--chart-1)]" aria-hidden /> On the reason given, {a.model ?? 'the model'} notes
+            <Sparkles className="size-3 text-[var(--chart-1)]" aria-hidden /> On the reason given, the {AGENT} notes
           </p>
           <ul className="list-disc space-y-0.5 pl-5">
             {a.reasonConcerns.map((c) => (
@@ -121,7 +122,7 @@ export function RiskPanel({ requestId, assessment, onChange }: { requestId: stri
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
         <p className="text-xs text-muted-foreground">
-          Checked {since(a.createdAt)}. The level counts the cautions; {a.model ? `${a.model} wrote the words, and can be wrong.` : a.error ? `no summary: ${a.error}` : 'no model was asked.'}
+          Checked {since(a.createdAt)}. The level counts the cautions; {a.model ? `the ${AGENT} wrote the words, and can be wrong.` : a.error ? `no summary: ${a.error}` : `the ${AGENT} was not asked.`}
         </p>
         <Button size="sm" variant="ghost" onClick={() => void again()} disabled={busy}>
           {busy ? <Spinner /> : <RotateCcw />} Assess again

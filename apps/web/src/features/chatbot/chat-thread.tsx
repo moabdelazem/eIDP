@@ -29,6 +29,7 @@ import type { PageContext } from './api.ts'
 // react-markdown and its parser load with the first answer, not with every page the dock sits on.
 const Markdown = lazy(() => import('./markdown.tsx').then((m) => ({ default: m.Markdown })))
 import type { Chat, Shown } from './use-chat.ts'
+import { AGENT } from '@/lib/agent.ts'
 
 /**
  * A conversation on screen — the same in the full page and in the dock:
@@ -265,7 +266,7 @@ function Actions({
         <ThumbsDown className={m.feedback === 'down' ? 'fill-current' : ''} />
       </Action>
       <span className="ml-1">
-        {m.model} · {since(m.createdAt)} · can be wrong — check what matters
+        {AGENT} · {since(m.createdAt)} · can be wrong — check what matters
       </span>
     </div>
   )

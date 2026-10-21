@@ -847,7 +847,7 @@ test('pipelines: the form learns the technologies and whether the project is in 
 
 test('pipelines: the check refuses what inventories or the registry could not take', async () => {
   const reason = async (body: Record<string, unknown>) => (await json<{ ok: boolean; reason?: string }>(await call('bob', 'POST', '/requests/check', body))).reason ?? 'ok'
-  assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { application: 'prd_pipe' })), /prd override/)
+  assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { application: 'prd_pipe' })), /“prd_” is reserved/)
   assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { technology: 'Cobol' })), /not set up/)
   assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { fields: {} })), /Artifact ID/)
   assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { version: null })), /version/)
@@ -855,8 +855,8 @@ test('pipelines: the check refuses what inventories or the registry could not ta
   assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { fields: { artifact_id: 'Not Valid' } })), /Artifact ID does not look right. Letters and digits./)
   assert.match(await reason(pipelineRequest('PipeHome', 'no-such-repo')), /no repository called no-such-repo/)
   assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { application: 'Taken-API' })), /already has an application called taken-api/)
-  assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { newProject: { teams, namespaces: {} } })), /already has its project files/)
-  assert.match(await reason(pipelineRequest('PipeLab', 'lab-api')), /new to inventories/)
+  assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { newProject: { teams, namespaces: {} } })), /already set up for pipelines/)
+  assert.match(await reason(pipelineRequest('PipeLab', 'lab-api')), /has no pipelines yet/)
   assert.match(await reason(pipelineRequest('PipeLab', 'lab-api', { newProject: { teams, namespaces: { dev: { name: 'lab-dev', user: null } } } })), /Name the QC namespace/)
   assert.match(await reason(pipelineRequest('PipeLab', 'lab-api', { newProject: { teams: { ...teams, automaticDeployToQc: null }, namespaces: {} } })), /deploy to QC automatically/)
   assert.match(await reason(pipelineRequest('PipeHome', 'pipe-api', { application: 'pipe api' })), /no spaces/)

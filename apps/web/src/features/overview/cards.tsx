@@ -345,7 +345,7 @@ export function CatalogCard() {
   }, [systems])
   return (
     <CardFrame
-      info={{ ...CARDS.catalog, description: sync?.finishedAt ? `${systems.length} systems, ${stats.applications} applications — built from inventories ${since(sync.finishedAt)}.` : CARDS.catalog.description }}
+      info={{ ...CARDS.catalog, description: sync?.finishedAt ? `${systems.length} systems, ${stats.applications} applications — updated ${since(sync.finishedAt)}.` : CARDS.catalog.description }}
       action={<MoreLink to="/map" label="Map" />}
     >
       {status === 'error' ? (
