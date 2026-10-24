@@ -13,6 +13,11 @@
         var dark = theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
         if (dark) document.documentElement.classList.add('dark')
         document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+        // The colours (lib/palette.ts): e-finance unless this browser chose the classic eggplant.
+        if (localStorage.getItem('eidp.palette') === 'classic') {
+          document.documentElement.dataset.palette = 'classic'
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#2a1930')
+        }
       } catch (e) {}
     </script>
   </head>

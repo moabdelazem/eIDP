@@ -121,7 +121,7 @@ The ones that have broken something before, or would quietly. Each doc says why.
 - **A guarded page is four edits**: `manageItems`, `<RequirePermission>`, `requirePermission`, and `DEVOPS_ONLY` in `modules/access/routes.test.ts`. A new permission is the contract's `Permission` plus its `PERMISSIONS` entry. (`docs/access.md`)
 - **Catalog data shown to a person goes through `catalogReach`** (access): each person sees the projects their teams own, not the whole map, and a page, chatbot tool or export that skips it leaks what `/catalog` withholds. (`docs/access.md`, `docs/platform.md`)
 - **Secrets never leave the parser or the integration** (`[hidden]`), and values are never logged — names only. (`docs/integrations.md`, `docs/jenkins.md`)
-- **Every colour is a token with a value in `:root` and `.dark`**; red only ever means "act on this"; meaning colours always come with an icon and a word. (`docs/design.md`)
+- **Every colour is a token with a value in `:root` and `.dark`** — and in the classic palette's two blocks when it differs there (`docs/design.md`); red only ever means "act on this"; meaning colours always come with an icon and a word. (`docs/design.md`)
 - **All motion sits inside `prefers-reduced-motion: no-preference`.** (`docs/web.md`)
 - **A value from the API never indexes a table without a fallback** (`KIND_ICON[r.kind]`): a newer API or Jenkins sends values this build has never seen, and an undefined component or a destructured `undefined` blanks the page. Use the safe helpers (`kindLabel`, `kindIcon`, `statusLabel`, `statusTone`, `resultOf`) or `?? fallback`, and give every `switch` on one a `default`. (`docs/web.md`)
 - **One `h1` per page, and `usePageTitle`.** Identifiers wrap at `/`, never `break-all`. (`docs/ui.md`)

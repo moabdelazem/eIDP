@@ -104,6 +104,96 @@
   --sidebar-ring: #7fa6e3;
 }
 
+/*
+ * The classic palette — eggplant ground, crimson signal — the colours the
+ * portal started with, kept for anyone who prefers them (lib/palette.ts;
+ * the user menu's Colours). `data-palette="classic"` on <html> outranks the
+ * default's :root and .dark; the dark rule carries both, so it outranks the
+ * light one. Every value here passed the same contrast checks when it was
+ * the default.
+ */
+:root[data-palette='classic'] {
+  --background: #fbf8fa;
+  --foreground: #251829;
+  --card-foreground: #251829;
+  --popover-foreground: #251829;
+  --primary: #c4142b;
+  --primary-foreground: #fff5f6;
+  --secondary: #f0e8f1;
+  --secondary-foreground: #3c2842;
+  --muted: #f3edf4;
+  --muted-foreground: #6b5771;
+  --accent: #4a2b52;
+  --accent-foreground: #faf5fb;
+  --destructive: #c4142b;
+  --destructive-foreground: #fff5f6;
+  --border: #e3d7e6;
+  --input: #e3d7e6;
+  --ring: #7a4a85;
+  --info: #3a4a94;
+  --info-soft: #eaedfa;
+  --rail: #2a1930;
+  --rail-foreground: #e8dcea;
+  --rail-border: #422c4a;
+  --rail-muted: #9c86a4;
+  --sidebar-primary: #e8394f;
+  --sidebar-primary-foreground: #1a0509;
+  --sidebar-accent: #3a2743;
+  --sidebar-accent-foreground: #f6eef7;
+  --sidebar-ring: #9c6faa;
+  --sidebar-hover: #33213a;
+  --sidebar-indicator: #c9a6d6;
+  --skeleton: #ece3ee;
+  --chart-1: #6b3a78;
+  --chart-failure: #c4142b;
+  --chart-aborted: #a898ad;
+  --shiki-token-keyword: #6b3a78;
+  --shiki-token-function: #6b3a78;
+  --shiki-token-parameter: #6b3a78;
+  --shiki-token-comment: #6b5771;
+  --shiki-token-punctuation: #6b5771;
+}
+:root.dark[data-palette='classic'] {
+  --background: #150e18;
+  --foreground: #ece2ee;
+  --card: #1f1523;
+  --card-foreground: #ece2ee;
+  --popover: #1f1523;
+  --popover-foreground: #ece2ee;
+  --primary: #e8394f;
+  --primary-foreground: #1a0509;
+  --secondary: #2c1e31;
+  --secondary-foreground: #ece2ee;
+  --muted: #2c1e31;
+  --muted-foreground: #a08faa;
+  --accent: #3a2740;
+  --accent-foreground: #f2e9f4;
+  --destructive: #e8394f;
+  --destructive-foreground: #1a0509;
+  --border: #392640;
+  --input: #392640;
+  --ring: #9c6faa;
+  --info: #a9b6f2;
+  --info-soft: #1c2240;
+  --skeleton: #2c1e31;
+  --chart-1: #b474d0;
+  --chart-failure: #f0506a;
+  --chart-aborted: #8a7a90;
+  --shiki-token-keyword: #d3a6e0;
+  --shiki-token-function: #d3a6e0;
+  --shiki-token-parameter: #d3a6e0;
+  --shiki-token-comment: #8f7d96;
+  --shiki-token-punctuation: #8f7d96;
+}
+
+/* The palettes as the Colours menu shows them: fixed, whichever is in use, in both themes. */
+:root {
+  --swatch-efinance-ground: #002e6d;
+  --swatch-efinance-signal: #e1241a;
+  --swatch-classic-ground: #2a1930;
+  --swatch-classic-signal: #c4142b;
+}
+
 @theme inline {
   --font-sans: 'Archivo Variable', 'Archivo', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace;

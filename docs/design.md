@@ -19,6 +19,19 @@ tokens point at the rail, so the sidebar is the rail. `shadcn add` writes
 its own neutral values into `src/index.css` — check them after adding any
 component and point them back at the rail.
 
+**Two palettes, chosen per person.** e-finance (above) is the default;
+**Classic** is the eggplant ground and crimson signal the portal started
+with. The user menu's *Colours* picks one, beside *Theme* (light, dark,
+system), so there are four looks in all. It is kept per browser in
+`eidp.palette` (`lib/palette.ts`) and set as `data-palette="classic"` on
+`<html>` before the first paint by index.html's script, as the theme is, so a
+page never flashes the other colours. Classic is a block of overrides in
+`index.css` — `:root[data-palette='classic']` outranks `:root` and `.dark`,
+and `:root.dark[data-palette='classic']` outranks both — so a token added to
+the default palette needs its classic value there too, or Classic quietly
+shows the e-finance one. The menu's swatches are their own tokens
+(`--swatch-*`), fixed whichever palette is in use.
+
 Three **meaning colours** sit beside those two, for state and nothing else:
 `success` (green, done), `warning` (amber, waiting) and `info` (teal, in
 progress), each a text colour plus a `-soft` fill, all 4.5:1 or better in
