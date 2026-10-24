@@ -21,6 +21,8 @@ export type AdoTarget = {
   /** grant_access only. */
   grantees?: string[]
   accessLevel?: AccessLevel
+  /** create_project only: login names that get Contributor with the requester and their team. */
+  developers?: string[]
 }
 
 /** A Jira project: `project` is its name, `projectKey` its key. */
@@ -29,6 +31,8 @@ export type JiraTarget = {
   project: string
   projectKey: string
   description?: string
+  /** Who leads it, by login name, when not the requester. */
+  lead?: string
 }
 
 export type { PipelineTarget } from './pipeline/check.ts'

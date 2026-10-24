@@ -65,7 +65,9 @@ async function perform(request: RequestRecord): Promise<void> {
     if (request.kind === 'create_pipeline') return await executePipeline(request)
     const collection = request.collection!
     const principals: Principal[] = []
-    for (const name of [request.requestedBy, request.teamGroup]) {
+    // A project's developers (`grantees`) get Contributor with the requester and their team.
+    const developers = request.kind === 'create_project' ? (request.grantees ?? []) : []
+    for (const name of [request.requestedBy, request.teamGroup, ...developers]) {
       if (name) principals.push(await findIdentity(collection, name))
     }
     const created = request.resultUrl !== null

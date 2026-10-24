@@ -73,6 +73,7 @@ export function RequestPage() {
               </Section>
             )}
             <Details request={r} own={own} />
+            {r.filedWith && r.filedWith.length > 0 && <FiledWithSection request={r} />}
           </>
         }
       >
@@ -240,6 +241,7 @@ function Details({ request: r, own }: { request: PortalRequest; own: boolean }) 
             ? [['Collection', <code>{r.collection}</code>]]
             : [['Key', <code>{r.projectKey}</code>]]) as [string, React.ReactNode][]),
           ['Project', <code>{r.project}</code>],
+          ...(isJira(r) ? ([['Lead', r.projectLead ? <code>{r.projectLead}</code> : own ? 'You' : r.requestedByName]] as [string, React.ReactNode][]) : []),
           ...(r.repository ? ([['Repository', <code>{r.repository}</code>]] as [string, React.ReactNode][]) : []),
           ...(isPipeline(r) ? [] : ([['Access', <AccessLine request={r} own={own} />]] as [string, React.ReactNode][])),
           ['Requested by', own ? 'You' : r.requestedByName],
@@ -249,6 +251,35 @@ function Details({ request: r, own }: { request: PortalRequest; own: boolean }) 
           ['Finished', at(r.completedAt)],
         ]}
       />
+    </Section>
+  )
+}
+
+/**
+ * The other part of the same New project request — its Jira project, or its
+ * Azure DevOps project — with where it stands. Each is decided on its own, so
+ * a decider moves from one to the other from here.
+ */
+function FiledWithSection({ request: r }: { request: PortalRequest }) {
+  return (
+    <Section title="Asked for with it">
+      <ul className="space-y-2">
+        {r.filedWith!.map((other) => {
+          const Mark = isJira(other) ? JiraIcon : AzureDevOpsIcon
+          return (
+            <li key={other.id}>
+              <Link to={`/requests/${other.id}`} className="block rounded-lg border p-3 transition-colors hover:bg-muted/40">
+                <span className="flex items-center gap-2">
+                  <Mark className="size-4 shrink-0" />
+                  <span className="flex-1 text-sm font-medium">{isJira(other) ? 'Jira project' : 'Azure DevOps project'}</span>
+                  <StatusBadge status={other.status} />
+                </span>
+                <TargetPath parts={targetPath({ ...other, repository: null })} className="mt-1.5 block text-xs text-muted-foreground" />
+              </Link>
+            </li>
+          )
+        })}
+      </ul>
     </Section>
   )
 }

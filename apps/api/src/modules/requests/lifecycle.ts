@@ -1,5 +1,6 @@
-import type { PipelinePreview, RequestRecord, RequestStep, StepName } from '@eidp/contracts/requests'
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
+import type { FiledWith, PipelinePreview, ProjectRequest, RequestRecord, RequestStep, StepName } from '@eidp/contracts/requests'
+import { randomUUID } from 'node:crypto'
+import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm'
 import { profileOf } from '../../integrations/ldap/index.ts'
 import { can, type Access } from '../access/index.ts'
 import { db, isUniqueViolation } from '../../lib/db.ts'
@@ -10,7 +11,7 @@ import { assertCanDecide, decidableBy, mayDecide } from './deciding.ts'
 import { execute } from './execute.ts'
 import { retryStep } from './pipeline/follow-up.ts'
 import { previewPipeline } from './pipeline/write.ts'
-import type { Actor, AdoTarget, NewRequest } from './model.ts'
+import type { Actor, AdoTarget, JiraTarget, NewRequest, Target } from './model.ts'
 import { find, same, toRecord, withSteps } from './rows.ts'
 import { requests } from './schema.ts'
 import { errorFields, log } from '../../lib/log.ts'
@@ -24,43 +25,96 @@ export async function submit(input: NewRequest, actor: Actor): Promise<RequestRe
     throw new ApiError(400, 'invalid_request', 'Say why you need it, so DEVOPS can decide.')
   }
   if (input.kind === 'grant_access') return submitGrant(input, actor)
-  // Whoever is granted access must be the requester's own team: asked of the
-  // directory now, so nobody can hand a repository to a group they are not in.
-  if (!input.teamGroup) throw new ApiError(400, 'invalid_request', 'Choose your team.')
-  const groups = (await profileOf(actor.uid))?.groups ?? []
-  const team = groups.find((group) => same(group, input.teamGroup!))
-  if (!team) {
-    throw new ApiError(400, 'invalid_request', `You are not a member of ${input.teamGroup}. Choose one of your own groups.`)
-  }
+  const team = await ownTeam(input.teamGroup, actor)
   const verdict = await check(input)
   if (!verdict.ok) throw new ApiError(409, 'request_not_possible', verdict.reason)
 
   try {
-    const rows = await db
-      .insert(requests)
-      .values({
-        kind: input.kind,
-        collection: input.kind === 'create_jira_project' ? null : input.collection,
-        project: input.project,
-        projectKey: input.kind === 'create_jira_project' ? input.projectKey : null,
-        repository: input.kind === 'create_repository' || input.kind === 'create_pipeline' ? input.repository : null,
-        description: input.kind === 'create_pipeline' ? null : input.description?.trim() || null,
-        pipeline: input.kind === 'create_pipeline' ? input.pipeline : null,
-        justification: input.justification.trim(),
-        requestedBy: actor.uid,
-        requestedByName: actor.name,
-        teamGroup: team,
-      })
-      .returning()
+    const rows = await db.insert(requests).values(rowOf(input, input.justification, team, actor)).returning()
     return filed(toRecord(rows[0]!))
   } catch (err) {
-    // The check passed, but someone filed the same request in the gap. The
-    // unique index is what actually decides.
-    if (isUniqueViolation(err)) {
-      throw new ApiError(409, 'request_not_possible', 'Someone has just asked for the same thing.')
-    }
-    throw err
+    throw sameThingRaced(err)
   }
+}
+
+/**
+ * Whoever is granted access must be the requester's own team: asked of the
+ * directory now, so nobody can hand a project to a group they are not in.
+ */
+async function ownTeam(teamGroup: string | undefined, actor: Actor): Promise<string> {
+  if (!teamGroup) throw new ApiError(400, 'invalid_request', 'Choose your team.')
+  const groups = (await profileOf(actor.uid))?.groups ?? []
+  const team = groups.find((group) => same(group, teamGroup))
+  if (!team) throw new ApiError(400, 'invalid_request', `You are not a member of ${teamGroup}. Choose one of your own groups.`)
+  return team
+}
+
+/** A creation's row, as filed. */
+function rowOf(input: Exclude<Target, { kind: 'grant_access' }>, justification: string, team: string, actor: Actor, bundleId: string | null = null) {
+  const developers = input.kind === 'create_project' ? uniqueNames(input.developers ?? []) : []
+  const lead = input.kind === 'create_jira_project' ? input.lead?.trim() : undefined
+  return {
+    kind: input.kind,
+    collection: input.kind === 'create_jira_project' ? null : input.collection,
+    project: input.project,
+    projectKey: input.kind === 'create_jira_project' ? input.projectKey : null,
+    repository: input.kind === 'create_repository' || input.kind === 'create_pipeline' ? input.repository : null,
+    description: input.kind === 'create_pipeline' ? null : input.description?.trim() || null,
+    pipeline: input.kind === 'create_pipeline' ? input.pipeline : null,
+    grantees: developers.length > 0 ? developers : null,
+    // The requester leading it is the default, not a value to store.
+    projectLead: lead && !same(lead, actor.uid) ? lead : null,
+    justification: justification.trim(),
+    requestedBy: actor.uid,
+    requestedByName: actor.name,
+    teamGroup: team,
+    bundleId,
+  }
+}
+
+/** The check passed, but someone filed the same thing in the gap: the unique index is what actually decides. */
+function sameThingRaced(err: unknown): unknown {
+  return isUniqueViolation(err) ? new ApiError(409, 'request_not_possible', 'Someone has just asked for the same thing.') : err
+}
+
+/**
+ * A project in Azure DevOps, in Jira, or both, from one form — the old
+ * portal's "Request New DevOps Project". One request per system, filed
+ * together or not at all, and linked (`bundle_id`) so each request page shows
+ * the other. Each is decided, adjusted and retried on its own: approving the
+ * Jira project does not wait on Azure DevOps, nor fail with it.
+ */
+export async function submitProject(input: ProjectRequest, actor: Actor): Promise<RequestRecord[]> {
+  if (!input.justification.trim()) throw new ApiError(400, 'invalid_request', 'Say why you need it, so DEVOPS can decide.')
+  if (!input.ado && !input.jira) throw new ApiError(400, 'invalid_request', 'Choose where the project goes: Azure DevOps, Jira, or both.')
+  const team = await ownTeam(input.teamGroup, actor)
+  const targets: (AdoTarget | JiraTarget)[] = []
+  if (input.ado) targets.push({ kind: 'create_project', collection: input.ado.collection, project: input.project, description: input.description, developers: input.ado.developers })
+  if (input.jira) targets.push({ kind: 'create_jira_project', project: input.project, projectKey: input.jira.projectKey, description: input.description, lead: input.jira.lead })
+
+  // Every part checked before any is filed, each refusal named by its system.
+  const verdicts = await Promise.all(targets.map((target) => check(target)))
+  const refused = verdicts.flatMap((verdict, i) => (verdict.ok ? [] : [`${targets[i]!.kind === 'create_jira_project' ? 'Jira' : 'Azure DevOps'}: ${verdict.reason}`]))
+  if (refused.length > 0) throw new ApiError(409, 'request_not_possible', refused.join(' '))
+
+  const bundleId = targets.length > 1 ? randomUUID() : null
+  try {
+    const rows = await db.transaction((tx) => tx.insert(requests).values(targets.map((target) => rowOf(target, input.justification, team, actor, bundleId))).returning())
+    return rows.map((row) => filed(toRecord(row)))
+  } catch (err) {
+    throw sameThingRaced(err)
+  }
+}
+
+/** The other requests filed from the same New project form. */
+async function filedWith(request: RequestRecord): Promise<FiledWith[]> {
+  if (!request.bundleId) return []
+  const rows = await db
+    .select({ id: requests.id, kind: requests.kind, status: requests.status, collection: requests.collection, project: requests.project, projectKey: requests.projectKey })
+    .from(requests)
+    .where(and(eq(requests.bundleId, request.bundleId), ne(requests.id, request.id)))
+    .orderBy(asc(requests.kind))
+  return rows
 }
 
 /**
@@ -164,16 +218,17 @@ export async function listHistory(access: Access): Promise<RequestRecord[]> {
 export const HISTORY_LIMIT = 1000
 
 /** A request, if this person may see it: their own, or one they may decide — and whether they may. */
-export async function get(id: string, actor: Actor, access: Access): Promise<RequestRecord & { canDecide: boolean }> {
+export async function get(id: string, actor: Actor, access: Access): Promise<RequestRecord & { canDecide: boolean; filedWith: FiledWith[] }> {
   const request = (await withSteps([await find(id)]))[0]!
   const canDecide = await mayDecide(request, access)
   if (request.requestedBy !== actor.uid && !canDecide) {
     throw new ApiError(404, 'request_not_found', 'There is no such request.')
   }
+  const together = await filedWith(request)
   // The risk assessment is DevOps' alone: not the requester's, nor a team lead's.
-  if (!canDecide || !can(access, 'requests.decide')) return { ...request, canDecide }
+  if (!canDecide || !can(access, 'requests.decide')) return { ...request, canDecide, filedWith: together }
   const [withAssessment] = await withAssessments([request])
-  return { ...withAssessment!, canDecide }
+  return { ...withAssessment!, canDecide, filedWith: together }
 }
 
 export async function cancel(id: string, actor: Actor): Promise<RequestRecord> {

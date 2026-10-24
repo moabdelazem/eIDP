@@ -3,14 +3,16 @@ import * as jira from '../../integrations/jira/index.ts'
 import { recordCompleted, recordCreated, withContext } from './steps.ts'
 
 /**
- * Creates the Jira project, led by the requester, then puts the requester and
- * their team in its member role. As with Azure DevOps, both are found in Jira
- * before anything is created, and `result_url` is written the moment the
- * project exists, so a retry after a failed grant only grants.
+ * Creates the Jira project, led by the lead named on the form (the requester
+ * when none was), then puts the requester, the lead and their team in its
+ * member role. As with Azure DevOps, everyone is found in Jira before
+ * anything is created, and `result_url` is written the moment the project
+ * exists, so a retry after a failed grant only grants.
  */
 export async function executeJiraProject(request: RequestRecord): Promise<void> {
-  const lead = await jira.findUser(request.requestedBy)
-  const members = [lead, ...(request.teamGroup ? [await jira.findGroup(request.teamGroup)] : [])]
+  const requester = await jira.findUser(request.requestedBy)
+  const lead = request.projectLead ? await jira.findUser(request.projectLead) : requester
+  const members = [requester, ...(lead === requester ? [] : [lead]), ...(request.teamGroup ? [await jira.findGroup(request.teamGroup)] : [])]
   const key = request.projectKey!
   const resultUrl = jira.browseUrl(key)
 

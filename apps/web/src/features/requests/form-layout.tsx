@@ -10,7 +10,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { DraftedNote } from './drafted-note.tsx'
-import { PROVIDERS, type RequestType } from './kinds.ts'
+import { PROVIDERS, type ProviderId, type RequestType } from './kinds.ts'
 import type { Check } from './api.ts'
 import { ProjectPicker } from './project-picker.tsx'
 
@@ -34,19 +34,25 @@ import { ProjectPicker } from './project-picker.tsx'
 export function RequestFormPage({
   type,
   lead,
+  title,
+  providers,
   onSubmit,
   aside,
   children,
 }: {
   type: RequestType
   lead: string
+  /** For a form whose title follows what is chosen on it, like New project. */
+  title?: string
+  /** Where it lands, when that is more than the type's own provider. */
+  providers?: ProviderId[]
   onSubmit: (event: FormEvent) => void
   aside: ReactNode
   children: ReactNode
 }) {
   return (
     <div className={PAGE}>
-      <FormHeader type={type} lead={lead} />
+      <FormHeader type={type} lead={lead} title={title} providers={providers} />
       <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_21rem] xl:gap-8">
         <form onSubmit={onSubmit} noValidate className="overflow-hidden rounded-xl border bg-card shadow-sm">
           <div className="empty:hidden [&>*]:mx-6 [&>*]:mt-6">
@@ -60,17 +66,18 @@ export function RequestFormPage({
   )
 }
 
-export function FormHeader({ type, lead }: { type: RequestType; lead: string }) {
-  const provider = PROVIDERS.find((p) => p.id === type.provider)!
-  const Mark = provider.icon
+export function FormHeader({ type, lead, title, providers }: { type: RequestType; lead: string; title?: string; providers?: ProviderId[] }) {
+  const where = PROVIDERS.filter((p) => (providers?.length ? providers : [type.provider]).includes(p.id))
   return (
     <header className="flex items-start gap-4">
-      <span className="flex size-12 shrink-0 items-center justify-center rounded-xl border bg-card shadow-sm" aria-hidden>
-        <Mark className="size-6" />
+      <span className={`flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl border bg-card shadow-sm ${where.length > 1 ? 'px-3' : 'w-12'}`} aria-hidden>
+        {where.map((provider) => (
+          <provider.icon key={provider.id} className={where.length > 1 ? 'size-5' : 'size-6'} />
+        ))}
       </span>
       <div className="min-w-0">
-        <p className="text-sm text-muted-foreground">New request in {provider.label}</p>
-        <h1 className="mt-0.5 text-2xl font-semibold tracking-tight">{type.title}</h1>
+        <p className="text-sm text-muted-foreground">New request in {where.map((p) => p.label).join(' and ')}</p>
+        <h1 className="mt-0.5 text-2xl font-semibold tracking-tight">{title ?? type.title}</h1>
         <p className="mt-1 max-w-2xl text-muted-foreground">{lead}</p>
       </div>
     </header>

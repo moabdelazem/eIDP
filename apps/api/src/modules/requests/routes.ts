@@ -3,6 +3,7 @@ import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
 import { validate } from '../../lib/validate.ts'
 import { accessFrom, requireAuth, requirePermission, type AppEnv } from '../../middleware/auth.ts'
+import type { RequestRecord } from '@eidp/contracts/requests'
 import * as requests from './service.ts'
 
 const names = z.array(z.string().trim().min(1).max(256)).max(100)
@@ -56,6 +57,8 @@ const Target = z.discriminatedUnion('kind', [
     collection: z.string().min(1),
     project: z.string(),
     description: z.string().max(4000).optional(),
+    // Login names that get Contributor with the requester; checked against the directory by the service.
+    developers: z.array(z.string().max(256)).max(100).optional(),
   }),
   z.object({
     kind: z.literal('grant_access'),
@@ -78,6 +81,8 @@ const Target = z.discriminatedUnion('kind', [
     project: z.string().max(256),
     projectKey: z.string().max(256),
     description: z.string().max(4000).optional(),
+    // Who leads it, when not the requester; checked against Jira by the service.
+    lead: z.string().max(256).optional(),
   }),
 ])
 
@@ -91,6 +96,18 @@ const NewRequest = z.intersection(
     teamGroup: z.string().min(1, 'Choose your team.').max(256).optional(),
   }),
 )
+
+/** One project in Azure DevOps, Jira or both, from one form: one request per system, filed together. */
+const ProjectRequest = z
+  .object({
+    project: z.string().max(256),
+    description: z.string().max(4000).optional(),
+    ado: z.object({ collection: z.string().min(1).max(256), developers: z.array(z.string().max(256)).max(100).optional() }).strict().optional(),
+    jira: z.object({ projectKey: z.string().max(256), lead: z.string().max(256).optional() }).strict().optional(),
+    justification: z.string().max(4000),
+    teamGroup: z.string().min(1, 'Choose your team.').max(256),
+  })
+  .strict()
 
 const Decision = z.object({ note: z.string().max(4000).optional() })
 
@@ -121,6 +138,12 @@ export const requestRoutes = new Hono<AppEnv>()
   .post('/', requirePermission('requests.create'), validate('json', NewRequest), async (c) => {
     const request = await requests.submit(c.req.valid('json'), actor(c))
     return c.json(request, 201)
+  })
+
+  /** A project in Azure DevOps, Jira or both: the requests it filed, one per system. */
+  .post('/project', requirePermission('requests.create'), validate('json', ProjectRequest), async (c) => {
+    const filed = await requests.submitProject(c.req.valid('json'), actor(c))
+    return c.json(filed satisfies RequestRecord[], 201)
   })
 
   .get('/mine', async (c) => c.json(await requests.listMine(actor(c).uid)))

@@ -95,6 +95,10 @@ export async function factsFor(r: RequestRecord): Promise<Fact[]> {
   } else {
     if (production) info(`${r.project} deploys to production.`)
     if (r.teamGroup) info(`${r.teamGroup} gets Contributor with ${r.requestedByName}.`)
+    const developers = r.kind === 'create_project' ? (r.grantees ?? []) : []
+    if (developers.length >= MANY_GRANTEES) caution(`Also gives Contributor to ${developers.length} developers by name: ${developers.join(', ')}.`)
+    else if (developers.length > 0) info(`Also gives Contributor to ${developers.join(', ')}.`)
+    if (r.projectLead) info(`Led by ${r.projectLead}, not ${r.requestedByName}.`)
     const similar = await similarNames(r).catch((err: unknown) => {
       info(`Could not check for similar names: ${err instanceof Error ? err.message : 'the lookup failed'}.`)
       return []
@@ -191,9 +195,9 @@ function describe(r: RequestRecord): string {
     case 'create_repository':
       return `A new Azure DevOps repository ${r.repository} in project ${r.project} (${r.collection}).`
     case 'create_project':
-      return `A new Azure DevOps project ${r.project} in ${r.collection}.`
+      return `A new Azure DevOps project ${r.project} in ${r.collection}${r.grantees?.length ? `, with Contributor for ${r.grantees.join(', ')}` : ''}.`
     case 'create_jira_project':
-      return `A new Jira project ${r.project} with key ${r.projectKey}.`
+      return `A new Jira project ${r.project} with key ${r.projectKey}${r.projectLead ? `, led by ${r.projectLead}` : ''}.`
     case 'grant_access':
       return `Contribute access to the whole Azure DevOps project ${r.project} (${r.collection}) for: ${(r.grantees ?? []).join(', ')}.`
     case 'create_pipeline': {

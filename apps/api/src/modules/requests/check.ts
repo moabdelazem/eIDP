@@ -2,6 +2,7 @@ import type { Check } from '@eidp/contracts/requests'
 import { listProjects, listRepositories } from '../../integrations/ado/index.ts'
 import * as jira from '../../integrations/jira/index.ts'
 import { dnOf } from '../../integrations/ldap/index.ts'
+import { ApiError } from '../../lib/errors.ts'
 import { and, eq, inArray, ne, or, sql, type SQLWrapper } from 'drizzle-orm'
 import { db } from '../../lib/db.ts'
 import { jiraKeyProblem, jiraNameProblem, nameProblem } from './rules.ts'
@@ -44,6 +45,9 @@ export async function check(input: Target, except?: string): Promise<Check> {
     }
   } else if (existingProject) {
     return { ok: false, reason: `${input.collection} already has a project called ${existingProject.name}.` }
+  } else {
+    const developers = await developersProblem(input.developers ?? [])
+    if (developers) return { ok: false, reason: developers }
   }
 
   const lower = (column: SQLWrapper) => sql`lower(${column})`
@@ -88,15 +92,28 @@ async function checkGrant(input: AdoTarget): Promise<Check> {
     }
   }
 
+  const unknown = await unknownAccounts(grantees)
+  return unknown ? { ok: false, reason: unknown } : { ok: true }
+}
+
+/** The names the directory does not know, said as a reason — or null when it knows them all. */
+async function unknownAccounts(names: string[]): Promise<string | null> {
   const unknown: string[] = []
-  for (const name of grantees) if (!(await dnOf(name))) unknown.push(name)
-  if (unknown.length > 0) {
-    return {
-      ok: false,
-      reason: `The directory has no account called ${unknown.join(', ')}. Use login names, like jsmith.`,
-    }
-  }
-  return { ok: true }
+  for (const name of names) if (!(await dnOf(name))) unknown.push(name)
+  return unknown.length > 0 ? `The directory has no account called ${unknown.join(', ')}. Use login names, like jsmith.` : null
+}
+
+/**
+ * A new project's developers — the old form's "development team usernames":
+ * login names, not display names, each one the directory knows, so a typo is
+ * caught on the form rather than after approval.
+ */
+async function developersProblem(names: string[]): Promise<string | null> {
+  const developers = uniqueNames(names)
+  if (developers.length > MAX_GRANTEES) return `At most ${MAX_GRANTEES} developers; for more, use their team's group.`
+  const spaced = developers.find((name) => /\s/.test(name))
+  if (spaced) return `${spaced} has a space in it. Use login names, like jsmith, not display names.`
+  return unknownAccounts(developers)
 }
 
 /**
@@ -113,6 +130,16 @@ async function checkJiraProject(input: JiraTarget, except?: string): Promise<Che
   if (existing) return { ok: false, reason: `Jira already has a project called ${existing.name} (${existing.key}).` }
   const keyProblem = await jira.keyProblem(input.projectKey)
   if (keyProblem) return { ok: false, reason: keyProblem }
+  const lead = input.lead?.trim()
+  if (lead) {
+    if (/\s/.test(lead)) return { ok: false, reason: 'The project lead is a Jira username, like jsmith — not a display name.' }
+    try {
+      await jira.findUser(lead)
+    } catch (err) {
+      if (err instanceof ApiError && err.code.startsWith('jira_identity')) return { ok: false, reason: err.message }
+      throw err
+    }
+  }
 
   const [waiting] = await db
     .select({ by: requests.requestedByName })

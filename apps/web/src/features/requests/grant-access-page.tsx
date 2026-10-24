@@ -8,7 +8,7 @@ import { useSession } from '@/features/auth/session-context.tsx'
 import { ApiError } from '@/lib/api-client.ts'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
-import { requestsApi, type Target } from './api.ts'
+import { parseNames, requestsApi, type Target } from './api.ts'
 import { checkState, CheckMessage, Field, FormActions, FormSection, ReasonField, RequestFormPage, ReviewPanel, SummaryItem, Unreachable, type Readiness, type Verdict } from './form-layout.tsx'
 import { REQUEST_TYPES } from './kinds.ts'
 import { ProjectPicker } from './project-picker.tsx'
@@ -19,14 +19,6 @@ import { TargetPath } from './status.tsx'
 const GRANTS =
   'Contribute on the whole project — its repositories, boards and pipelines, as a member of its Contributors group.'
 
-/** Login names, however they were typed: commas, spaces, one per line. */
-function parseNames(text: string): string[] {
-  const seen = new Map<string, string>()
-  for (const name of text.split(/[\s,;]+/)) {
-    if (name && !seen.has(name.toLowerCase())) seen.set(name.toLowerCase(), name)
-  }
-  return [...seen.values()]
-}
 
 /**
  * Asking for access to an existing project, for yourself or people you work

@@ -75,6 +75,34 @@ actors not already in the role — Jira refuses the whole call if any one is,
 which would make a retry fail forever. The service account needs Jira's
 *Administer* global permission to create projects.
 
+**A new project is one form for Azure DevOps, Jira or both**
+(`project-request-page.tsx`, `POST /requests/project`) — the old portal's
+"Request New DevOps Project", without its DocMDs part. Both Project entries in
+the New request menu open it, with their own system ticked; the other is one
+tick away. One name and description serve both, and each system has its own
+details: the collection and **developers** (login names, checked against the
+directory) for Azure DevOps, the key and the **project lead** (a Jira
+username, checked against Jira; empty means the requester) for Jira.
+
+- It files one ordinary request per system ticked, `create_project` and
+  `create_jira_project`, in one transaction. Both are checked first, and a
+  refusal names its system ("Jira: …"), so either both are filed or neither is.
+- Two filed together share a `bundle_id`. Each request page links to the
+  other under *Asked for with it*.
+- Everything else is per request, as before: each is decided, adjusted,
+  retried and assessed on its own. Approving the Jira project does not wait
+  on Azure DevOps, nor fail with it.
+- On approval, the developers (stored in `grantees`) join
+  `[Project]\Contributors` with the requester and their team. The lead
+  (`project_lead`, null when it is the requester) leads the Jira project and
+  joins its member role with them.
+- The approver's assessment lists the developers, and a lead who is not the
+  requester.
+
+The old form's dev, QC and ops team fields are not asked here. They were
+ownership metadata, and ownership comes from inventories: a project's teams
+are asked when its first pipeline is set up (`team.yml`, below).
+
 **Access requests** (`grant_access`) give up to 20 people, by login name,
 Contribute on a whole existing project — membership of `[Project]\Contributors`.
 Scope and level are fixed, not chosen: the API does not accept a repository or
