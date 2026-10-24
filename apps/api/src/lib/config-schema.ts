@@ -155,6 +155,24 @@ export const schema = z.object({
    * open door to the whole cluster.
    */
   ELASTICSEARCH_INDICES: z.string().min(1).optional(),
+  /**
+   * Email, over SMTP (integrations/mail): the portal tells people what
+   * happened to their requests. Optional like the other integrations — unset,
+   * nothing is sent and nothing is queued. MAIL_SECURE is implicit TLS (port
+   * 465); on 587 the connection upgrades with STARTTLS when the server offers
+   * it. A private CA is trusted through NODE_EXTRA_CA_CERTS.
+   */
+  MAIL_HOST: z.string().min(1).optional(),
+  MAIL_PORT: z.coerce.number().int().positive().default(587),
+  MAIL_SECURE: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
+  MAIL_USERNAME: z.string().min(1).optional(),
+  MAIL_PASSWORD: z.string().min(1).optional(),
+  /** Who the mail is from, like `e-IDP <e-idp@example.com>`. Needed once MAIL_HOST is set. */
+  MAIL_FROM: z.string().min(3).optional(),
+  /** DevOps' own address or list (comma-separated): told of new requests and of failures. Unset, nobody is. */
+  MAIL_DEVOPS_TO: z.string().min(3).optional(),
+  /** Where people open the portal, like https://eidp.example.com — for the links in mail. Unset, mail carries no links. */
+  PORTAL_URL: z.string().url().optional(),
 
   /** How often to look for last week's missing team digests (0 turns it off). */
   DIGEST_CHECK_MINUTES: z.coerce.number().min(0).default(60),

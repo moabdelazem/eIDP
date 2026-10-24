@@ -101,6 +101,7 @@ It talks to:
 | Jira Data Center | Jira project requests | Optional |
 | Jenkins | My pipelines, the Jenkins page | Optional |
 | Elasticsearch (ELK) | Reading, searching and adding documents in allowed indices, through `/elk` | Optional |
+| An SMTP server | Mail about requests: new ones to DevOps, decisions and results to requesters, failures to DevOps | Optional |
 | Ollama (Qwen 2.5 on our machines) | Failure explanations, request summaries, digests, the chatbot | Optional — AI features hide without it |
 | HashiCorp Vault | The API's secrets, with `.env` behind it | Optional |
 

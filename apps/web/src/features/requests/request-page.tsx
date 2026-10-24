@@ -18,6 +18,7 @@ import { REQUEST_TYPES } from './kinds.ts'
 import { RejectDialog } from './reject-dialog.tsx'
 import { PipelinePanel } from './pipeline-panel.tsx'
 import { RiskPanel } from './risk.tsx'
+import { EmailsSection } from './emails-section.tsx'
 import { ApproveDialog, WithdrawDialog } from './decision-dialogs.tsx'
 import { AccessLine, kindIcon, kindLabel, since, statusLabel, StatusBadge, TargetPath, WrappingUrl } from './status.tsx'
 import { HeaderSkeleton, Loading, TimelineSkeleton } from '@/components/skeletons.tsx'
@@ -73,6 +74,8 @@ export function RequestPage() {
               </Section>
             )}
             <Details request={r} own={own} />
+            {/* For deciders: the API answers them alone, and the list carries DevOps' own addresses. */}
+            {r.canDecide && <EmailsSection requestId={r.id} status={r.status} />}
             {r.filedWith && r.filedWith.length > 0 && <FiledWithSection request={r} />}
           </>
         }

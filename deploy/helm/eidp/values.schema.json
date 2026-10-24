@@ -39,6 +39,7 @@
               { "required": ["JENKINS_TOKEN"] },
               { "required": ["ELASTICSEARCH_API_KEY"] },
               { "required": ["ELASTICSEARCH_PASSWORD"] },
+              { "required": ["MAIL_PASSWORD"] },
               { "required": ["DATABASE_URL"] },
               { "required": ["VAULT_TOKEN"] },
               { "required": ["VAULT_SECRET_ID"] }

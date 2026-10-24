@@ -7,6 +7,7 @@ import { serve } from '@hono/node-server'
 import { createFakeAdo } from '../../integrations/ado/fake-server.ts'
 import { createFakeJenkins } from '../../integrations/jenkins/fake-server.ts'
 import { createFakeJira } from '../../integrations/jira/fake-server.ts'
+import { createFakeMail } from '../../integrations/mail/fake-server.ts'
 import { createFakeOllama } from '../../integrations/ollama/fake-server.ts'
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -42,6 +43,14 @@ process.env.JENKINS_USER = 'eidp'
 process.env.JENKINS_TOKEN = 'fake'
 process.env.PIPELINE_PROVISION_JOB = 'devops/provisioning'
 process.env.PIPELINE_TEST_JOB = '{project}/{application}/develop'
+
+// Mail, to a fake server: DevOps' list, and links into the portal.
+const fakeMail = createFakeMail()
+process.env.MAIL_HOST = '127.0.0.1'
+process.env.MAIL_PORT = String(await fakeMail.listen())
+process.env.MAIL_FROM = 'e-IDP <e-idp@eidp.local>'
+process.env.MAIL_DEVOPS_TO = 'devops@eidp.local'
+process.env.PORTAL_URL = 'https://eidp.test'
 
 const fakeOllama = createFakeOllama()
 const ollamaServer = serve({ fetch: fakeOllama.app.fetch, port: 0 })
@@ -119,13 +128,18 @@ const { registerTechnology } = await import('./pipeline/technologies.ts')
 const { writePipeline } = await import('./pipeline/write.ts')
 const { advanceSteps } = await import('./pipeline/follow-up.ts')
 const { closeDb, migrate, query } = await import('../../lib/db.ts')
+const notifications = await import('../notifications/index.ts')
 const app = createApp()
 
 const tokens: Record<string, string> = {}
 
+let mailFloor = 0
+
 before(async () => {
   await migrate()
   await query('delete from requests')
+  // Only this run's mail is deleted afterwards: the outbox is shared with real use.
+  mailFloor = Number((await query<{ max: string | null }>('select max(id) as max from mail_outbox')).rows[0]?.max ?? 0)
   for (const who of ['alice', 'bob', 'carol', 'dave']) {
     const res = await app.request('/auth/login', {
       method: 'POST',
@@ -139,6 +153,8 @@ before(async () => {
 after(async () => {
   await restoreTemplates()
   await query('delete from requests')
+  await query('delete from mail_outbox where id > $1', [mailFloor])
+  await fakeMail.close()
   await closeDb()
   server.close()
   jiraServer.close()
@@ -704,6 +720,93 @@ test('project: one system alone has no bundle, and neither is refused', async ()
   assert.match((await json<{ error: { message: string } }>(neither)).error.message, /Azure DevOps, Jira, or both/)
   const notMine = await call('bob', 'POST', '/requests/project', { ...projectRequest('Elsewhere', { jira: { projectKey: 'ELSE' } }), teamGroup: 'DEVOPS' })
   assert.equal(notMine.status, 400)
+})
+
+// ---- mail ------------------------------------------------------------------
+// Queued with what it is about, sent by the mail-outbox job (run here by
+// hand), kept, and sent again from the request page.
+
+/** Lets the queueing that follows a call land, then runs the sender until nothing is due — it takes 20 at a time. */
+async function deliver() {
+  await new Promise((r) => setTimeout(r, 300))
+  const sender = notifications.jobs.find((j) => j.name === 'mail-outbox')!
+  for (let i = 0; i < 20 && (await sender.run()); i++);
+}
+const mailTo = (address: string, subject: RegExp) => fakeMail.messages.filter((m) => m.recipients.includes(address) && subject.test(m.subject))
+
+test('mail: DevOps hear of a new request; the requester of its rejection, with why', async () => {
+  const filed = await json<{ id: string }>(await call('bob', 'POST', '/requests', repoRequest('mail-reject')))
+  await deliver()
+  const [news] = mailTo('devops@eidp.local', /^New request: repository mail-reject in AgriLand$/)
+  assert.ok(news, 'DevOps were told')
+  assert.match(news.text, /Bob Example asked for repository mail-reject in AgriLand/)
+  assert.match(news.text, /New service for the loan scoring work\./)
+  assert.match(news.text, new RegExp(`https://eidp\\.test/requests/${filed.id}`))
+  assert.match(news.html, /Review it/)
+
+  await call('alice', 'POST', `/requests/${filed.id}/reject`, { note: 'Use the existing loan-scoring repository instead.' })
+  await deliver()
+  const [rejected] = mailTo('bob@eidp.local', /^Rejected: repository mail-reject in AgriLand$/)
+  assert.ok(rejected, 'bob was told')
+  assert.match(rejected.text, /Alice Example rejected your request/)
+  assert.match(rejected.text, /> Use the existing loan-scoring repository instead\./)
+})
+
+test('mail: the requester hears it is done; DevOps hear of a failure', async () => {
+  const done = await json<{ id: string }>(await call('bob', 'POST', '/requests', repoRequest('mail-done')))
+  await call('alice', 'POST', `/requests/${done.id}/approve`, {})
+  assert.equal((await settled(done.id)).status, 'completed')
+  await deliver()
+  const [finished] = mailTo('bob@eidp.local', /^Done: repository mail-done in AgriLand$/)
+  assert.ok(finished)
+  assert.match(finished.text, /Open it: .*_git\/mail-done/)
+
+  fake.setFailProjects(true)
+  try {
+    const project = await json<{ id: string }>(
+      await call('bob', 'POST', '/requests', { kind: 'create_project', collection: 'Legacy', project: 'MailFails', justification: 'A project to watch fail by mail.', teamGroup: 'Payments' }),
+    )
+    await call('alice', 'POST', `/requests/${project.id}/approve`, {})
+    assert.equal((await settled(project.id)).status, 'failed')
+  } finally {
+    fake.setFailProjects(false)
+  }
+  await deliver()
+  const [failed] = mailTo('devops@eidp.local', /^Failed: Azure DevOps project MailFails$/)
+  assert.ok(failed)
+  assert.match(failed.text, /What went wrong:/)
+  // The requester is not told of a failure DevOps will retry.
+  assert.equal(mailTo('bob@eidp.local', /MailFails/).length, 0)
+})
+
+test('mail: a refusal is retried and kept; deciders see it and send it again', async () => {
+  fakeMail.refuse('message')
+  const filed = await json<{ id: string }>(await call('bob', 'POST', '/requests', repoRequest('mail-refused')))
+  await deliver()
+  type Mail = { id: number; topic: string; status: string; attempts: number; lastError: string | null; to: string[]; nextAttemptAt: string | null }
+  const [waiting] = await json<Mail[]>(await call('alice', 'GET', `/requests/${filed.id}/emails`))
+  assert.equal(waiting!.topic, 'request.filed')
+  assert.equal(waiting!.status, 'pending')
+  assert.equal(waiting!.attempts, 1)
+  assert.match(waiting!.lastError!, /554/)
+  assert.ok(waiting!.nextAttemptAt, 'a retry is due')
+  // The requester, who may not decide it, does not read DevOps' mail.
+  assert.equal((await call('bob', 'GET', `/requests/${filed.id}/emails`)).status, 403)
+
+  fakeMail.refuse(null)
+  const resent = await call('alice', 'POST', `/requests/${filed.id}/emails/${waiting!.id}/resend`)
+  assert.equal(resent.status, 200)
+  await new Promise((r) => setTimeout(r, 500))
+  const [sent] = await json<Mail[]>(await call('alice', 'GET', `/requests/${filed.id}/emails`))
+  assert.equal(sent!.status, 'sent')
+  assert.equal(mailTo('devops@eidp.local', /mail-refused/).length, 1)
+
+  // A sent one is sent again as a copy; one about another request is not this one's to resend.
+  await call('alice', 'POST', `/requests/${filed.id}/emails/${waiting!.id}/resend`)
+  await new Promise((r) => setTimeout(r, 500))
+  assert.equal(mailTo('devops@eidp.local', /mail-refused/).length, 2)
+  const other = await json<{ id: string }>(await call('bob', 'POST', '/requests', repoRequest('mail-other')))
+  assert.equal((await call('alice', 'POST', `/requests/${other.id}/emails/${waiting!.id}/resend`)).status, 404)
 })
 
 // ---- risk summaries --------------------------------------------------------

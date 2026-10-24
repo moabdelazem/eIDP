@@ -12,6 +12,7 @@ import * as activity from './modules/activity/index.ts'
 import * as catalog from './modules/catalog/index.ts'
 import * as digest from './modules/digest/index.ts'
 import * as jenkins from './modules/jenkins/index.ts'
+import * as notifications from './modules/notifications/index.ts'
 import * as requests from './modules/requests/index.ts'
 
 const applied = await migrate()
@@ -79,5 +80,5 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
  * and /health/jobs says how each last went. Work also started by people (a
  * sync, an explanation) is held once across processes by lib/locks.ts.
  */
-for (const job of [...catalog.jobs, ...jenkins.jobs, ...activity.jobs, ...digest.jobs, ...requests.jobs]) schedule(job)
+for (const job of [...catalog.jobs, ...jenkins.jobs, ...activity.jobs, ...digest.jobs, ...requests.jobs, ...notifications.jobs]) schedule(job)
 catalog.atBoot()

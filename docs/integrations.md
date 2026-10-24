@@ -1,6 +1,6 @@
 # Integrations
 
-Azure DevOps Server, Jira, Jenkins, Elasticsearch, Ollama, Vault and the inventories parser — each one's quirks and the traps it has. Moved out of CLAUDE.md, which keeps the rules that break things and points here.
+Azure DevOps Server, Jira, Jenkins, Elasticsearch, mail, Ollama, Vault and the inventories parser — each one's quirks and the traps it has. Moved out of CLAUDE.md, which keeps the rules that break things and points here.
 
 `integrations/ado/` — Azure DevOps **Server** (on-prem), not Services. URLs are
 `<base>/<project>/_apis/<area>?api-version=<version>`, where `ADO_BASE_URL`
@@ -47,6 +47,43 @@ and id, never the document. `/elk` (`modules/elk`) puts it behind the API for
 `elk.read` and `elk.write`; `fake-server.ts` stands in for it
 (`pnpm --filter @eidp/api elasticsearch:fake`, seeded with
 `eidp-applications`).
+
+`integrations/mail/` — email over SMTP, through `nodemailer`. That is the one
+dependency here: Node has no mail client, and SMTP is not one to write again
+(STARTTLS, auth, MIME, non-ASCII names and subjects).
+
+- **Settings:** `MAIL_HOST`, `MAIL_PORT` (587), `MAIL_SECURE` (`true` for
+  implicit TLS on 465; otherwise STARTTLS when the server offers it),
+  `MAIL_USERNAME` and `MAIL_PASSWORD` (both or neither, for a relay that needs
+  no login) and `MAIL_FROM`.
+- **Optional like Jira:** `mailConfig()` names what is missing. Unset, the
+  portal neither sends nor queues anything, because a backlog sent the day
+  mail is turned on would be weeks stale.
+- **Modules never send directly.** They queue through `modules/notifications`
+  (below).
+- **The fake:** `fake-server.ts` is a small SMTP server, without STARTTLS.
+  `pnpm --filter @eidp/api mail:fake` listens on 2525 and shows what arrived
+  at http://localhost:4061. Its `refuse()` makes it turn recipients or
+  messages away, as a real server does.
+
+**The outbox** (`modules/notifications`, table `mail_outbox`):
+
+- **Queueing:** a module calls `enqueueMail` with its topic and the thing it
+  is about (`ref`, like `request:<id>`).
+- **Sending:** the `mail-outbox` job sends what is due every 15 s. It claims
+  rows with `for update skip locked`, so two replicas, or a resend asked from
+  a page, never send one message twice.
+- **Refusals** are retried after 1, 5, 15, 60 and 180 minutes, then marked
+  `failed`. A claim a dead process left (`sending` for 10 minutes) is due
+  again.
+- **Nothing is deleted:** a page can show its mail and send one again. This
+  replaces the old portal's Re-notify and Force notify.
+- **The look:** `renderEmail` turns a heading, a sentence, facts, a quote and
+  a button into text and HTML. The HTML is narrow tables with inline styles,
+  no images and no remote fonts: what Outlook still renders.
+- **Links** point at `PORTAL_URL`. Unset, mail carries no links.
+- **Logging:** the log names the topic and how many recipients, never the
+  addresses.
 
 `integrations/jenkins/` — Jenkins' remote access API, `<JENKINS_URL>/.../api/json`
 with `tree` so it sends only what is asked. `JENKINS_USER` + `JENKINS_TOKEN` (an

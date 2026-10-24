@@ -43,6 +43,13 @@
       "when": 1792847433108,
       "tag": "0005_revoke_access",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792849871526,
+      "tag": "0006_mail_outbox",
+      "breakpoints": true
     }
   ]
 }

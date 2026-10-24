@@ -1,7 +1,9 @@
 import { api } from '@/lib/api-client.ts'
 
 // The JSON's shapes are the API's, from @eidp/contracts — one definition, so the two cannot drift.
+import type { SentMail } from '@eidp/contracts/notifications'
 import type { Assessment, Check, PipelinePreview, PipelineProject, ProjectRequest, RequestChanges, RequestStatus, RequestStep, RequestView, StepName, Target, Technology } from '@eidp/contracts/requests'
+export type { SentMail } from '@eidp/contracts/notifications'
 export type { AccessLevel, Adjustment, Assessment, Check, DeployTarget, FiledWith, Namespace, PipelineFile, PipelinePreview, PipelineProject, PipelineSpec, ProjectRequest, ProjectTeams, RequestChanges, RequestKind, RequestStatus, RequestStep, StepName, StepStatus, Target, Technology } from '@eidp/contracts/requests'
 
 /** A request as the web holds it: the record, and on a single one whether the viewer may decide it. */
@@ -50,6 +52,10 @@ export const requestsApi = {
   assess: (id: string) => api<Assessment>(`/requests/${id}/assess`, { method: 'POST' }),
   /** A decider's changes to a waiting request — each checked as a new request would be, and recorded. */
   adjust: (id: string, changes: RequestChanges) => api<PortalRequest>(`/requests/${id}`, { method: 'PATCH', body: JSON.stringify(changes) }),
+  /** The mail sent about a request, for the people who may decide it. */
+  emails: (id: string) => api<SentMail[]>(`/requests/${encodeURIComponent(id)}/emails`),
+  /** Sends one of them again: a failed one from scratch, a sent one as a copy. */
+  resendEmail: (id: string, mail: number) => api<SentMail>(`/requests/${encodeURIComponent(id)}/emails/${mail}/resend`, { method: 'POST' }),
   /** Runs a pushed pipeline's provisioning or test build again. */
   retryStep: (id: string, step: StepName) => api<RequestStep[]>(`/requests/${id}/steps/${step}/retry`, { method: 'POST' }),
 }
