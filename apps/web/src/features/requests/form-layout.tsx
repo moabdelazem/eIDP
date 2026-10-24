@@ -185,11 +185,23 @@ export function CheckMessage({ id, check }: { id: string; check: CheckState }) {
 const THIN_REASON = 6
 
 /** Why they need it — with a nudge, before sending, when it is short enough to be flagged to the approver. */
-export function ReasonField({ value, onChange, placeholder, hint }: { value: string; onChange: (value: string) => void; placeholder: string; hint: string }) {
+export function ReasonField({
+  value,
+  onChange,
+  placeholder,
+  hint,
+  label = 'Why do you need it?',
+}: {
+  value: string
+  onChange: (value: string) => void
+  placeholder: string
+  hint: string
+  label?: string
+}) {
   const words = value.trim().split(/\s+/).filter(Boolean).length
   const thin = words > 0 && words < THIN_REASON
   return (
-    <Field label="Why do you need it?" htmlFor="justification" hint={hint}>
+    <Field label={label} htmlFor="justification" hint={hint}>
       <Textarea
         id="justification"
         value={value}
@@ -242,12 +254,23 @@ export function useTeam(chosen: string): string {
 export type Readiness = { label: string; done: boolean; missing: string }[]
 
 /** The foot of the form: what is still missing, Cancel, and the one primary action, last. */
-export function FormActions({ ready, submitting, label = 'Send for approval' }: { ready: Readiness; submitting: boolean; label?: string }) {
+export function FormActions({
+  ready,
+  submitting,
+  label = 'Send for approval',
+  readyText = 'Ready. Nothing is created until someone in DevOps approves it.',
+}: {
+  ready: Readiness
+  submitting: boolean
+  label?: string
+  /** What the bar says once everything is in. */
+  readyText?: string
+}) {
   const missing = ready.find((r) => !r.done)
   return (
     <div className="flex flex-col-reverse gap-3 bg-muted/30 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-sm text-muted-foreground" aria-live="polite">
-        {missing ? missing.missing : 'Ready. Nothing is created until someone in DevOps approves it.'}
+        {missing ? missing.missing : readyText}
       </p>
       <div className="flex shrink-0 gap-2 sm:justify-end">
         <Button asChild variant="ghost">

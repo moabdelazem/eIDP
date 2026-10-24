@@ -77,7 +77,7 @@ export function ProjectPage() {
         description={
           <>
             Application in{' '}
-            <Link to={`/map?q=${encodeURIComponent(system.projectName)}`} className="underline underline-offset-2">
+            <Link to={`/systems/${encodeURIComponent(system.id)}`} className="underline underline-offset-2">
               {system.projectName}
             </Link>
           </>

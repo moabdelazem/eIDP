@@ -36,6 +36,7 @@ const CHANGEABLE: Record<RequestRecord['kind'], (keyof RequestChanges)[]> = {
   create_jira_project: ['project', 'projectKey'],
   create_pipeline: ['application', 'version', 'files'],
   grant_access: [],
+  revoke_access: [],
 }
 
 const LABEL: Record<Field, string> = {

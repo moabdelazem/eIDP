@@ -36,7 +36,7 @@ export const requests = pgTable('requests', {
   /** The requests filed together from one New project form — its Azure DevOps and its Jira project. */
   bundleId: uuid('bundle_id'),
 }, (table) => [
-  uniqueIndex('requests_one_open_create_idx').on(sql`kind`, sql`lower(collection)`, sql`lower(project)`, sql`lower(COALESCE(repository, ''::text))`).where(sql`((status = ANY (ARRAY['pending'::text, 'approved'::text])) AND (kind <> 'grant_access'::text))`),
+  uniqueIndex('requests_one_open_create_idx').on(sql`kind`, sql`lower(collection)`, sql`lower(project)`, sql`lower(COALESCE(repository, ''::text))`).where(sql`((status = ANY (ARRAY['pending'::text, 'approved'::text])) AND (kind <> ALL (ARRAY['grant_access'::text, 'revoke_access'::text])))`),
   uniqueIndex('requests_one_open_jira_key_idx').on(sql`lower(project_key)`).where(sql`((status = ANY (ARRAY['pending'::text, 'approved'::text])) AND (kind = 'create_jira_project'::text))`),
   uniqueIndex('requests_one_open_jira_name_idx').on(sql`lower(project)`).where(sql`((status = ANY (ARRAY['pending'::text, 'approved'::text])) AND (kind = 'create_jira_project'::text))`),
   index('requests_requested_by_idx').on(table.requestedBy, table.requestedAt.desc().nullsFirst()),
@@ -45,7 +45,8 @@ export const requests = pgTable('requests', {
   check('requests_status_check', sql`status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'completed'::text, 'failed'::text, 'cancelled'::text])`),
   check('requests_repository_check', sql`((kind <> 'create_repository'::text) OR (repository IS NOT NULL)) AND ((kind <> 'create_project'::text) OR (repository IS NULL))`),
   check('requests_grant_check', sql`(kind <> 'grant_access'::text) OR ((cardinality(grantees) > 0) AND (access_level = ANY (ARRAY['read'::text, 'contribute'::text])))`),
-  check('requests_kind_check', sql`kind = ANY (ARRAY['create_repository'::text, 'create_project'::text, 'grant_access'::text, 'create_jira_project'::text, 'create_pipeline'::text])`),
+  check('requests_kind_check', sql`kind = ANY (ARRAY['create_repository'::text, 'create_project'::text, 'grant_access'::text, 'revoke_access'::text, 'create_jira_project'::text, 'create_pipeline'::text])`),
+  check('requests_revoke_check', sql`(kind <> 'revoke_access'::text) OR ((cardinality(grantees) > 0) AND (repository IS NULL))`),
   check('requests_pipeline_check', sql`(kind = 'create_pipeline'::text) = (pipeline IS NOT NULL) AND ((kind <> 'create_pipeline'::text) OR (repository IS NOT NULL))`),
   check('requests_jira_check', sql`((kind = 'create_jira_project'::text) = (collection IS NULL)) AND ((kind = 'create_jira_project'::text) = (project_key IS NOT NULL))`),
 ])

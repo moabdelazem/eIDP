@@ -13,6 +13,7 @@ const ActivityPage = lazyPage(() => import('@/features/activity/activity-page.ts
 const ProfilePage = lazyPage(() => import('@/features/auth/profile-page.tsx'), 'ProfilePage')
 const ProjectMapPage = lazyPage(() => import('@/features/projects/map-page.tsx'), 'ProjectMapPage')
 const ProjectPage = lazyPage(() => import('@/features/projects/project-page.tsx'), 'ProjectPage')
+const SystemPage = lazyPage(() => import('@/features/projects/system-page.tsx'), 'SystemPage')
 const ApprovalsPage = lazyPage(() => import('@/features/requests/approvals-page.tsx'), 'ApprovalsPage')
 const MyRequestsPage = lazyPage(() => import('@/features/requests/my-requests-page.tsx'), 'MyRequestsPage')
 const NewRequestPage = lazyPage(() => import('@/features/requests/new-request-page.tsx'), 'NewRequestPage')
@@ -39,6 +40,8 @@ export function AppRoutes() {
           <Route index element={<OverviewPage />} />
           <Route path="map" element={<ProjectMapPage />} />
           <Route path="projects/:projectId" element={<ProjectPage />} />
+          {/* A project (a system of the map) as a place to work: its code and who can work in it. */}
+          <Route path="systems/:systemId" element={<SystemPage />} />
           <Route path="requests" element={<MyRequestsPage />} />
           {/* One route per request type that has a form — see features/requests/kinds.ts. */}
           {REQUEST_TYPES.filter(isAvailable).map((type) => (
@@ -46,16 +49,17 @@ export function AppRoutes() {
               key={type.path}
               path={type.path.slice(1)}
               element={
-                type.kind === 'grant_access' ? (
-                  <GrantAccessPage />
+                type.kind === 'grant_access' || type.kind === 'revoke_access' ? (
+                  // One form for giving access and taking it away; keyed so moving between the two starts afresh.
+                  <GrantAccessPage key={type.path} mode={type.kind === 'grant_access' ? 'grant' : 'revoke'} />
                 ) : type.kind === 'create_project' || type.kind === 'create_jira_project' ? (
                   // One form for a project in either or both; keyed so moving between the two starts afresh.
                   <ProjectRequestPage key={type.path} start={type.provider} />
                 ) : type.kind === 'create_pipeline' ? (
                   <PipelineRequestPage />
-                ) : (
-                  <NewRequestPage key={type.path} kind={type.kind!} />
-                )
+                ) : type.kind === 'create_repository' ? (
+                  <NewRequestPage key={type.path} kind="create_repository" />
+                ) : null
               }
             />
           ))}

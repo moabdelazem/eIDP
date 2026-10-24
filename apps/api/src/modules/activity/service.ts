@@ -158,6 +158,7 @@ const REQUEST_KIND: Record<string, string> = {
   create_repository: 'a repository',
   create_project: 'an Azure DevOps project',
   grant_access: 'access to a project',
+  revoke_access: 'removing access from a project',
   create_jira_project: 'a Jira project',
 }
 

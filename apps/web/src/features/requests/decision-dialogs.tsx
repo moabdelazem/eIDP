@@ -1,12 +1,12 @@
 import { ConfirmDialog } from '@/components/confirm-dialog.tsx'
-import { systemOf, targetPath, type PortalRequest } from './api.ts'
+import { isAccess, isRevoke, systemOf, targetPath, type PortalRequest } from './api.ts'
 import { decide } from './decisions.ts'
 import { Cautions, RiskBadge } from './risk.tsx'
 import { TargetPath } from './status.tsx'
 
 /** Everyone approval hands access to, as a sentence. */
 function who(r: PortalRequest): string {
-  const names = r.kind === 'grant_access' ? (r.grantees ?? []) : [r.requestedByName, ...(r.teamGroup ? [r.teamGroup] : [])]
+  const names = isAccess(r) ? (r.grantees ?? []) : [r.requestedByName, ...(r.teamGroup ? [r.teamGroup] : [])]
   return names.length <= 1 ? (names[0] ?? 'nobody') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
 }
 
@@ -27,6 +27,7 @@ export function ApproveDialog({
   onApproved: () => void
 }) {
   const granting = r.kind === 'grant_access'
+  const revoking = isRevoke(r)
   const noun = r.kind === 'create_repository' ? 'repository' : 'project'
   const pipeline = r.kind === 'create_pipeline'
   const system = systemOf(r)
@@ -34,8 +35,8 @@ export function ApproveDialog({
     <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={granting ? 'Approve and grant access?' : pipeline ? 'Approve and push this pipeline?' : `Approve and create this ${noun}?`}
-      confirm={granting ? 'Approve and grant' : pipeline ? 'Approve and push' : 'Approve and create'}
+      title={granting ? 'Approve and grant access?' : revoking ? 'Approve and remove access?' : pipeline ? 'Approve and push this pipeline?' : `Approve and create this ${noun}?`}
+      confirm={granting ? 'Approve and grant' : revoking ? 'Approve and remove' : pipeline ? 'Approve and push' : 'Approve and create'}
       onConfirm={async () => {
         const ok = await decide('approve', r)
         if (ok) onApproved()
@@ -44,7 +45,12 @@ export function ApproveDialog({
     >
       <TargetPath parts={targetPath(r)} className="block text-foreground" />
       <p>
-        {pipeline ? (
+        {revoking ? (
+          <>
+            <span className="text-foreground">{who(r)}</span> will lose access to the whole project in {system} straight away: taken out of its Contributors and
+            Readers groups.
+          </>
+        ) : pipeline ? (
           <>Its files are pushed to the inventories repository’s main branch straight away, checked against it as it is then. Nothing is overwritten: a file that exists stops it.</>
         ) : granting ? (
           <>

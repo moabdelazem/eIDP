@@ -87,6 +87,18 @@ export async function factsFor(r: RequestRecord): Promise<Fact[]> {
         caution(`${outside.length} of ${grantees.length} ${outside.length === 1 ? 'is' : 'are'} outside the teams that own ${r.project}: ${outside.join(', ')}.`)
       } else info(`Everyone named is in a team that owns ${r.project}.`)
     }
+  } else if (r.kind === 'revoke_access') {
+    const names = r.grantees ?? []
+    info(`Removes ${names.join(', ')} from the Contributors and Readers of ${r.project}.`)
+    if (names.some((name) => same(name, r.requestedBy))) info(`${r.requestedByName} asks to remove their own access.`)
+    // A group named is a whole team's access at once — worth a second look.
+    const members = await Promise.all((['Contributors', 'Readers'] as const).map((group) => ado.projectGroupMembers(r.collection!, r.project, group).catch(() => [])))
+    const groups = names.filter((name) => members.flat().some((m) => m.group && same(m.account, name)))
+    if (groups.length > 0) caution(`Removes ${groups.length === 1 ? 'a whole group' : 'whole groups'}: ${groups.join(', ')} — everyone who has access through ${groups.length === 1 ? 'it' : 'them'} loses it.`)
+    if (owners.length > 0) {
+      const owning = names.filter((name) => owners.some((o) => same(o, name)))
+      if (owning.length > 0) caution(`${owning.join(', ')} ${owning.length === 1 ? 'is a team' : 'are teams'} that own${owning.length === 1 ? 's' : ''} ${r.project}.`)
+    }
   } else if (r.kind === 'create_pipeline') {
     // The repository exists by design, so there is no similar name to look for; what approving changes is inventories.
     if (production) info(`${r.project} deploys to production.`)
@@ -198,6 +210,8 @@ function describe(r: RequestRecord): string {
       return `A new Azure DevOps project ${r.project} in ${r.collection}${r.grantees?.length ? `, with Contributor for ${r.grantees.join(', ')}` : ''}.`
     case 'create_jira_project':
       return `A new Jira project ${r.project} with key ${r.projectKey}${r.projectLead ? `, led by ${r.projectLead}` : ''}.`
+    case 'revoke_access':
+      return `Removing access to the Azure DevOps project ${r.project} (${r.collection}) from: ${(r.grantees ?? []).join(', ')}.`
     case 'grant_access':
       return `Contribute access to the whole Azure DevOps project ${r.project} (${r.collection}) for: ${(r.grantees ?? []).join(', ')}.`
     case 'create_pipeline': {

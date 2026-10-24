@@ -18,7 +18,7 @@ export type AdoTarget = {
   project: string
   repository?: string
   description?: string
-  /** grant_access only. */
+  /** grant_access and revoke_access: who is given or loses access. */
   grantees?: string[]
   accessLevel?: AccessLevel
   /** create_project only: login names that get Contributor with the requester and their team. */

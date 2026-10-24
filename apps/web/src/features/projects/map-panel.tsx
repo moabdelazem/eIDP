@@ -1,5 +1,5 @@
 import { toast } from 'sonner'
-import { ArrowLeft, Boxes, Copy, ExternalLink, KeyRound, LocateFixed, MousePointerClick, Plus, Workflow, X } from 'lucide-react'
+import { ArrowLeft, Boxes, Copy, ExternalLink, FolderGit2, KeyRound, LocateFixed, MousePointerClick, Plus, Workflow, X } from 'lucide-react'
 import { Link } from 'react-router'
 import { cn } from 'cn'
 import { Button } from '@/components/ui/button'
@@ -194,6 +194,11 @@ function SystemPanel({
 
       <div className="flex flex-wrap gap-2">
         <Button asChild size="sm">
+          <Link to={`/systems/${encodeURIComponent(system.id)}`}>
+            <FolderGit2 /> Code and access
+          </Link>
+        </Button>
+        <Button asChild size="sm" variant="outline">
           <Link to={`/requests/new/jenkins/pipeline?${new URLSearchParams({ project: system.projectName })}`}>
             <Plus /> Add an application
           </Link>

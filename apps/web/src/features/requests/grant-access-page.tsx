@@ -19,14 +19,57 @@ import { TargetPath } from './status.tsx'
 const GRANTS =
   'Contribute on the whole project — its repositories, boards and pipelines, as a member of its Contributors group.'
 
+/** And what a removal always takes away. */
+const REMOVES = 'All their access to the project: they are taken out of its Contributors and Readers groups.'
+
+/** The words that differ between giving access and taking it away. */
+const COPY = {
+  grant: {
+    lead: 'Contribute access to a project that already exists, granted once someone in DevOps approves it.',
+    projectHint: GRANTS,
+    projectSection: 'The project to work in. Access is always the whole project.',
+    peopleSection: 'Who gets access — you, others, or both. Each name is checked against the directory.',
+    peopleHint: 'Separated by commas or spaces, up to 20. For a whole team, ask for their group instead.',
+    summary: 'Contribute access to',
+    noPeople: 'Name who should get access.',
+    badPeople: 'Fix the names the directory doesn’t know.',
+    checking: 'Checking the names in the directory…',
+    found: (n: number) => (n === 1 ? 'Found in the directory.' : `All ${n} found in the directory.`),
+    done: 'Access is granted in Azure DevOps.',
+    why: 'Say what the access is for.',
+    placeholder: 'e.g. Joining the loan scoring team; I’ll be working on the API.',
+    reasonLabel: 'Why do you need it?',
+    readyText: 'Ready. Nobody gets access until someone in DevOps approves it.',
+  },
+  revoke: {
+    lead: 'Take people off a project they no longer work on, once someone in DevOps — or your team lead — approves it.',
+    projectHint: REMOVES,
+    projectSection: 'The project to take people off.',
+    peopleSection: 'Who loses access. Each must have access to the project now.',
+    peopleHint: 'Separated by commas or spaces, up to 20. A group’s name removes the whole group.',
+    summary: 'Remove access to',
+    noPeople: 'Name who should lose access.',
+    badPeople: 'Fix the names: each must have access to the project now.',
+    checking: 'Checking who has access…',
+    found: (n: number) => (n === 1 ? 'Has access now, and can be removed.' : `All ${n} have access now, and can be removed.`),
+    done: 'Access is removed in Azure DevOps.',
+    why: 'Say why they no longer need it.',
+    placeholder: 'e.g. Carol moved to the platform team in May.',
+    reasonLabel: 'Why should they lose it?',
+    readyText: 'Ready. Nobody loses access until it is approved.',
+  },
+}
 
 /**
  * Asking for access to an existing project, for yourself or people you work
- * with. It is always Contribute on the whole project; the only choices are
+ * with — or, as `revoke`, for people to lose it. Access is always Contribute
+ * on the whole project, and a removal always all of it; the only choices are
  * which project and who.
  */
-export function GrantAccessPage() {
-  const title = REQUEST_TYPES.find((type) => type.kind === 'grant_access')!.title
+export function GrantAccessPage({ mode = 'grant' }: { mode?: 'grant' | 'revoke' }) {
+  const kind = mode === 'grant' ? 'grant_access' : 'revoke_access'
+  const copy = COPY[mode]
+  const title = REQUEST_TYPES.find((type) => type.kind === kind)!.title
   usePageTitle(title)
   const navigate = useNavigate()
   const { session } = useSession()
@@ -36,8 +79,9 @@ export function GrantAccessPage() {
   const [params] = useSearchParams()
   const [collection, setCollection] = useState(params.get('collection') ?? '')
   const [project, setProject] = useState(params.get('project') ?? '')
-  // Most people ask for themselves; start there and let them add others.
-  const [people, setPeople] = useState(params.get('people')?.split(',').join('\n') ?? session?.uid ?? '')
+  // Most people ask access for themselves; start there and let them add others. Nobody starts out removing themselves.
+  // Joined with commas: the field is one line, and a browser drops line breaks from one.
+  const [people, setPeople] = useState(params.get('people')?.split(',').join(', ') ?? (mode === 'grant' ? (session?.uid ?? '') : ''))
   const [justification, setJustification] = useState(params.get('reason') ?? '')
   const [verdict, setVerdict] = useState<Verdict>({ state: 'idle' })
   const [submitting, setSubmitting] = useState(false)
@@ -57,8 +101,8 @@ export function GrantAccessPage() {
 
   const grantees = useMemo(() => parseNames(people), [people])
   const target: Target | null = useMemo(
-    () => (collection && project && grantees.length > 0 ? { kind: 'grant_access', collection, project, grantees } : null),
-    [collection, project, grantees],
+    () => (collection && project && grantees.length > 0 ? { kind, collection, project, grantees } : null),
+    [kind, collection, project, grantees],
   )
 
   // The same rules the API applies on submit, asked as they type.
@@ -108,8 +152,8 @@ export function GrantAccessPage() {
     }
   }
 
-  const type = REQUEST_TYPES.find((t) => t.kind === 'grant_access')!
-  const lead = 'Contribute access to a project that already exists, granted once someone in DevOps approves it.'
+  const type = REQUEST_TYPES.find((t) => t.kind === kind)!
+  const lead = copy.lead
   if (collections.error) {
     return (
       <Unreachable
@@ -125,11 +169,11 @@ export function GrantAccessPage() {
   const ready: Readiness = [
     { label: 'Project chosen', done: Boolean(collection && project), missing: 'Choose the project.' },
     {
-      label: 'People found',
+      label: mode === 'grant' ? 'People found' : 'People with access',
       done: grantees.length > 0 && verdict.state === 'done' && verdict.result.ok,
-      missing: grantees.length === 0 ? 'Name who should get access.' : verdict.state === 'done' ? 'Fix the names the directory doesn’t know.' : 'Checking the names in the directory…',
+      missing: grantees.length === 0 ? copy.noPeople : verdict.state === 'done' ? copy.badPeople : copy.checking,
     },
-    { label: 'Reason given', done: justification.trim() !== '', missing: 'Say what the access is for.' },
+    { label: 'Reason given', done: justification.trim() !== '', missing: copy.why },
   ]
 
   return (
@@ -138,8 +182,8 @@ export function GrantAccessPage() {
       lead={lead}
       onSubmit={submit}
       aside={
-        <ReviewPanel ready={ready} steps={['Someone in DevOps reviews it.', 'Access is granted in Azure DevOps.', 'Your request shows it is done.']}>
-          <SummaryItem label="Contribute access to">
+        <ReviewPanel ready={ready} steps={['Someone in DevOps reviews it.', copy.done, 'Your request shows it is done.']}>
+          <SummaryItem label={copy.summary}>
             <TargetPath parts={[collection || '…', project || '…']} className="block text-[15px]" />
           </SummaryItem>
           <SummaryItem label={grantees.length > 1 ? `For ${grantees.length} people` : 'For'}>
@@ -158,7 +202,7 @@ export function GrantAccessPage() {
         </ReviewPanel>
       }
     >
-      <FormSection step={1} title="Project" description="The project to work in. Access is always the whole project.">
+      <FormSection step={1} title="Project" description={copy.projectSection}>
         <Field label="Collection" htmlFor="collection">
           {collections.loading ? (
             <Skeleton className="h-9 w-full" />
@@ -190,13 +234,13 @@ export function GrantAccessPage() {
           )}
         </Field>
 
-        <Field label="Project" htmlFor="project" hint={GRANTS}>
+        <Field label="Project" htmlFor="project" hint={copy.projectHint}>
           <ProjectPicker id="project" projects={projects.data ?? []} value={project} onChange={setProject} loading={projects.loading} after={!collection ? 'a collection' : undefined} />
         </Field>
       </FormSection>
 
-      <FormSection step={2} title="People" description="Who gets access — you, others, or both. Each name is checked against the directory.">
-        <Field label="Login names" htmlFor="people" hint="Separated by commas or spaces, up to 20. For a whole team, ask for their group instead.">
+      <FormSection step={2} title="People" description={copy.peopleSection}>
+        <Field label="Login names" htmlFor="people" hint={copy.peopleHint}>
           <Input
             id="people"
             value={people}
@@ -209,7 +253,7 @@ export function GrantAccessPage() {
           />
           <CheckMessage
             id="grant-check"
-            check={checkState(verdict, 'Checking the directory and Azure DevOps…', grantees.length === 1 ? 'Found in the directory.' : `All ${grantees.length} found in the directory.`)}
+            check={checkState(verdict, mode === 'grant' ? 'Checking the directory and Azure DevOps…' : 'Checking who has access…', copy.found(grantees.length))}
           />
         </Field>
       </FormSection>
@@ -218,12 +262,13 @@ export function GrantAccessPage() {
         <ReasonField
           value={justification}
           onChange={setJustification}
-          placeholder="e.g. Joining the loan scoring team; I’ll be working on the API."
-          hint="Say what the access is for."
+          placeholder={copy.placeholder}
+          hint={copy.why}
+          label={copy.reasonLabel}
         />
       </FormSection>
 
-      <FormActions ready={ready} submitting={submitting} />
+      <FormActions ready={ready} submitting={submitting} readyText={copy.readyText} />
     </RequestFormPage>
   )
 }

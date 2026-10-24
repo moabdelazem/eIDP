@@ -1,6 +1,6 @@
 /** Requests: what `/requests` sends and takes (apps/api modules/requests/service.ts, modules/requests/risk.ts). */
 
-export type RequestKind = 'create_repository' | 'create_project' | 'grant_access' | 'create_jira_project' | 'create_pipeline'
+export type RequestKind = 'create_repository' | 'create_project' | 'grant_access' | 'revoke_access' | 'create_jira_project' | 'create_pipeline'
 export type AccessLevel = 'read' | 'contribute'
 export type RequestStatus = 'pending' | 'approved' | 'rejected' | 'completed' | 'failed' | 'cancelled'
 
@@ -160,8 +160,9 @@ export type RequestRecord = {
   teamGroup: string | null
   /**
    * Who else is given access, by login name: on grant_access, everyone it
-   * grants; on create_project, the developers who get Contributor with the
-   * requester and their team.
+   * grants; on revoke_access, everyone it takes access from; on
+   * create_project, the developers who get Contributor with the requester
+   * and their team.
    */
   grantees: string[] | null
   accessLevel: AccessLevel | null
@@ -254,6 +255,8 @@ export type Target =
   | { kind: 'create_project'; collection: string; project: string; description?: string; developers?: string[] }
   /** Always Contribute on the whole project; neither is the requester's choice. */
   | { kind: 'grant_access'; collection: string; project: string; grantees: string[] }
+  /** Takes the people or groups named out of the project's Contributors and Readers. */
+  | { kind: 'revoke_access'; collection: string; project: string; grantees: string[] }
   /** `project` is the Jira project's name; `projectKey` its key. */
   /** `lead`: who leads it, by login name, when not the requester. */
   | { kind: 'create_jira_project'; project: string; projectKey: string; description?: string; lead?: string }

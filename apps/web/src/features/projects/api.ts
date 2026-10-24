@@ -4,6 +4,8 @@ import type { System } from './catalog.ts'
 // The JSON's shapes are the API's, from @eidp/contracts — one definition, so the two cannot drift.
 import type { ApplicationDetail, CatalogResponse, CatalogScope, CatalogSystem, SyncState } from '@eidp/contracts/catalog'
 export type { CatalogScope, SyncState } from '@eidp/contracts/catalog'
+import type { ProjectView } from '@eidp/contracts/projects'
+export type { ProjectMember, ProjectRepository, ProjectView } from '@eidp/contracts/projects'
 /** One row of an application — the base, or one environment's override — with its merged configuration. */
 export type ApplicationConfig = ApplicationDetail
 
@@ -63,4 +65,9 @@ function foldEnvironments(system: CatalogSystem): System {
     teams: system.teams,
     applications: [...byName.values()].sort((a, b) => a.name.localeCompare(b.name)),
   }
+}
+
+/** A project as a place to work: its repositories with their pipelines, and who can work in it. */
+export function fetchProjectView(system: string): Promise<ProjectView> {
+  return api<ProjectView>(`/projects/${encodeURIComponent(system)}`)
 }

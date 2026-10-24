@@ -232,7 +232,7 @@ function PendingCard({ request: r, onDecided }: { request: PortalRequest; onDeci
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Button size="sm" onClick={() => setApproving(true)}>
-          {r.kind === 'grant_access' ? 'Approve and grant' : 'Approve and create'}
+          {r.kind === 'grant_access' ? 'Approve and grant' : r.kind === 'revoke_access' ? 'Approve and remove' : 'Approve and create'}
         </Button>
         <Button size="sm" variant="outline" onClick={() => setRejecting(true)}>
           Reject
@@ -246,6 +246,7 @@ function PendingCard({ request: r, onDecided }: { request: PortalRequest; onDeci
         onOpenChange={setRejecting}
         what={targetPath(r).join(' / ')}
         granting={r.kind === 'grant_access'}
+        revoking={r.kind === 'revoke_access'}
         onReject={async (note) => {
           await rejectRequest(r, note)
           onDecided()

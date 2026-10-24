@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { ClipboardList, FolderGit2, FolderKanban, KeyRound, Workflow, type LucideIcon } from 'lucide-react'
+import { ClipboardList, FolderGit2, FolderKanban, KeyRound, UserMinus, Workflow, type LucideIcon } from 'lucide-react'
 import { AzureDevOpsIcon, JenkinsIcon, JiraIcon } from '@/components/brand-icons.tsx'
 import type { RequestKind } from './api.ts'
 
@@ -62,6 +62,15 @@ export const REQUEST_TYPES: RequestType[] = [
     icon: KeyRound,
     path: '/requests/new/azure-devops/access',
     kind: 'grant_access',
+  },
+  {
+    provider: 'azure-devops',
+    label: 'Remove access',
+    title: 'Remove access in Azure DevOps',
+    description: 'Take people off an existing project',
+    icon: UserMinus,
+    path: '/requests/new/azure-devops/remove-access',
+    kind: 'revoke_access',
   },
   {
     provider: 'jira',

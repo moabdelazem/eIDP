@@ -11,7 +11,7 @@ import { useSession } from '@/features/auth/session-context.tsx'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { usePageTitle } from '@/lib/use-page-title.ts'
 import { useResource } from '@/lib/use-resource.ts'
-import { isInFlight, isJira, isPipeline, pipelineFormFor, requestsApi, stepMoving, systemOf, targetPath, type PortalRequest } from './api.ts'
+import { isAccess, isInFlight, isJira, isPipeline, isRevoke, pipelineFormFor, requestsApi, stepMoving, systemOf, targetPath, type PortalRequest } from './api.ts'
 import { AdjustDialog, canAdjust } from './adjust-dialog.tsx'
 import { decide, rejectRequest } from './decisions.ts'
 import { REQUEST_TYPES } from './kinds.ts'
@@ -132,8 +132,8 @@ function RequestHeader({ request: r, own, onChanged }: { request: PortalRequest;
               </>
             ) : (
               <>
-                {r.kind === 'grant_access' ? 'Access to ' : isPipeline(r) ? 'From ' : 'In '}
-                <TargetPath parts={targetPath(r).slice(0, r.kind === 'grant_access' ? undefined : -1)} />
+                {r.kind === 'grant_access' ? 'Access to ' : isRevoke(r) ? 'Removing access to ' : isPipeline(r) ? 'From ' : 'In '}
+                <TargetPath parts={targetPath(r).slice(0, isAccess(r) ? undefined : -1)} />
               </>
             )}{' '}
             · filed {since(r.requestedAt)} by {own ? 'you' : r.requestedByName}
@@ -163,8 +163,8 @@ function stagesOf(r: PortalRequest): Stage[] {
   const at = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : null)
   const submitted: Stage = { label: 'Submitted', detail: at(r.requestedAt), state: 'done' }
   // The third stage is the work in the provider, named for what it is doing or did; the fourth, that it is all done.
-  const work = granting ? 'Granting' : isPipeline(r) ? 'Setting up' : 'Creating'
-  const worked = granting ? 'Granted' : isPipeline(r) ? 'Set up' : 'Created'
+  const work = granting ? 'Granting' : isRevoke(r) ? 'Removing' : isPipeline(r) ? 'Setting up' : 'Creating'
+  const worked = granting ? 'Granted' : isRevoke(r) ? 'Removed' : isPipeline(r) ? 'Set up' : 'Created'
   const end = 'Done'
   switch (r.status) {
     case 'pending':
@@ -236,7 +236,7 @@ function Details({ request: r, own }: { request: PortalRequest; own: boolean }) 
       <Facts
         empty="—"
         items={[
-          ['Type', r.kind === 'grant_access' ? 'Access to a project' : kindLabel(r.kind)],
+          ['Type', r.kind === 'grant_access' ? 'Access to a project' : isRevoke(r) ? 'Removing access from a project' : kindLabel(r.kind)],
           ...((r.collection
             ? [['Collection', <code>{r.collection}</code>]]
             : [['Key', <code>{r.projectKey}</code>]]) as [string, React.ReactNode][]),
@@ -340,16 +340,17 @@ function DecisionStep({ request: r, own }: { request: PortalRequest; own: boolea
 function OutcomeStep({ request: r }: { request: PortalRequest }) {
   const { can } = useProfile()
   const granting = r.kind === 'grant_access'
+  const revoking = isRevoke(r)
   const system = systemOf(r)
   const pipeline = isPipeline(r)
   const Icon = isJira(r) ? JiraIcon : AzureDevOpsIcon
   if (r.status === 'approved') {
-    return <Step title={granting ? `Granting access in ${system}…` : pipeline ? 'Setting up your pipeline…' : `Creating it in ${system}…`} current last />
+    return <Step title={granting ? `Granting access in ${system}…` : revoking ? `Removing access in ${system}…` : pipeline ? 'Setting up your pipeline…' : `Creating it in ${system}…`} current last />
   }
   if (r.status === 'completed') {
     const cloneUrl = r.kind === 'create_repository' && r.resultUrl ? r.resultUrl : null
     return (
-      <Step title={granting ? `Access granted in ${system}` : pipeline ? 'Pipeline set up' : `Created in ${system}`} when={r.completedAt} done success last>
+      <Step title={granting ? `Access granted in ${system}` : revoking ? `Access removed in ${system}` : pipeline ? 'Pipeline set up' : `Created in ${system}`} when={r.completedAt} done success last>
         {/* A pipeline's result is a commit: DevOps' to read, not the requester's. */}
         {r.resultUrl && (!pipeline || can('requests.decide')) && (
           <Button asChild variant="outline" size="sm" className="mt-3">
@@ -379,7 +380,7 @@ function OutcomeStep({ request: r }: { request: PortalRequest }) {
   }
   if (r.status === 'failed') {
     return (
-      <Step title={granting ? `${system} could not grant it` : pipeline ? 'Your pipeline could not be set up' : `${system} could not create it`} attention last>
+      <Step title={granting ? `${system} could not grant it` : revoking ? `${system} could not remove it` : pipeline ? 'Your pipeline could not be set up' : `${system} could not create it`} attention last>
         <p className="mt-2 text-sm">{r.error}</p>
         <p className="mt-2 text-sm text-muted-foreground">DevOps can retry once the cause is fixed.</p>
       </Step>
@@ -419,6 +420,8 @@ function DecisionCard({ request: r, onChanged }: { request: PortalRequest; onCha
             {pending
               ? (r.kind === 'grant_access'
                   ? 'Approving grants the access straight away.'
+                  : isRevoke(r)
+                    ? 'Approving removes the access straight away.'
                   : isPipeline(r)
                     ? 'Approving pushes the files below to inventories at once. Read them first.'
                     : `Approving creates it in ${systemOf(r)} and grants access.`) +
@@ -435,7 +438,7 @@ function DecisionCard({ request: r, onChanged }: { request: PortalRequest; onCha
               Reject
             </Button>
             <Button disabled={busy} onClick={() => setApproving(true)}>
-              {r.kind === 'grant_access' ? 'Approve and grant' : isPipeline(r) ? 'Approve and push' : 'Approve and create'}
+              {r.kind === 'grant_access' ? 'Approve and grant' : isRevoke(r) ? 'Approve and remove' : isPipeline(r) ? 'Approve and push' : 'Approve and create'}
             </Button>
           </>
         ) : (
@@ -450,6 +453,7 @@ function DecisionCard({ request: r, onChanged }: { request: PortalRequest; onCha
         onOpenChange={setRejecting}
         what={targetPath(r).join(' / ')}
         granting={r.kind === 'grant_access'}
+        revoking={isRevoke(r)}
         onReject={async (note) => {
           await rejectRequest(r, note)
           onChanged()

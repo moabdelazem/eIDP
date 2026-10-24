@@ -17,6 +17,7 @@ export function RejectDialog({
   onOpenChange,
   what,
   granting = false,
+  revoking = false,
   onReject,
 }: {
   open: boolean
@@ -24,6 +25,8 @@ export function RejectDialog({
   what: string
   /** An access request: nothing is created, access is not granted. */
   granting?: boolean
+  /** A request to take access away: rejecting it leaves everyone's access as it is. */
+  revoking?: boolean
   onReject: (note: string) => Promise<void>
 }) {
   const [note, setNote] = useState('')
@@ -41,7 +44,11 @@ export function RejectDialog({
         <DialogHeader>
           <DialogTitle>Reject this request?</DialogTitle>
           <DialogDescription>
-            {granting ? (
+            {revoking ? (
+              <>
+                Nobody loses access to <span className="font-mono">{what}</span>.
+              </>
+            ) : granting ? (
               <>
                 Access to <span className="font-mono">{what}</span> will not be granted.
               </>
