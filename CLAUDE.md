@@ -14,7 +14,7 @@ pnpm workspace. `apps/*` and `packages/*`.
 
   | Folder | Holds | Rule |
   |---|---|---|
-  | `modules/<name>/` | One area: `access`, `activity`, `auth`, `catalog`, `chatbot`, `digest`, `health`, `jenkins`, `pipelines`, `preferences`, `requests` | Other modules import its `index.ts` and nothing else |
+  | `modules/<name>/` | One area: `access`, `activity`, `auth`, `catalog`, `chatbot`, `digest`, `elk`, `health`, `jenkins`, `pipelines`, `preferences`, `requests` | Other modules import its `index.ts` and nothing else |
   | `modules/<name>/routes.ts` | HTTP shape: paths, validation, status codes | Mounted by `app.ts` alone; no business logic |
   | `modules/<name>/service.ts` (and its parts) | The area's logic | Knows nothing about HTTP |
   | `modules/<name>/jobs.ts` | The area's background jobs | Scheduled by `server.ts` from the index |
@@ -92,7 +92,7 @@ Each area's detail — what it does, why, and the traps it has hit — lives in
 | [`docs/web.md`](docs/web.md) | routes, lazy pages, the Overview, motion, the map, the sidebar, the query cache, the API client |
 | [`docs/ui.md`](docs/ui.md) | page titles and layout, skeletons, dialogs, tables, wrapping, DataView, the palette |
 | [`docs/design.md`](docs/design.md) | colours, light/dark, brand marks, fonts, the logo |
-| [`docs/integrations.md`](docs/integrations.md) | ADO, Jira, Jenkins, Ollama, Vault, the inventories parser |
+| [`docs/integrations.md`](docs/integrations.md) | ADO, Jira, Jenkins, Elasticsearch, Ollama, Vault, the inventories parser |
 | [`docs/platform.md`](docs/platform.md) | the catalog, background jobs, migrations, where health went |
 | [`docs/requests.md`](docs/requests.md) | request types, lifecycle, creation, access requests, risk, forms |
 | [`docs/access.md`](docs/access.md) | permissions, roles, bindings, view-as, the Access page |

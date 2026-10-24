@@ -39,6 +39,8 @@ export const PERMISSIONS = {
   'digests.all': 'Read every team’s weekly digest, not only your own teams’, and write one again',
   'ai.chat': 'Chat with the portal’s chatbot, which looks up only what you may already see',
   'activity.view': 'See who uses the portal and what they do in it — sign-ins, pages, requests, actions and AI use',
+  'elk.read': 'Read and search documents in the Elasticsearch indices the portal is allowed (ELASTICSEARCH_INDICES)',
+  'elk.write': 'Add and replace documents in those Elasticsearch indices',
 } as const satisfies Record<Permission, string>
 
 export const ROLES = {
@@ -71,6 +73,16 @@ export const ROLES = {
     label: 'Build operator',
     description: 'Watches Jenkins, has failed builds explained, and re-runs, stops or dequeues builds. Bind it globally.',
     permissions: ['jenkins.view', 'jenkins.operate', 'ai.use'],
+  },
+  'elk-reader': {
+    label: 'ELK reader',
+    description: 'Reads and searches the Elasticsearch indices the portal is allowed, through its API. Bind it globally — to a person or a service account.',
+    permissions: ['elk.read'],
+  },
+  'elk-writer': {
+    label: 'ELK writer',
+    description: 'Reads, searches and adds documents to the Elasticsearch indices the portal is allowed. Bind it globally.',
+    permissions: ['elk.read', 'elk.write'],
   },
   'devops-admin': {
     label: 'DevOps admin',

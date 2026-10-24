@@ -100,6 +100,7 @@ It talks to:
 | Azure DevOps Server (on-prem) | The `inventories` repo, repositories, projects, access | For the map and ADO requests |
 | Jira Data Center | Jira project requests | Optional |
 | Jenkins | My pipelines, the Jenkins page | Optional |
+| Elasticsearch (ELK) | Reading, searching and adding documents in allowed indices, through `/elk` | Optional |
 | Ollama (Qwen 2.5 on our machines) | Failure explanations, request summaries, digests, the chatbot | Optional — AI features hide without it |
 | HashiCorp Vault | The API's secrets, with `.env` behind it | Optional |
 

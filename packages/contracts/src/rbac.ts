@@ -18,6 +18,8 @@ export type Permission =
   | 'ai.chat'
   | 'activity.view'
   | 'digests.all'
+  | 'elk.read'
+  | 'elk.write'
 
 export type ScopeType = 'global' | 'team' | 'project'
 export type SubjectType = 'group' | 'user'

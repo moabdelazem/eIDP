@@ -142,6 +142,20 @@ export const schema = z.object({
   /** How far back automatic explaining looks. Older failures are explained on request. */
   OLLAMA_AUTO_EXPLAIN_HOURS: z.coerce.number().positive().default(24),
 
+  // Elasticsearch (the ELK stack's store), read and written through the
+  // portal's own API (modules/elk). Optional: without it /elk answers 503.
+  ELASTICSEARCH_URL: z.string().url().optional(),
+  /** An API key (the base64 `id:api_key` Kibana shows), sent as `ApiKey …`. Or a username and password below. */
+  ELASTICSEARCH_API_KEY: z.string().min(1).optional(),
+  ELASTICSEARCH_USERNAME: z.string().min(1).optional(),
+  ELASTICSEARCH_PASSWORD: z.string().min(1).optional(),
+  /**
+   * The only indices the portal reads or writes, comma-separated; `*` matches
+   * any run of characters (`eidp-*`). Unset means none: the portal is never an
+   * open door to the whole cluster.
+   */
+  ELASTICSEARCH_INDICES: z.string().min(1).optional(),
+
   /** How often to look for last week's missing team digests (0 turns it off). */
   DIGEST_CHECK_MINUTES: z.coerce.number().min(0).default(60),
 

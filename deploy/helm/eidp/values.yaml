@@ -60,6 +60,8 @@ api:
     # JIRA_BASE_URL: https://jira.example.com
     # JENKINS_URL: https://jenkins.example.com
     # JENKINS_USER: svc-eidp
+    # ELASTICSEARCH_URL: https://elasticsearch.example.com:9200
+    # ELASTICSEARCH_INDICES: eidp-*
     # OLLAMA_URL: http://ollama.ai.svc.cluster.local:11434
 
   # Secrets, in the order the API reads them: Vault first — what it reads
@@ -68,7 +70,7 @@ api:
   # earlier one.
   secrets:
     # An existing Secret whose keys are setting names (LDAP_BIND_PASSWORD,
-    # ADO_PAT, JIRA_TOKEN, JENKINS_TOKEN, JWT_SECRET, DATABASE_URL, …), all
+    # ADO_PAT, JIRA_TOKEN, JENKINS_TOKEN, ELASTICSEARCH_API_KEY, JWT_SECRET, …), all
     # passed to the API as environment variables.
     existingSecret: ""
     # JWT_SECRET signs sessions; every replica needs the same one. Generated

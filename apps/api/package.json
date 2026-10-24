@@ -10,6 +10,7 @@
     "ldap:doctor": "node --env-file-if-exists=../../.env src/with-secrets.ts src/integrations/ldap/doctor.ts",
     "ado:fake": "node src/integrations/ado/fake-server.ts",
     "jira:fake": "node src/integrations/jira/fake-server.ts",
+    "elasticsearch:fake": "node src/integrations/elasticsearch/fake-server.ts",
     "jenkins:fake": "node src/integrations/jenkins/fake-server.ts",
     "ollama:fake": "node src/integrations/ollama/fake-server.ts",
     "rbac:import": "node --env-file-if-exists=../../.env src/with-secrets.ts src/modules/access/import.ts",
