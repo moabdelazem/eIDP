@@ -64,7 +64,7 @@ request. Each card draws inside its own `ErrorBoundary`.
 
 The map lives at `/map`; the old `/?q=` links redirect there. The catalog
 card's charts follow three rules:
-- one series, one hue (`--chart-1`, eggplant, never red), top 8 plus "Other";
+- one series, one hue (`--chart-1`, navy, never red), top 8 plus "Other";
 - every chart has an sr-only table;
 - `charts.tsx` is lazy-loaded, because recharts is ~330 KB that only this page
   needs. Import nothing else from it statically, or it rejoins the main
@@ -156,7 +156,7 @@ panel; phones open on it, and there the panel rises as a sheet.
   two systems may share.
 - `map-panel.tsx`, `map-list.tsx`, `map-toolbar.tsx` and `map-parts.tsx`
   (environment pills, the technology tag, search highlighting) are the rest.
-  Production (`prd`, `prd_dr`) is marked by an eggplant dot, never red.
+  Production (`prd`, `prd_dr`) is marked by a navy dot, never red.
 
 The map has to work at ~207 systems and ~1100 applications. Three rules keep
 it usable there, and breaking any one of them makes it unusable again:
@@ -181,17 +181,17 @@ looks like a leaf and loses its button. The List view is the plain,
 screen-reader friendly path to the same data.
 
 Sidebar links: hover (`--sidebar-hover`) is lighter than the current page
-(`--sidebar-accent`), which also carries a lilac bar (`--sidebar-indicator`),
+(`--sidebar-accent`), which also carries a light-blue bar (`--sidebar-indicator`),
 so where you are and where you point never look the same; colours fade in
 180ms and the icon nudges on hover under `no-preference`. All of it is CSS
 on `[data-sidebar=menu-button]` in `index.css`, not edits to the generated
 `sidebar.tsx`, whose button animated only its size. A trigger whose menu
 is open (New request) takes the hover tint, and its chevron leans out in
-lilac.
+light blue.
 
 Menu, palette (cmdk) and select items highlight in `--secondary` with dark
 text, easing in 150ms — shadcn's own `bg-accent` is the rail's dark
-eggplant here, which put the grey description under a highlight at 1.8:1 (now 5.4:1).
+navy here, which put the grey description under a highlight at 1.8:1.
 Menus, dialogs and popovers also drop their open animation under
 `prefers-reduced-motion: reduce`, which shadcn does not do on its own.
 

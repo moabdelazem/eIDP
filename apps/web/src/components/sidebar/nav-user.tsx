@@ -1,4 +1,4 @@
-import { LogOut, Monitor, Moon, Sun, UserRound } from 'lucide-react'
+import { LogOut, Monitor, Moon, Palette as PaletteIcon, Sun, UserRound } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Link } from 'react-router'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -17,12 +17,14 @@ import {
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { useSession } from '@/features/auth/session-context.tsx'
+import { setPalette, usePalette, type Palette } from '@/lib/palette.ts'
 
-/** Who you are signed in as, where to see more, the theme, and the way out. */
+/** Who you are signed in as, where to see more, the theme and colours, and the way out. */
 export function NavUser() {
   const { session, signOut } = useSession()
   const { profile } = useProfile()
   const { theme = 'system', setTheme } = useTheme()
+  const palette = usePalette()
   if (!session) return null
 
   // The role people know you by reads better than an email address.
@@ -71,6 +73,23 @@ export function NavUser() {
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+            {/* Which colours, beside light or dark: the e-finance navy and red, or the classic eggplant (lib/palette.ts). */}
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <PaletteIcon />
+                Colours
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuRadioGroup value={palette} onValueChange={(value) => setPalette(value as Palette)}>
+                  <DropdownMenuRadioItem value="efinance">
+                    <Swatch name="efinance" /> e-finance
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="classic">
+                    <Swatch name="classic" /> Classic
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={signOut}>
               <LogOut />
@@ -89,4 +108,14 @@ function initials(name: string): string {
     .slice(0, 2)
     .map((word) => word[0]?.toUpperCase() ?? '')
     .join('')
+}
+
+/** A palette at a glance: its ground and its signal, side by side. */
+function Swatch({ name }: { name: Palette }) {
+  return (
+    <span aria-hidden className="flex overflow-hidden rounded-full ring-1 ring-border">
+      <span className="size-3" style={{ background: `var(--swatch-${name}-ground)` }} />
+      <span className="size-3" style={{ background: `var(--swatch-${name}-signal)` }} />
+    </span>
+  )
 }

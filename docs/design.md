@@ -2,15 +2,38 @@
 
 Colours, light and dark, brand marks, type and the logo. Moved out of CLAUDE.md, which keeps the rules that break things and points here.
 
-Eggplant is the ground, red is the signal — if something is red it is an
-action or it wants attention, never decoration. The app chrome (`--rail`)
-stays dark eggplant; `--background` is paper. The shadcn `--sidebar-*`
+**The palette is the e-finance mark's**: navy `#002E6D` is the ground, red
+`#E1241A` is the signal — if something is red it is an action or it wants
+attention, never decoration. The app chrome (`--rail`) is the brand navy
+itself, in both themes; `--background` is a cool paper. The red used in the
+app (`--primary`, `--destructive`) is the brand's hue one step deeper,
+`#D4211A`: it is also text (an alarm count, an error), and `#E1241A` reads
+4.4:1 on the page, just short of 4.5. Navy tints the neutrals (borders,
+muted text, secondary fills) so the whole page reads as one family, and the
+chart colour and focus ring are lighter steps of the same navy. In progress
+(`--info`) is teal rather than blue, so a running build never reads as the
+brand's decoration. Every text pair is 4.5:1 or better and every ring or
+mark 3:1, in both themes; check a new value with a contrast tool before it
+lands. The shadcn `--sidebar-*`
 tokens point at the rail, so the sidebar is the rail. `shadcn add` writes
 its own neutral values into `src/index.css` — check them after adding any
 component and point them back at the rail.
 
+**Two palettes, chosen per person.** e-finance (above) is the default;
+**Classic** is the eggplant ground and crimson signal the portal started
+with. The user menu's *Colours* picks one, beside *Theme* (light, dark,
+system), so there are four looks in all. It is kept per browser in
+`eidp.palette` (`lib/palette.ts`) and set as `data-palette="classic"` on
+`<html>` before the first paint by index.html's script, as the theme is, so a
+page never flashes the other colours. Classic is a block of overrides in
+`index.css` — `:root[data-palette='classic']` outranks `:root` and `.dark`,
+and `:root.dark[data-palette='classic']` outranks both — so a token added to
+the default palette needs its classic value there too, or Classic quietly
+shows the e-finance one. The menu's swatches are their own tokens
+(`--swatch-*`), fixed whichever palette is in use.
+
 Three **meaning colours** sit beside those two, for state and nothing else:
-`success` (green, done), `warning` (amber, waiting) and `info` (indigo, in
+`success` (green, done), `warning` (amber, waiting) and `info` (teal, in
 progress), each a text colour plus a `-soft` fill, all 4.5:1 or better in
 both themes. `STATUS_TONE` in `features/requests/status.tsx` is where a
 status gets its colour — badges, the stat tiles' dots and the timeline's last
@@ -68,7 +91,7 @@ stays quiet.
 
 `apps/web/src/assets/logo.png` is the logo the app uses: the supplied mark
 with its baked `rgb(240,243,250)` background knocked out and the padding
-trimmed, so it sits on the eggplant rail and on paper without a visible box,
+trimmed, so it sits on the navy rail and on paper without a visible box,
 and scaled to 128 px — over three times the 36 px it is ever shown at, sharp on
 a high-density screen, 7 KB instead of 21 on every first load.
 `logo-source.png` beside it is the untouched original. Replacing the logo

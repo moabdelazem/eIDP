@@ -9,7 +9,7 @@ import { envLabel, inOrder, isProduction } from './tree.ts'
 
 /**
  * Where an application runs, in pipeline order. Production carries a filled
- * eggplant dot and a heavier border — marked, never red, because running in
+ * navy dot and a heavier border — marked, never red, because running in
  * production is a fact, not something to act on.
  */
 export function EnvPills({ environments, className, size = 'sm' }: { environments: string[]; className?: string; size?: 'xs' | 'sm' }) {
