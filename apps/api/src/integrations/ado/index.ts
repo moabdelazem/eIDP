@@ -4,7 +4,7 @@ import { adoConfig, adoGet, adoGetList, adoPost } from './client.ts'
 
 export { cloneOrUpdate, commitAndPush, findCommit, freshCopy, headCommit, inventoriesRemote, ocpTemplatesRemote, type FileWrite, type Remote } from './git.ts'
 export { adoConfig } from './client.ts'
-export { addToProjectGroup, CONTRIBUTOR, findIdentity, grantRepository, READER, type Principal } from './access.ts'
+export { addToProjectGroup, CONTRIBUTOR, findIdentity, grantRepository, projectGroupMembers, READER, removeFromProjectGroup, type GroupMember, type Principal, type ProjectGroup } from './access.ts'
 
 export type AdoCollection = { id: string; name: string }
 
@@ -140,6 +140,31 @@ export async function createProject(
     throw new ApiError(502, 'ado_project_missing', `ADO reported ${name} created but does not list it.`)
   }
   return created
+}
+
+/**
+ * The collection a project is in, and its name as ADO spells it — or null when
+ * no collection has it. The catalog knows a project by name only. The
+ * default collection is asked first, as the usual home; a PAT refused at the
+ * server level can still answer for it.
+ */
+export async function findProject(name: string): Promise<{ collection: string; project: AdoProject } | null> {
+  const { defaultCollection } = adoConfig()
+  const inDefault = (await listProjects(defaultCollection)).find((p) => p.name.toLowerCase() === name.toLowerCase())
+  if (inDefault) return { collection: defaultCollection, project: inDefault }
+  let collections: AdoCollection[]
+  try {
+    collections = await listCollections()
+  } catch (err) {
+    if (err instanceof ApiError && (err.code === 'ado_forbidden' || err.code === 'ado_not_authenticated')) return null
+    throw err
+  }
+  for (const { name: collection } of collections) {
+    if (collection.toLowerCase() === defaultCollection.toLowerCase()) continue
+    const found = (await listProjects(collection)).find((p) => p.name.toLowerCase() === name.toLowerCase())
+    if (found) return { collection, project: found }
+  }
+  return null
 }
 
 /** Where a person would open this in a browser. */

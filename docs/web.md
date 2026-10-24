@@ -174,6 +174,27 @@ it usable there, and breaking any one of them makes it unusable again:
 Open all and Close all refit as a filter does (they change the whole shape);
 opening one branch does not, so the view never jumps from under the reader.
 
+**A project's page** (`/systems/:id`, `system-page.tsx`) is a system of the
+map as a place to work — the old portal's Code Control page. "Code and
+access" in the map's panel opens it, and an application's page links to it
+from its system's name. Its data is one read, `GET /projects/:system`
+(`modules/projects`), behind `catalogReach`: another team's project is a 404.
+
+- **Code** lists the repositories of its Azure DevOps project. Each one says
+  whether it has a pipeline: the catalog builds an application from it
+  (`repository_name`, matched without regard to case), a pipeline request for
+  it is open, or neither. Neither gets *Set up a pipeline*, and the section
+  has *New repository*: both open their forms filled in.
+- **Who can work in it** lists everyone directly in its Contributors and
+  Readers. People can be ticked, and *Ask to remove* opens the Remove access
+  form with them filled in. Someone whose removal is waiting shows *Removal
+  asked* and can't be ticked again.
+- What Azure DevOps cannot answer (no project by that name, an
+  unreachable server, a token without identity rights) is said in place of
+  the list, and the catalog half of the page still stands.
+- The page imports nothing from `features/requests`: it links to the forms,
+  which do the asking.
+
 `features/projects/catalog.ts` holds the catalog's types as the map uses
 them. The map prunes closed branches before layout, so a node's `children` is
 gone while closed — `childCount` is carried alongside, or a closed system

@@ -51,7 +51,7 @@ export function RequestPreview({ request: r, onClose }: { request: PortalRequest
             <Facts
               empty="—"
               items={[
-                ['Type', r.kind === 'grant_access' ? 'Access to a project' : kindLabel(r.kind)],
+                ['Type', r.kind === 'grant_access' ? 'Access to a project' : r.kind === 'revoke_access' ? 'Removing access from a project' : kindLabel(r.kind)],
                 ['Access', <AccessLine request={r} />],
                 ['Requested by', r.requestedByName],
                 ['Requested', at(r.requestedAt)],

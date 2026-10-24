@@ -118,6 +118,28 @@ retry just grants again — both operations are idempotent. The form is its own
 page (`grant-access-page.tsx`); the badge says Granting/Granted, not
 Creating/Created.
 
+**Removing access** (`revoke_access`) takes up to 20 people, or groups, out
+of a project's Contributors and Readers: all their access to it.
+
+- It is the access form in its other mode
+  (`/requests/new/azure-devops/remove-access`). The project page's *Ask to
+  remove* opens it with the people filled in.
+- `check()` refuses a name that is not directly in either group now, and a
+  name an open removal already covers. So two people asking for the same
+  removal file one request, and the one-open-creation index leaves this kind
+  out, as it does access requests.
+- It is decided like an access request: by DevOps, or by a team lead within
+  their teams (`deciding.ts`, `isAccess`).
+- Every name is resolved before anything is removed, so one unknown name
+  removes nobody. Removing someone already out is not an error, so a retry
+  simply runs again (`executeRevoke` in `grant.ts`).
+- The assessment cautions when a whole group is removed, and when a team that
+  owns the project is.
+
+The old portal let a manager add or remove their reports on the spot, with no
+request and no record. Here it is always a request, and a team lead can
+decide it at once.
+
 **Pipelines** (`create_pipeline`) write an application into the inventories
 repository for a repository that already exists — the old portal's "create
 new application". The request carries the repository and a `pipeline`

@@ -1,5 +1,5 @@
 import type { Check } from '@eidp/contracts/requests'
-import { listProjects, listRepositories } from '../../integrations/ado/index.ts'
+import { listProjects, listRepositories, projectGroupMembers } from '../../integrations/ado/index.ts'
 import * as jira from '../../integrations/jira/index.ts'
 import { dnOf } from '../../integrations/ldap/index.ts'
 import { ApiError } from '../../lib/errors.ts'
@@ -27,6 +27,7 @@ export async function check(input: Target, except?: string): Promise<Check> {
   if (input.kind === 'create_jira_project') return checkJiraProject(input, except)
   if (input.kind === 'create_pipeline') return checkPipeline(input, except)
   if (input.kind === 'grant_access') return checkGrant(input)
+  if (input.kind === 'revoke_access') return checkRevoke(input, except)
   const creatingRepo = input.kind === 'create_repository'
   const name = creatingRepo ? (input.repository ?? '') : input.project
   const problem = nameProblem(name, creatingRepo ? 'repository' : 'project')
@@ -94,6 +95,36 @@ async function checkGrant(input: AdoTarget): Promise<Check> {
 
   const unknown = await unknownAccounts(grantees)
   return unknown ? { ok: false, reason: unknown } : { ok: true }
+}
+
+/**
+ * Removing access: each name must be someone, or a group, in the project's
+ * Contributors or Readers now — the list the project page shows — and not
+ * already waiting to be removed, so two people asking for the same removal
+ * file one request, not two.
+ */
+async function checkRevoke(input: AdoTarget, except?: string): Promise<Check> {
+  const names = uniqueNames(input.grantees ?? [])
+  if (names.length === 0) return { ok: false, reason: 'Name at least one person to remove.' }
+  if (names.length > MAX_GRANTEES) return { ok: false, reason: `At most ${MAX_GRANTEES} people per request.` }
+
+  const project = (await listProjects(input.collection)).find((p) => same(p.name, input.project))
+  if (!project) return { ok: false, reason: `There is no project ${input.project} in ${input.collection}.` }
+  const members = [...(await projectGroupMembers(input.collection, project.name, 'Contributors')), ...(await projectGroupMembers(input.collection, project.name, 'Readers'))]
+  const outside = names.filter((name) => !members.some((m) => same(m.account, name)))
+  if (outside.length > 0) {
+    return { ok: false, reason: `${outside.join(', ')} ${outside.length === 1 ? 'has' : 'have'} no access to ${project.name} to remove.` }
+  }
+
+  const waiting = await db
+    .select({ by: requests.requestedByName, grantees: requests.grantees })
+    .from(requests)
+    .where(and(eq(requests.kind, 'revoke_access'), eq(sql`lower(${requests.project})`, project.name.toLowerCase()), open, others(except)))
+  for (const row of waiting) {
+    const both = names.filter((name) => (row.grantees ?? []).some((g) => same(g, name)))
+    if (both.length > 0) return { ok: false, reason: `${row.by} has already asked to remove ${both.join(', ')}; it is waiting on approval.` }
+  }
+  return { ok: true }
 }
 
 /** The names the directory does not know, said as a reason — or null when it knows them all. */

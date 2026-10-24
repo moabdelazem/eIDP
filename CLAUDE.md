@@ -14,7 +14,7 @@ pnpm workspace. `apps/*` and `packages/*`.
 
   | Folder | Holds | Rule |
   |---|---|---|
-  | `modules/<name>/` | One area: `access`, `activity`, `auth`, `catalog`, `chatbot`, `digest`, `elk`, `health`, `jenkins`, `pipelines`, `preferences`, `requests` | Other modules import its `index.ts` and nothing else |
+  | `modules/<name>/` | One area: `access`, `activity`, `auth`, `catalog`, `chatbot`, `digest`, `elk`, `health`, `jenkins`, `pipelines`, `preferences`, `projects`, `requests` | Other modules import its `index.ts` and nothing else |
   | `modules/<name>/routes.ts` | HTTP shape: paths, validation, status codes | Mounted by `app.ts` alone; no business logic |
   | `modules/<name>/service.ts` (and its parts) | The area's logic | Knows nothing about HTTP |
   | `modules/<name>/jobs.ts` | The area's background jobs | Scheduled by `server.ts` from the index |
@@ -31,7 +31,7 @@ pnpm workspace. `apps/*` and `packages/*`.
   splits into parts in its folder — `jenkins` (shared, now, stats, search,
   actions, sync, access, retention, explainer) and `requests` (model, check,
   lifecycle, deciding, adjust, rows, and one executor per kind: `execute.ts`
-  runs the Azure DevOps creations and dispatches `grant.ts`,
+  runs the Azure DevOps creations and dispatches `grant.ts` (granting and removing access),
   `jira-project.ts` and `pipeline/execute.ts`; their shared steps are
   `steps.ts`; a pipeline's Jenkins steps after its push are
   `pipeline/follow-up.ts`), with `service.ts` re-exporting the

@@ -17,6 +17,7 @@ import { digestRoutes } from './modules/digest/routes.ts'
 import { healthRoutes } from './modules/health/routes.ts'
 import { preferenceRoutes } from './modules/preferences/routes.ts'
 import { elkRoutes } from './modules/elk/routes.ts'
+import { projectRoutes } from './modules/projects/routes.ts'
 
 /**
  * Builds the app without listening, so tests can drive it through
@@ -51,6 +52,7 @@ export function createApp() {
   app.route('/activity', activityRoutes)
   app.route('/preferences', preferenceRoutes)
   app.route('/elk', elkRoutes)
+  app.route('/projects', projectRoutes)
 
   return app
 }

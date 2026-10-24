@@ -126,7 +126,7 @@ const tokens: Record<string, string> = {}
 before(async () => {
   await migrate()
   await query('delete from requests')
-  for (const who of ['alice', 'bob', 'carol']) {
+  for (const who of ['alice', 'bob', 'carol', 'dave']) {
     const res = await app.request('/auth/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -794,6 +794,102 @@ test('risk: without the model, the facts and the level still stand, and it says 
   await query('delete from catalog_systems where dir = $1', [RISK_SYSTEM])
   await catalogLock.query('select pg_advisory_unlock(4202)')
   await catalogLock.end()
+})
+
+// ---- a project's page: its code, and removing access ----------------------
+// A system of its own in the catalog, held under the catalog lock (4202):
+// Payments owns it, so bob sees it and dave, in no team, does not.
+
+const PROJECT_SYSTEM = 'ZZProj'
+const projectLock = new pg.Client({ connectionString: process.env.DATABASE_URL ?? 'postgresql://eidp:eidp@localhost:5432/eidp' })
+type View = {
+  ado: { collection: string; project: string } | null
+  repositories: { name: string; applications: string[]; pipelineRequest: { id: string } | null }[]
+  repositoriesError: string | null
+  members: { account: string; group: boolean; in: string[]; removal: { id: string } | null }[]
+  membersError: string | null
+}
+let askedPipeline = ''
+
+test('project page: its repositories with their pipelines, and who can work in it', async () => {
+  await projectLock.connect()
+  await projectLock.query('select pg_advisory_lock(4202)')
+  await query('delete from catalog_systems where dir = $1', [PROJECT_SYSTEM])
+  await query(`insert into catalog_systems (dir, project_name, teams) values ($1, 'ProjLab', '{"dev":"Payments"}')`, [PROJECT_SYSTEM])
+  await query(`insert into catalog_applications (id, system_dir, group_name, name, repository) values ($1, $2, 'proj-api', 'proj-api', 'Proj-API')`, [`${PROJECT_SYSTEM}/proj-api`, PROJECT_SYSTEM])
+  fake.addProject('DefaultCollection', 'ProjLab')
+  for (const repo of ['proj-api', 'proj-web', 'proj-docs']) fake.addRepo('DefaultCollection', 'ProjLab', repo)
+  fake.join('ProjLab', 'Contributors', 'carol')
+  fake.join('ProjLab', 'Contributors', 'Payments')
+  fake.join('ProjLab', 'Readers', 'alice')
+  const { rows } = await query<{ id: string }>(
+    `insert into requests (kind, collection, project, repository, justification, requested_by, requested_by_name, pipeline)
+     values ('create_pipeline', 'DefaultCollection', 'ProjLab', 'proj-web', 'project page test', 'bob', 'Bob Example', '{"application":"proj-web"}') returning id`,
+  )
+  askedPipeline = rows[0]!.id
+
+  const res = await call('bob', 'GET', `/projects/${PROJECT_SYSTEM}`)
+  assert.equal(res.status, 200)
+  const view = await json<View>(res)
+  assert.deepEqual(view.ado && [view.ado.collection, view.ado.project], ['DefaultCollection', 'ProjLab'])
+  assert.equal(view.repositoriesError, null)
+  // A pipeline from the catalog (matched without regard to case), one asked for, and none.
+  assert.deepEqual(
+    view.repositories.map((r) => [r.name, r.applications, r.pipelineRequest?.id ?? null]),
+    [['proj-api', ['proj-api'], null], ['proj-docs', [], null], ['proj-web', [], askedPipeline]],
+  )
+  // People first, then groups; each with the groups they are in.
+  assert.deepEqual(view.members.map((m) => [m.account, m.group, m.in]), [['alice', false, ['Readers']], ['carol', false, ['Contributors']], ['Payments', true, ['Contributors']]])
+})
+
+test('project page: someone outside its teams is told there is no such project', async () => {
+  const res = await call('dave', 'GET', `/projects/${PROJECT_SYSTEM}`)
+  assert.equal(res.status, 404)
+  assert.equal((await json<{ error: { code: string } }>(res)).error.code, 'project_not_found')
+  assert.equal((await call('bob', 'GET', '/projects/no-such-system')).status, 404)
+})
+
+test('removing access: checked against who has it, filed once, decided by DevOps', async () => {
+  const check = async (grantees: string[]) =>
+    json<{ ok: boolean; reason?: string }>(await call('bob', 'POST', '/requests/check', { kind: 'revoke_access', collection: 'DefaultCollection', project: 'ProjLab', grantees }))
+  assert.deepEqual(await check(['carol', 'Payments']), { ok: true })
+  assert.match(String((await check(['bob'])).reason), /bob has no access to ProjLab/)
+  assert.match(String((await check([])).reason), /at least one person/)
+
+  const filed = await call('bob', 'POST', '/requests', { kind: 'revoke_access', collection: 'DefaultCollection', project: 'ProjLab', grantees: ['carol'], justification: 'Carol moved to the platform team last month.' })
+  assert.equal(filed.status, 201)
+  const request = await json<{ id: string; kind: string; grantees: string[]; accessLevel: string | null }>(filed)
+  assert.equal(request.kind, 'revoke_access')
+  assert.deepEqual(request.grantees, ['carol'])
+  assert.equal(request.accessLevel, null)
+
+  // The page marks it; asking again for the same person is refused.
+  const view = await json<View>(await call('bob', 'GET', `/projects/${PROJECT_SYSTEM}`))
+  assert.equal(view.members.find((m) => m.account === 'carol')!.removal!.id, request.id)
+  const again = await call('alice', 'POST', '/requests', { kind: 'revoke_access', collection: 'DefaultCollection', project: 'ProjLab', grantees: ['carol', 'alice'], justification: 'Cleaning up who can change ProjLab.' })
+  assert.equal(again.status, 409)
+  assert.match((await json<{ error: { message: string } }>(again)).error.message, /Bob Example has already asked to remove carol/)
+
+  assert.equal((await call('bob', 'POST', `/requests/${request.id}/approve`, {})).status, 403)
+  await call('alice', 'POST', `/requests/${request.id}/approve`, {})
+  const done = await settled(request.id)
+  assert.equal(done.status, 'completed', done.error)
+  assert.match(done.resultUrl!, /\/DefaultCollection\/ProjLab$/)
+  const after = await json<View>(await call('bob', 'GET', `/projects/${PROJECT_SYSTEM}`))
+  assert.deepEqual(after.members.map((m) => m.account), ['alice', 'Payments'])
+})
+
+test('removing access: a whole group is a caution for the approver', async () => {
+  const filed = await json<{ id: string }>(
+    await call('bob', 'POST', '/requests', { kind: 'revoke_access', collection: 'DefaultCollection', project: 'ProjLab', grantees: ['Payments'], justification: 'Payments hands ProjLab over to the platform team.' }),
+  )
+  const { assessment } = await assessed(filed.id)
+  assert.ok(texts(assessment, 'caution').some((t: string) => /Removes a whole group: Payments/.test(t)), JSON.stringify(assessment.facts))
+  assert.ok(texts(assessment, 'caution').some((t: string) => /Payments is a team that owns ProjLab/.test(t)))
+
+  await query('delete from catalog_systems where dir = $1', [PROJECT_SYSTEM])
+  await projectLock.query('select pg_advisory_unlock(4202)')
+  await projectLock.end()
 })
 
 // ---- pipelines ------------------------------------------------------------------

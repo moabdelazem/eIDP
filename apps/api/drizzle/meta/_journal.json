@@ -36,6 +36,13 @@
       "when": 1792845692725,
       "tag": "0004_project_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792847433108,
+      "tag": "0005_revoke_access",
+      "breakpoints": true
     }
   ]
 }

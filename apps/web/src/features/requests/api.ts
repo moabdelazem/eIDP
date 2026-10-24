@@ -70,6 +70,16 @@ export const stepMoving = (step: Pick<RequestStep, 'status'>) => step.status ===
 export const pipelineFormFor = (r: Pick<PortalRequest, 'collection' | 'project' | 'repository'>) =>
   `/requests/new/jenkins/pipeline?${new URLSearchParams({ collection: r.collection ?? '', project: r.project, repository: r.repository ?? '' })}`
 
+/** Giving access or taking it away: nothing is created, people are added to a project or removed from it. */
+export function isAccess(request: Pick<PortalRequest, 'kind'>): boolean {
+  return request.kind === 'grant_access' || request.kind === 'revoke_access'
+}
+
+/** Taking access away. */
+export function isRevoke(request: Pick<PortalRequest, 'kind'>): boolean {
+  return request.kind === 'revoke_access'
+}
+
 /** Jira's requests act in Jira; everything else is Azure DevOps. */
 export function isJira(request: Pick<PortalRequest, 'kind'>): boolean {
   return request.kind === 'create_jira_project'

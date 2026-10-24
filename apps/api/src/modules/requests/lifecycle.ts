@@ -24,7 +24,7 @@ export async function submit(input: NewRequest, actor: Actor): Promise<RequestRe
   if (!input.justification.trim()) {
     throw new ApiError(400, 'invalid_request', 'Say why you need it, so DEVOPS can decide.')
   }
-  if (input.kind === 'grant_access') return submitGrant(input, actor)
+  if (input.kind === 'grant_access' || input.kind === 'revoke_access') return submitAccess(input, actor)
   const team = await ownTeam(input.teamGroup, actor)
   const verdict = await check(input)
   if (!verdict.ok) throw new ApiError(409, 'request_not_possible', verdict.reason)
@@ -50,7 +50,7 @@ async function ownTeam(teamGroup: string | undefined, actor: Actor): Promise<str
 }
 
 /** A creation's row, as filed. */
-function rowOf(input: Exclude<Target, { kind: 'grant_access' }>, justification: string, team: string, actor: Actor, bundleId: string | null = null) {
+function rowOf(input: Exclude<Target, { kind: 'grant_access' | 'revoke_access' }>, justification: string, team: string, actor: Actor, bundleId: string | null = null) {
   const developers = input.kind === 'create_project' ? uniqueNames(input.developers ?? []) : []
   const lead = input.kind === 'create_jira_project' ? input.lead?.trim() : undefined
   return {
@@ -118,18 +118,20 @@ async function filedWith(request: RequestRecord): Promise<FiledWith[]> {
 }
 
 /**
- * An access request is Contribute on the whole project — fixed, not chosen.
- * Rows filed before that was fixed may name a repository or Read, and
- * `executeGrant` still honours them.
+ * Access given or taken away. An access request is Contribute on the whole
+ * project — fixed, not chosen. Rows filed before that was fixed may name a
+ * repository or Read, and `executeGrant` still honours them. A removal takes
+ * the people named out of the project's Contributors and Readers.
  */
-async function submitGrant(input: AdoTarget & NewRequest, actor: Actor): Promise<RequestRecord> {
-  input = { ...input, repository: undefined, accessLevel: 'contribute' }
+async function submitAccess(input: AdoTarget & NewRequest, actor: Actor): Promise<RequestRecord> {
+  const granting = input.kind === 'grant_access'
+  input = { ...input, repository: undefined, accessLevel: granting ? 'contribute' : undefined }
   const verdict = await check(input)
   if (!verdict.ok) throw new ApiError(409, 'request_not_possible', verdict.reason)
   const rows = await db
     .insert(requests)
     .values({
-      kind: 'grant_access',
+      kind: input.kind,
       collection: input.collection,
       project: input.project,
       repository: null,
@@ -137,7 +139,7 @@ async function submitGrant(input: AdoTarget & NewRequest, actor: Actor): Promise
       requestedBy: actor.uid,
       requestedByName: actor.name,
       grantees: uniqueNames(input.grantees ?? []),
-      accessLevel: 'contribute',
+      accessLevel: granting ? 'contribute' : null,
     })
     .returning()
   return filed(toRecord(rows[0]!))

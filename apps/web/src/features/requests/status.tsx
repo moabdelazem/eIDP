@@ -1,5 +1,5 @@
-import { Check, CircleDashed, ClipboardList, FileQuestion, FolderGit2, FolderKanban, KeyRound, Loader2, TriangleAlert, Workflow, X, type LucideIcon } from 'lucide-react'
-import { isJira, whereOf, type PortalRequest, type RequestKind, type RequestStatus } from './api.ts'
+import { Check, CircleDashed, ClipboardList, FileQuestion, FolderGit2, FolderKanban, KeyRound, Loader2, TriangleAlert, UserMinus, Workflow, X, type LucideIcon } from 'lucide-react'
+import { isJira, isRevoke, whereOf, type PortalRequest, type RequestKind, type RequestStatus } from './api.ts'
 
 /** What each status is called in a badge. Access requests say Granting/Granted instead. */
 const STATUS_LABEL: Record<RequestStatus, string> = {
@@ -15,6 +15,7 @@ export const KIND_LABEL: Record<RequestKind, string> = {
   create_repository: 'Repository',
   create_project: 'Project',
   grant_access: 'Access',
+  revoke_access: 'Remove access',
   create_jira_project: 'Jira project',
   create_pipeline: 'Pipeline',
 }
@@ -23,6 +24,7 @@ export const KIND_ICON: Record<RequestKind, LucideIcon> = {
   create_repository: FolderGit2,
   create_project: FolderKanban,
   grant_access: KeyRound,
+  revoke_access: UserMinus,
   create_jira_project: ClipboardList,
   create_pipeline: Workflow,
 }
@@ -40,6 +42,8 @@ export const statusLabel = (status: string): string => STATUS_LABEL[status as Re
 
 /** Nothing is created by an access request, so its badge says what it does. */
 const GRANT_LABEL: Partial<Record<RequestStatus, string>> = { approved: 'Granting', completed: 'Granted' }
+/** Nor by a removal: it takes access away. */
+const REVOKE_LABEL: Partial<Record<RequestStatus, string>> = { approved: 'Removing', completed: 'Removed' }
 /** Nor by a pipeline request: it is set up, in words a requester knows. */
 const PIPELINE_LABEL: Partial<Record<RequestStatus, string>> = { approved: 'Setting up', completed: 'Set up' }
 
@@ -76,7 +80,7 @@ export function StatusBadge({ status, kind }: { status: RequestStatus; kind?: Re
       className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${statusTone(status).badge}`}
     >
       <Icon className={`size-3.5 ${status === 'approved' ? 'animate-spin motion-reduce:animate-none' : ''}`} />
-      {(kind === 'grant_access' && GRANT_LABEL[status]) || (kind === 'create_pipeline' && PIPELINE_LABEL[status]) || statusLabel(status)}
+      {(kind === 'grant_access' && GRANT_LABEL[status]) || (kind === 'revoke_access' && REVOKE_LABEL[status]) || (kind === 'create_pipeline' && PIPELINE_LABEL[status]) || statusLabel(status)}
     </span>
   )
 }
@@ -132,7 +136,7 @@ export function RequestName({
   const name = request.repository ?? request.project
   const where = whereOf(request)
   const label =
-    request.kind === 'grant_access' ? `Access to the ${request.repository ? 'repository' : 'project'}` : kindLabel(request.kind)
+    request.kind === 'grant_access' ? `Access to the ${request.repository ? 'repository' : 'project'}` : isRevoke(request) ? 'Removing access from the project' : kindLabel(request.kind)
   return (
     <div className={`min-w-0 ${className}`}>
       <Tag className={`font-mono font-medium break-words ${Tag === 'h1' ? 'text-lg' : ''}`}>{name}</Tag>
@@ -158,7 +162,7 @@ export function AccessLine({
   className?: string
 }) {
   const names =
-    r.kind === 'grant_access'
+    r.kind === 'grant_access' || isRevoke(r)
       ? (r.grantees ?? []).map((name) => ({ name, mono: true }))
       : [
           { name: own ? 'you' : r.requestedByName, mono: false },
@@ -172,7 +176,7 @@ export function AccessLine({
   return (
     <p className={`text-sm ${className}`}>
       {/* Jira has roles, not access levels; which role is the server's setting. */}
-      <span className="text-muted-foreground">{isJira(r) ? 'Project members: ' : `${level} access for `}</span>
+      <span className="text-muted-foreground">{isJira(r) ? 'Project members: ' : isRevoke(r) ? 'Removing access for ' : `${level} access for `}</span>
       {names.map(({ name, mono }, index) => (
         <span key={name}>
           {index > 0 && (index === names.length - 1 ? ' and ' : ', ')}

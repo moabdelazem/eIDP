@@ -111,8 +111,12 @@ export function adoPut<T>(path: string, options: Scope = {}): Promise<T> {
   return adoRequest<T>('PUT', path, options)
 }
 
+export function adoDelete<T>(path: string, options: Scope = {}): Promise<T> {
+  return adoRequest<T>('DELETE', path, options)
+}
+
 async function adoRequest<T>(
-  method: 'GET' | 'POST' | 'PUT',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   path: string,
   options: Scope,
   body?: unknown,

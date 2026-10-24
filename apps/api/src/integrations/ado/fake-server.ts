@@ -15,7 +15,7 @@ import { Hono, type Context, type Next } from 'hono'
 type Project = { id: string; name: string; description: string; state: 'wellFormed' }
 type Repo = { id: string; name: string; project: { id: string; name: string } }
 type Operation = { id: string; status: string; resultMessage: string | null; pending: () => void }
-type Identity = { id: string; descriptor: string; providerDisplayName: string; properties: { Account: { $value: string } } }
+type Identity = { id: string; descriptor: string; providerDisplayName: string; isContainer: boolean; properties: { Account: { $value: string } } }
 
 export function createFakeAdo(options: { failProjects?: boolean; denyServerScope?: boolean; denyGrants?: boolean } = {}) {
   /** A service account allowed to create but not to manage permissions. */
@@ -39,11 +39,12 @@ export function createFakeAdo(options: { failProjects?: boolean; denyServerScope
   /** Group memberships: group identity id → member identity ids. */
   const members = new Map<string, Set<string>>()
 
-  function addIdentity(account: string, displayName = account) {
+  function addIdentity(account: string, displayName = account, isContainer = false) {
     const identity: Identity = {
       id: randomUUID(),
       descriptor: `System.Security.Principal.WindowsIdentity;S-1-5-21-${identities.length + 1000}`,
       providerDisplayName: displayName,
+      isContainer,
       properties: { Account: { $value: account } },
     }
     identities.push(identity)
@@ -57,8 +58,8 @@ export function createFakeAdo(options: { failProjects?: boolean; denyServerScope
     const project: Project = { id: randomUUID(), name, description: '', state: 'wellFormed' }
     collections.get(collection)!.projects.push(project)
     // Every project comes with its own Contributors and Readers groups, as in ADO.
-    addIdentity('Contributors', `[${name}]\\Contributors`)
-    addIdentity('Readers', `[${name}]\\Readers`)
+    addIdentity('Contributors', `[${name}]\\Contributors`, true)
+    addIdentity('Readers', `[${name}]\\Readers`, true)
     return project
   }
   function addRepo(collection: string, project: string, name: string) {
@@ -67,7 +68,8 @@ export function createFakeAdo(options: { failProjects?: boolean; denyServerScope
     c.repos.push({ id: randomUUID(), name, project: { id: p.id, name: p.name } })
   }
 
-  for (const account of ['alice', 'bob', 'carol', 'Payments', 'DEVOPS']) addIdentity(account)
+  for (const account of ['alice', 'bob', 'carol']) addIdentity(account)
+  for (const group of ['Payments', 'DEVOPS']) addIdentity(group, group, true)
 
   addCollection('DefaultCollection')
   addCollection('Legacy')
@@ -194,6 +196,20 @@ export function createFakeAdo(options: { failProjects?: boolean; denyServerScope
   app.use('/:collection/_apis/accesscontrolentries/*', previewOnly)
 
   app.get('/:collection/_apis/identities', (c) => {
+    // By id, with the group's direct members as descriptors — how a group's membership is read.
+    const ids = c.req.query('identityIds')
+    if (ids) {
+      const direct = c.req.query('queryMembership') === 'Direct'
+      return c.json(
+        list(
+          identities
+            .filter((i) => ids.split(',').includes(i.id))
+            .map((i) => ({ ...i, ...(direct ? { members: [...(members.get(i.id) ?? [])].map((id) => identities.find((m) => m.id === id)!.descriptor) } : {}) })),
+        ),
+      )
+    }
+    const descriptors = c.req.query('descriptors')
+    if (descriptors) return c.json(list(identities.filter((i) => descriptors.split(',').includes(i.descriptor))))
     const filter = (c.req.query('filterValue') ?? '').toLowerCase()
     return c.json(
       list(
@@ -226,12 +242,30 @@ export function createFakeAdo(options: { failProjects?: boolean; denyServerScope
     return c.json(true)
   })
 
-  return { app, collections, identities, acl, members, setFailProjects, setDenyServerScope, setDenyGrants }
+  app.delete('/:collection/_apis/identities/:group/members/:member', (c) => {
+    if (options.denyGrants) return c.json({ message: 'TF50309: The service account lacks Manage permissions.' }, 403)
+    const set = members.get(c.req.param('group'))
+    if (!set?.delete(c.req.param('member'))) return c.json({ message: 'The identity is not a member of the group.' }, 404)
+    return c.body(null, 204)
+  })
+
+  /** Puts an account in one of a project's groups, as if granted earlier. */
+  const join = (project: string, group: 'Contributors' | 'Readers', account: string) => {
+    const container = identities.find((i) => i.providerDisplayName === `[${project}]\\${group}`)!
+    const member = identities.find((i) => i.properties.Account.$value === account)!
+    members.set(container.id, (members.get(container.id) ?? new Set()).add(member.id))
+  }
+
+  return { app, collections, identities, acl, members, join, addProject, addRepo, setFailProjects, setDenyServerScope, setDenyGrants }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const port = Number(process.env.FAKE_ADO_PORT ?? 4010)
-  serve({ fetch: createFakeAdo().app.fetch, port })
+  const fake = createFakeAdo()
+  // Enough to look at a project page: repositories with and without pipelines, and people in it.
+  for (const repo of ['agriland-web', 'agriland-mobile']) fake.addRepo('DefaultCollection', 'AgriLand', repo)
+  for (const account of ['bob', 'carol', 'Payments']) fake.join('AgriLand', 'Contributors', account)
+  serve({ fetch: fake.app.fetch, port })
   console.log(`fake Azure DevOps Server on http://localhost:${port}/tfs`)
   console.log(`  ADO_BASE_URL=http://localhost:${port}/tfs/DefaultCollection`)
 }

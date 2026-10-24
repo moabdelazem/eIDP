@@ -21,7 +21,7 @@ const SYSTEM = `You are the DevOps agent in e-IDP, the internal developer portal
 
 What the portal has (link to these paths in markdown when useful):
 - Overview at /, and the projects map at /map: every system and application from the inventories repo, with each application's configuration per environment (dev, qc, uat, prd_dr, prd).
-- Requests at /requests. New ones: an Azure DevOps repository (/requests/new/azure-devops/repository), a project in Azure DevOps, Jira or both (/requests/new/azure-devops/project or /requests/new/jira/project — one form, where either can be ticked), Contribute access to an Azure DevOps project (/requests/new/azure-devops/access). DevOps approve them at /approvals; the requester and their team then get access.
+- Requests at /requests. New ones: an Azure DevOps repository (/requests/new/azure-devops/repository), a project in Azure DevOps, Jira or both (/requests/new/azure-devops/project or /requests/new/jira/project — one form, where either can be ticked), Contribute access to an Azure DevOps project (/requests/new/azure-devops/access), taking people off one (/requests/new/azure-devops/remove-access). A project's page (/systems/<id>, opened from the map) lists its repositories with their pipelines and who can work in it. DevOps approve them at /approvals; the requester and their team then get access.
 - My pipelines at /pipelines: your own Jenkins runs and your teams'. Each build has a page with its stages, log and, for a failure, an explanation.
 - Weekly digest at /digest: each team's week of builds, requests and incidents.
 - Jenkins at /jenkins: DevOps only.

@@ -1,5 +1,5 @@
 import { ApiError } from '../../lib/errors.ts'
-import { adoGetList, adoPost, adoPut } from './client.ts'
+import { adoDelete, adoGetList, adoPost, adoPut } from './client.ts'
 
 /**
  * Granting access in Azure DevOps Server. Two steps, because ADO grants to
@@ -14,6 +14,16 @@ type AdoIdentity = {
   providerDisplayName: string
   isContainer?: boolean
   properties?: { Account?: { $value?: string } }
+  /** With `queryMembership=Direct`: the descriptors of a group's own members. */
+  members?: string[]
+}
+
+/** Someone, or a group, in one of a project's groups. */
+export type GroupMember = {
+  /** The account name — what an access request names. */
+  account: string
+  displayName: string
+  group: boolean
 }
 
 export type Principal = { name: string; id: string; descriptor: string }
@@ -92,11 +102,52 @@ export async function grantRepository(
 export async function addToProjectGroup(
   collection: string,
   project: string,
-  group: 'Contributors' | 'Readers',
+  group: ProjectGroup,
   principals: Principal[],
 ): Promise<void> {
   const container = await findIdentity(collection, `[${project}]\\${group}`)
   for (const principal of principals) {
     await adoPut(`identities/${container.id}/members/${principal.id}`, { collection })
+  }
+}
+
+/** A project's own group, Contributors or Readers. */
+export type ProjectGroup = 'Contributors' | 'Readers'
+
+/**
+ * Who is directly in one of a project's groups — people and the groups added
+ * whole. Members of a member group are not listed: removing access is done
+ * where it was given, and a team's group is removed as one.
+ */
+export async function projectGroupMembers(collection: string, project: string, group: ProjectGroup): Promise<GroupMember[]> {
+  const container = await findIdentity(collection, `[${project}]\\${group}`)
+  const [withMembers] = await adoGetList<AdoIdentity>('identities', { collection, query: { identityIds: container.id, queryMembership: 'Direct' } })
+  const descriptors = withMembers?.members ?? []
+  const found: AdoIdentity[] = []
+  // A long descriptor list makes a long URL; ask in batches.
+  for (let i = 0; i < descriptors.length; i += 50) {
+    found.push(...(await adoGetList<AdoIdentity>('identities', { collection, query: { descriptors: descriptors.slice(i, i + 50).join(','), queryMembership: 'None' } })))
+  }
+  return found
+    .map((identity) => ({
+      account: identity.properties?.Account?.$value || identity.providerDisplayName,
+      displayName: identity.providerDisplayName,
+      group: identity.isContainer === true,
+    }))
+    .sort((a, b) => Number(a.group) - Number(b.group) || a.displayName.localeCompare(b.displayName))
+}
+
+/**
+ * Takes each principal out of one of the project's groups. Someone already
+ * out of it is not an error: removing is idempotent, so a retry runs again.
+ */
+export async function removeFromProjectGroup(collection: string, project: string, group: ProjectGroup, principals: Principal[]): Promise<void> {
+  const container = await findIdentity(collection, `[${project}]\\${group}`)
+  for (const principal of principals) {
+    try {
+      await adoDelete(`identities/${container.id}/members/${principal.id}`, { collection })
+    } catch (err) {
+      if (!(err instanceof ApiError && err.code === 'ado_not_found')) throw err
+    }
   }
 }

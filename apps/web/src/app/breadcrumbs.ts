@@ -34,6 +34,14 @@ export function crumbsFor(pathname: string, systems: System[] = []): Crumb[] {
     ]
   }
 
+  if (segments[0] === 'systems') {
+    const system = systems.find((s) => s.id === decodeURIComponent(segments[1] ?? ''))
+    return [
+      { label: sectionLabels['/map']!, path: '/map' },
+      { label: system?.projectName ?? decodeURIComponent(segments[1] ?? 'Unknown project') },
+    ]
+  }
+
   if (segments[0] === 'requests') {
     const mine = { label: 'My requests', path: '/requests' }
     if (segments[1] === 'new') {

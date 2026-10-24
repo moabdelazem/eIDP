@@ -69,6 +69,13 @@ const Target = z.discriminatedUnion('kind', [
     grantees: z.array(z.string().max(256)).max(100),
   }),
   z.object({
+    kind: z.literal('revoke_access'),
+    collection: z.string().min(1),
+    project: z.string().min(1),
+    // Each must be in the project's Contributors or Readers now; checked by the service.
+    grantees: z.array(z.string().max(256)).max(100),
+  }),
+  z.object({
     kind: z.literal('create_pipeline'),
     collection: z.string().min(1),
     project: z.string().min(1),

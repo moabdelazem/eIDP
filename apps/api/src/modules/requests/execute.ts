@@ -2,7 +2,7 @@ import type { RequestRecord } from '@eidp/contracts/requests'
 import { addToProjectGroup, createProject, createRepository, findIdentity, grantRepository, webUrlFor, type Principal } from '../../integrations/ado/index.ts'
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '../../lib/db.ts'
-import { executeGrant } from './grant.ts'
+import { executeGrant, executeRevoke } from './grant.ts'
 import { executeJiraProject } from './jira-project.ts'
 import { executePipeline } from './pipeline/execute.ts'
 import { existingRepository, recordCompleted, recordCreated, withContext } from './steps.ts'
@@ -62,6 +62,7 @@ async function perform(request: RequestRecord): Promise<void> {
   try {
     if (request.kind === 'create_jira_project') return await executeJiraProject(request)
     if (request.kind === 'grant_access') return await executeGrant(request)
+    if (request.kind === 'revoke_access') return await executeRevoke(request)
     if (request.kind === 'create_pipeline') return await executePipeline(request)
     const collection = request.collection!
     const principals: Principal[] = []
