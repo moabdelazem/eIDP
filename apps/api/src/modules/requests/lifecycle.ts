@@ -15,6 +15,9 @@ import type { Actor, AdoTarget, JiraTarget, NewRequest, Target } from './model.t
 import { find, same, toRecord, withSteps } from './rows.ts'
 import { requests } from './schema.ts'
 import { errorFields, log } from '../../lib/log.ts'
+import { notifyFiled, notifyRejected, refOf } from './notify.ts'
+import { mailsAbout, resendMail } from '../notifications/index.ts'
+import type { SentMail } from '@eidp/contracts/notifications'
 
 /**
  * A request's life: filed, listed, decided, withdrawn, retried. Rows are never deleted — the row is the history.
@@ -152,6 +155,7 @@ async function submitAccess(input: AdoTarget & NewRequest, actor: Actor): Promis
  */
 function filed(request: RequestRecord): RequestRecord {
   void assess(request).catch((err) => log.error('assessing a request failed', { request: request.id, ...errorFields(err) }))
+  void notifyFiled(request)
   return request
 }
 
@@ -269,7 +273,9 @@ export async function reject(id: string, actor: Actor, access: Access, note: str
   await assertCanDecide(id, access)
   const rows = await decide(id, { status: 'rejected', decidedBy: actor.uid, decidedByName: actor.name, decisionNote: note.trim() })
   if (!rows[0]) throw new ApiError(409, 'request_not_pending', 'Someone has already decided this request.')
-  return toRecord(rows[0])
+  const rejected = toRecord(rows[0])
+  void notifyRejected(rejected)
+  return rejected
 }
 
 /**
@@ -309,4 +315,20 @@ export async function pipelinePreview(id: string, access: Access): Promise<Pipel
 export async function retryPipelineStep(id: string, step: StepName, access: Access): Promise<RequestStep[]> {
   await assertCanDecide(id, access)
   return retryStep(id, step)
+}
+
+/**
+ * The mail sent about a request — to whom, and whether it went — for the
+ * people who may decide it: it carries DevOps' own addresses, and resending
+ * is theirs to do.
+ */
+export async function requestEmails(id: string, access: Access): Promise<SentMail[]> {
+  await assertCanDecide(id, access)
+  return mailsAbout(refOf(id))
+}
+
+/** Sends one of a request's emails again: a failed one from scratch, a sent one as a fresh copy. */
+export async function resendRequestEmail(id: string, mailId: number, access: Access): Promise<SentMail> {
+  await assertCanDecide(id, access)
+  return resendMail(mailId, refOf(id))
 }

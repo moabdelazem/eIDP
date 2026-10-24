@@ -17,7 +17,7 @@ export { HISTORY_LIMIT, approve, cancel, get, listHistory, listMine, listPool, r
 export { recoverInterrupted } from './execute.ts'
 export { pipelineProject } from './pipeline/check.ts'
 export { listTechnologies } from './pipeline/technologies.ts'
-export { pipelinePreview, retryPipelineStep } from './lifecycle.ts'
+export { pipelinePreview, requestEmails, resendRequestEmail, retryPipelineStep } from './lifecycle.ts'
 export { adjust } from './adjust.ts'
 export { getTemplate, listTemplates, removeTemplate, saveTemplate } from './pipeline/templates.ts'
 export { importReference } from './pipeline/write.ts'

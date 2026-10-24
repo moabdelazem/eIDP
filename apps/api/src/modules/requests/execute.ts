@@ -8,6 +8,7 @@ import { executePipeline } from './pipeline/execute.ts'
 import { existingRepository, recordCompleted, recordCreated, withContext } from './steps.ts'
 import { requests } from './schema.ts'
 import { log } from '../../lib/log.ts'
+import { notifyFailed } from './notify.ts'
 
 /**
  * A request left `approved` whose heartbeat stopped was interrupted — its
@@ -27,6 +28,7 @@ export async function recoverInterrupted(): Promise<number> {
       ),
     )
     .returning({ id: requests.id })
+  for (const { id } of failed) await notifyFailed(id)
   return failed.length
 }
 
@@ -98,5 +100,6 @@ async function perform(request: RequestRecord): Promise<void> {
     const message = err instanceof Error ? err.message : String(err)
     log.error('request failed', { request: request.id, error: message })
     await db.update(requests).set({ status: 'failed', error: message }).where(eq(requests.id, request.id))
+    await notifyFailed(request.id)
   }
 }

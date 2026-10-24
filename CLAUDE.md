@@ -14,7 +14,7 @@ pnpm workspace. `apps/*` and `packages/*`.
 
   | Folder | Holds | Rule |
   |---|---|---|
-  | `modules/<name>/` | One area: `access`, `activity`, `auth`, `catalog`, `chatbot`, `digest`, `elk`, `health`, `jenkins`, `pipelines`, `preferences`, `projects`, `requests` | Other modules import its `index.ts` and nothing else |
+  | `modules/<name>/` | One area: `access`, `activity`, `auth`, `catalog`, `chatbot`, `digest`, `elk`, `health`, `jenkins`, `notifications`, `pipelines`, `preferences`, `projects`, `requests` | Other modules import its `index.ts` and nothing else |
   | `modules/<name>/routes.ts` | HTTP shape: paths, validation, status codes | Mounted by `app.ts` alone; no business logic |
   | `modules/<name>/service.ts` (and its parts) | The area's logic | Knows nothing about HTTP |
   | `modules/<name>/jobs.ts` | The area's background jobs | Scheduled by `server.ts` from the index |
@@ -92,7 +92,7 @@ Each area's detail — what it does, why, and the traps it has hit — lives in
 | [`docs/web.md`](docs/web.md) | routes, lazy pages, the Overview, motion, the map, the sidebar, the query cache, the API client |
 | [`docs/ui.md`](docs/ui.md) | page titles and layout, skeletons, dialogs, tables, wrapping, DataView, the palette |
 | [`docs/design.md`](docs/design.md) | colours, light/dark, brand marks, fonts, the logo |
-| [`docs/integrations.md`](docs/integrations.md) | ADO, Jira, Jenkins, Elasticsearch, Ollama, Vault, the inventories parser |
+| [`docs/integrations.md`](docs/integrations.md) | ADO, Jira, Jenkins, Elasticsearch, mail and the outbox, Ollama, Vault, the inventories parser |
 | [`docs/platform.md`](docs/platform.md) | the catalog, background jobs, migrations, where health went |
 | [`docs/requests.md`](docs/requests.md) | request types, lifecycle, creation, access requests, risk, forms |
 | [`docs/access.md`](docs/access.md) | permissions, roles, bindings, view-as, the Access page |
@@ -112,6 +112,7 @@ The ones that have broken something before, or would quietly. Each doc says why.
 - **A schema change is an edit to the module's `schema.ts` plus `pnpm --filter @eidp/api db:generate <name>`**, which writes the next migration into `lib/migrations/`; read it before committing. An applied file is frozen and editing it stops the boot; `lib/schema.test.ts` fails when the schema files and the migrations disagree. (`docs/platform.md`)
 - **Queries go through Drizzle** (`db` from `lib/db.ts`): the builder for rows, `sqlRows(sql\`…\`)` for SQL-shaped reads, arrays as `sql.param(list)`. A module writes only its own tables; it reads another's only through the tables that module's `index.ts` exports. (`docs/platform.md`)
 - **Background work is `schedule()`** in `server.ts` (`lib/jobs.ts`), never a bare `setInterval`: the API may run as several processes. (`docs/platform.md`)
+- **Mail is queued, never sent inline**: `enqueueMail` from `modules/notifications`, which sends, retries and keeps it; a module never calls the mail integration itself, and what mail is about never fails because of it. (`docs/integrations.md`)
 - **Work a person can start that must happen once goes through `lib/locks.ts`** (`exclusive`, `tryWithLock`), not a module-level promise or `Set` alone — those hold in one replica only. (`docs/platform.md`)
 - **Log with `lib/log.ts`**, never `console` (the CLI scripts aside): one line per event, fields not prose, and the request id rides along. (`docs/operations.md`)
 - **The API's JSON shapes live in `packages/contracts`**, imported with `import type` only; a contract file holds no values and imports nothing outside the package. Routes that add a field say what they send with `satisfies`. (`docs/web.md`)

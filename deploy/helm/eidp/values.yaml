@@ -62,6 +62,10 @@ api:
     # JENKINS_USER: svc-eidp
     # ELASTICSEARCH_URL: https://elasticsearch.example.com:9200
     # ELASTICSEARCH_INDICES: eidp-*
+    # MAIL_HOST: smtp.example.com
+    # MAIL_FROM: e-IDP <e-idp@example.com>
+    # MAIL_DEVOPS_TO: devops@example.com
+    # PORTAL_URL: https://eidp.example.com
     # OLLAMA_URL: http://ollama.ai.svc.cluster.local:11434
 
   # Secrets, in the order the API reads them: Vault first — what it reads
@@ -70,7 +74,7 @@ api:
   # earlier one.
   secrets:
     # An existing Secret whose keys are setting names (LDAP_BIND_PASSWORD,
-    # ADO_PAT, JIRA_TOKEN, JENKINS_TOKEN, ELASTICSEARCH_API_KEY, JWT_SECRET, …), all
+    # ADO_PAT, JIRA_TOKEN, JENKINS_TOKEN, ELASTICSEARCH_API_KEY, MAIL_PASSWORD, JWT_SECRET, …), all
     # passed to the API as environment variables.
     existingSecret: ""
     # JWT_SECRET signs sessions; every replica needs the same one. Generated

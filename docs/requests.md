@@ -343,6 +343,27 @@ the old generator's output, not its traps:
 | Provisioning and the test build ran inside the approval call; a Jenkins hiccup there was a warning in a returned dict | Steps of their own, in the database, followed to a result, retried on their own; the request page shows each with its build |
 | Approvers overrode names and YAML at approval, silently | Changes made before approving, each checked and recorded; the requester sees what was changed, by whom, from what |
 
+**Who is told by mail** (`notify.ts`, through the outbox in
+`modules/notifications`):
+
+| When | Who | What it carries |
+|---|---|---|
+| A request is filed | DevOps (`MAIL_DEVOPS_TO`) | It waits on them |
+| A request is rejected | The requester | The reason |
+| A request is completed | The requester | Where the result is |
+| A request fails | DevOps | The error, and a reminder that a retry picks up where it stopped |
+
+- The requester is not told of a failure, because DevOps will retry it.
+- A pipeline's completion mail links to the request, not to the commit,
+  which is DevOps' to read.
+- The requester's address comes from the directory (`profileOf`).
+- Mail is queued, never sent inline, and a request is never failed by its
+  mail.
+- Deciders see the mail about a request under *Sent by email* on its page
+  (`GET /requests/:id/emails`): to whom, sent or retrying or not sent, and
+  why. *Send again* (`POST …/emails/:mail/resend`) restarts a failed one, or
+  sends a copy of one that went.
+
 **Every request is assessed for its approver** (`modules/requests/risk.ts`),
 in the background the moment it is filed, and shown only to DevOps
 (`requests.decide`) — on the approval card, in the approve dialog when it is

@@ -3,6 +3,7 @@ import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
 import { validate } from '../../lib/validate.ts'
 import { accessFrom, requireAuth, requirePermission, type AppEnv } from '../../middleware/auth.ts'
+import type { SentMail } from '@eidp/contracts/notifications'
 import type { RequestRecord } from '@eidp/contracts/requests'
 import * as requests from './service.ts'
 
@@ -216,6 +217,14 @@ export const requestRoutes = new Hono<AppEnv>()
   /** Run a pushed pipeline's provisioning or test build again. */
   .post('/:id/steps/:step/retry', decider, validate('param', z.object({ id: z.string(), step: z.enum(['provision', 'test']) })), async (c) =>
     c.json(await requests.retryPipelineStep(c.req.param('id'), c.req.valid('param').step, await accessFrom(c))),
+  )
+
+  /** The mail sent about it, and whether it went. */
+  .get('/:id/emails', decider, async (c) => c.json((await requests.requestEmails(c.req.param('id'), await accessFrom(c))) satisfies SentMail[]))
+
+  /** Send one of them again. */
+  .post('/:id/emails/:mail/resend', decider, validate('param', z.object({ id: z.string(), mail: z.coerce.number().int().positive() })), async (c) =>
+    c.json((await requests.resendRequestEmail(c.req.param('id'), c.req.valid('param').mail, await accessFrom(c))) satisfies SentMail),
   )
 
   /** What approving a pipeline request would write into inventories, as they are now. */
