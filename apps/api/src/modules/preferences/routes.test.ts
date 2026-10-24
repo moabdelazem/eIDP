@@ -65,3 +65,21 @@ test('a layout must be card names; reset goes back to the portal’s own', async
   assert.equal((await call('bob', 'DELETE', '/preferences/overview')).status, 204)
   assert.deepEqual(await (await call('bob', 'GET', '/preferences/overview')).json(), { layout: null, updatedAt: null })
 })
+
+test('the theme and colours are kept with the person, checked, and read back by them alone', async () => {
+  assert.deepEqual(await (await call('alice', 'GET', '/preferences/appearance')).json(), { appearance: null, updatedAt: null })
+  const saved = await call('alice', 'PUT', '/preferences/appearance', { theme: 'dark', palette: 'efinance' })
+  assert.equal(saved.status, 200)
+  const back = (await (await call('alice', 'GET', '/preferences/appearance')).json()) as { appearance: unknown; updatedAt: string }
+  assert.deepEqual(back.appearance, { theme: 'dark', palette: 'efinance' })
+  assert.ok(back.updatedAt)
+  // Changed, it is replaced; bob's is still his own (none).
+  await call('alice', 'PUT', '/preferences/appearance', { theme: 'light', palette: 'classic' })
+  assert.deepEqual(((await (await call('alice', 'GET', '/preferences/appearance')).json()) as { appearance: unknown }).appearance, { theme: 'light', palette: 'classic' })
+  assert.deepEqual(((await (await call('bob', 'GET', '/preferences/appearance')).json()) as { appearance: unknown }).appearance, null)
+  // The Overview layout beside it is untouched.
+  assert.deepEqual(((await (await call('alice', 'GET', '/preferences/overview')).json()) as { layout: unknown }).layout, null)
+  for (const body of [{ theme: 'blue', palette: 'classic' }, { theme: 'dark', palette: 'neon' }, { theme: 'dark' }]) {
+    assert.equal((await call('alice', 'PUT', '/preferences/appearance', body)).status, 400, JSON.stringify(body))
+  }
+})

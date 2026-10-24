@@ -17,6 +17,7 @@ import {
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar'
 import { useProfile } from '@/features/auth/profile-context.tsx'
 import { useSession } from '@/features/auth/session-context.tsx'
+import { rememberAppearance, type ThemeChoice } from '@/lib/appearance.ts'
 import { setPalette, usePalette, type Palette } from '@/lib/palette.ts'
 
 /** Who you are signed in as, where to see more, the theme and colours, and the way out. */
@@ -60,7 +61,14 @@ export function NavUser() {
                 Theme
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
-                <DropdownMenuRadioGroup value={theme} onValueChange={setTheme}>
+                <DropdownMenuRadioGroup
+                  value={theme}
+                  onValueChange={(value) => {
+                    setTheme(value)
+                    // Kept with the account too, so every browser they use looks the same.
+                    rememberAppearance({ theme: value as ThemeChoice, palette })
+                  }}
+                >
                   <DropdownMenuRadioItem value="light">
                     <Sun /> Light
                   </DropdownMenuRadioItem>
@@ -73,19 +81,25 @@ export function NavUser() {
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
-            {/* Which colours, beside light or dark: the e-finance navy and red, or the classic eggplant (lib/palette.ts). */}
+            {/* Which colours, beside light or dark: the classic eggplant, or the e-finance navy and red (lib/palette.ts). */}
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <PaletteIcon />
                 Colours
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
-                <DropdownMenuRadioGroup value={palette} onValueChange={(value) => setPalette(value as Palette)}>
-                  <DropdownMenuRadioItem value="efinance">
-                    <Swatch name="efinance" /> e-finance
-                  </DropdownMenuRadioItem>
+                <DropdownMenuRadioGroup
+                  value={palette}
+                  onValueChange={(value) => {
+                    setPalette(value as Palette)
+                    rememberAppearance({ theme: (theme as ThemeChoice) ?? 'system', palette: value as Palette })
+                  }}
+                >
                   <DropdownMenuRadioItem value="classic">
                     <Swatch name="classic" /> Classic
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="efinance">
+                    <Swatch name="efinance" /> e-finance
                   </DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/src/assets/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#002e6d" />
+    <meta name="theme-color" content="#2a1930" />
     <title>e-IDP</title>
     <script>
       // The theme before the first paint (next-themes' own script never runs in an SPA: React does not execute scripts it renders).
@@ -13,10 +13,10 @@
         var dark = theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
         if (dark) document.documentElement.classList.add('dark')
         document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
-        // The colours (lib/palette.ts): e-finance unless this browser chose the classic eggplant.
-        if (localStorage.getItem('eidp.palette') === 'classic') {
-          document.documentElement.dataset.palette = 'classic'
-          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#2a1930')
+        // The colours (lib/palette.ts): Classic unless this browser chose e-finance.
+        if (localStorage.getItem('eidp.palette') === 'efinance') {
+          document.documentElement.dataset.palette = 'efinance'
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#003366')
         }
       } catch (e) {}
     </script>

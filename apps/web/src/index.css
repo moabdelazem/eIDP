@@ -3,163 +3,86 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Navy is the ground, red is the signal — the two colours of the e-finance
-   mark (navy #002E6D, red #E1241A). Nothing decorative is red: if it's red,
-   it's an action or it wants attention. Every pair here is checked for
-   contrast (docs/design.md). */
+/*
+ * Two palettes, chosen per person (lib/palette.ts, docs/design.md):
+ *
+ * - Classic, the default — eggplant ground, crimson signal: the colours the
+ *   portal started with. It is :root and .dark.
+ * - e-finance — the e-finance mark's navy and red, on white. It is
+ *   `data-palette="efinance"` on <html>, below: `:root[data-palette]`
+ *   outranks :root and .dark, and `:root.dark[data-palette]` outranks both.
+ *
+ * Red is the signal in both: if it's red, it's an action or it wants
+ * attention, never decoration. Every pair here is checked for contrast — 4.5:1
+ * for text, 3:1 for a ring or a mark — in both themes.
+ *
+ * `accent` is what a menu item, a select option and a ghost button turn when
+ * pointed at: a light tint of the ground, never the ground itself — a dark
+ * accent turned every hovered item into a solid block.
+ */
 :root {
   --radius: 0.375rem;
 
-  --background: #f6f8fc;
-  --foreground: #0d1b33;
-  --card: #ffffff;
-  --card-foreground: #0d1b33;
-  --popover: #ffffff;
-  --popover-foreground: #0d1b33;
-
-  /* The brand red, one step deeper: it is also text (an alarm count, an
-     error), and #E1241A itself reads 4.4:1 on the page — just short. */
-  --primary: #d4211a;
-  --primary-foreground: #ffffff;
-  --secondary: #e8eef7;
-  --secondary-foreground: #0f2a55;
-  --muted: #edf1f7;
-  --muted-foreground: #4c5c78;
-  --accent: #0b2a5c;
-  --accent-foreground: #f2f6fc;
-  --destructive: #d4211a;
-  --destructive-foreground: #ffffff;
-
-  --border: #d6dfeb;
-  --input: #d6dfeb;
-  --ring: #2a5bab;
-
-  /* What a state means, beside the palette's two jobs (navy ground, red
-     action). Each is a readable text colour (4.5:1 on its soft fill and on a
-     card) and a soft fill; always with an icon and a word, never alone.
-     In progress is teal, not blue: blue is the brand's ground now, and a
-     running build must not read as decoration. */
-  --success: #1d6b47;
-  --success-soft: #e5f3ec;
-  --warning: #8a5300;
-  --warning-soft: #fcf1db;
-  --info: #0f6a8a;
-  --info-soft: #e2f1f6;
-
-  /* App chrome — the brand navy rail, identical in both themes. */
-  --rail: #002e6d;
-  --rail-foreground: #e8eef8;
-  --rail-border: #1d4a8a;
-  --rail-muted: #9db4d8;
-  --sidebar: var(--rail);
-  --sidebar-foreground: var(--rail-foreground);
-  --sidebar-primary: #ff6a60;
-  --sidebar-primary-foreground: #1a0402;
-  --sidebar-accent: #174896;
-  --sidebar-accent-foreground: #f4f7fc;
-  --sidebar-border: var(--rail-border);
-  --sidebar-ring: #7fa6e3;
-  /* Pointing at a link is lighter than being on it, so the two never look the
-     same; the current page also carries a bar in the rail's own light blue
-     (not red: where you are is not something to act on). */
-  --sidebar-hover: #0a3a80;
-  --sidebar-indicator: #a9c8f5;
-}
-
-.dark {
-  --background: #070f1e;
-  --foreground: #e5ecf6;
-  --card: #0e1a2f;
-  --card-foreground: #e5ecf6;
-  --popover: #0e1a2f;
-  --popover-foreground: #e5ecf6;
-
-  --primary: #f2493e;
-  --primary-foreground: #1a0402;
-  --secondary: #172540;
-  --secondary-foreground: #e5ecf6;
-  --muted: #172540;
-  --muted-foreground: #93a3bf;
-  --accent: #1b3159;
-  --accent-foreground: #eef3fb;
-  --destructive: #f2493e;
-  --destructive-foreground: #1a0402;
-
-  --border: #22314d;
-  --input: #22314d;
-  --ring: #6f9de6;
-  --success: #7fd4a8;
-  --success-soft: #12291f;
-  --warning: #f0c06a;
-  --warning-soft: #2e2310;
-  --info: #7ccbe8;
-  --info-soft: #0d2633;
-  --sidebar: var(--rail);
-  --sidebar-foreground: var(--rail-foreground);
-  --sidebar-primary: #ff6a60;
-  --sidebar-primary-foreground: #1a0402;
-  --sidebar-accent: #174896;
-  --sidebar-accent-foreground: #f4f7fc;
-  --sidebar-border: var(--rail-border);
-  --sidebar-ring: #7fa6e3;
-}
-
-/*
- * The classic palette — eggplant ground, crimson signal — the colours the
- * portal started with, kept for anyone who prefers them (lib/palette.ts;
- * the user menu's Colours). `data-palette="classic"` on <html> outranks the
- * default's :root and .dark; the dark rule carries both, so it outranks the
- * light one. Every value here passed the same contrast checks when it was
- * the default.
- */
-:root[data-palette='classic'] {
   --background: #fbf8fa;
   --foreground: #251829;
+  --card: #ffffff;
   --card-foreground: #251829;
+  --popover: #ffffff;
   --popover-foreground: #251829;
+
   --primary: #c4142b;
   --primary-foreground: #fff5f6;
   --secondary: #f0e8f1;
   --secondary-foreground: #3c2842;
   --muted: #f3edf4;
   --muted-foreground: #6b5771;
-  --accent: #4a2b52;
-  --accent-foreground: #faf5fb;
+  --accent: #efe6f0;
+  --accent-foreground: #3c2842;
   --destructive: #c4142b;
   --destructive-foreground: #fff5f6;
+
   --border: #e3d7e6;
   --input: #e3d7e6;
   --ring: #7a4a85;
+
+  /* What a state means, beside the palette's two jobs (ground, action). Each
+     is a readable text colour (4.5:1 on its soft fill and on a card) and a
+     soft fill; always with an icon and a word, never alone. */
+  --success: #1d6b47;
+  --success-soft: #e5f3ec;
+  --warning: #8a5300;
+  --warning-soft: #fcf1db;
   --info: #3a4a94;
   --info-soft: #eaedfa;
+
+  /* App chrome — the eggplant rail, identical in both themes. */
   --rail: #2a1930;
   --rail-foreground: #e8dcea;
   --rail-border: #422c4a;
   --rail-muted: #9c86a4;
+  --sidebar: var(--rail);
+  --sidebar-foreground: var(--rail-foreground);
   --sidebar-primary: #e8394f;
   --sidebar-primary-foreground: #1a0509;
   --sidebar-accent: #3a2743;
   --sidebar-accent-foreground: #f6eef7;
+  --sidebar-border: var(--rail-border);
   --sidebar-ring: #9c6faa;
+  /* Pointing at a link is lighter than being on it, so the two never look the
+     same; the current page also carries a bar in the rail's own light tint
+     (not red: where you are is not something to act on). */
   --sidebar-hover: #33213a;
   --sidebar-indicator: #c9a6d6;
-  --skeleton: #ece3ee;
-  --chart-1: #6b3a78;
-  --chart-failure: #c4142b;
-  --chart-aborted: #a898ad;
-  --shiki-token-keyword: #6b3a78;
-  --shiki-token-function: #6b3a78;
-  --shiki-token-parameter: #6b3a78;
-  --shiki-token-comment: #6b5771;
-  --shiki-token-punctuation: #6b5771;
 }
-:root.dark[data-palette='classic'] {
+
+.dark {
   --background: #150e18;
   --foreground: #ece2ee;
   --card: #1f1523;
   --card-foreground: #ece2ee;
   --popover: #1f1523;
   --popover-foreground: #ece2ee;
+
   --primary: #e8394f;
   --primary-foreground: #1a0509;
   --secondary: #2c1e31;
@@ -170,28 +93,124 @@
   --accent-foreground: #f2e9f4;
   --destructive: #e8394f;
   --destructive-foreground: #1a0509;
+
   --border: #392640;
   --input: #392640;
   --ring: #9c6faa;
+  --success: #7fd4a8;
+  --success-soft: #12291f;
+  --warning: #f0c06a;
+  --warning-soft: #2e2310;
   --info: #a9b6f2;
   --info-soft: #1c2240;
-  --skeleton: #2c1e31;
-  --chart-1: #b474d0;
-  --chart-failure: #f0506a;
-  --chart-aborted: #8a7a90;
-  --shiki-token-keyword: #d3a6e0;
-  --shiki-token-function: #d3a6e0;
-  --shiki-token-parameter: #d3a6e0;
-  --shiki-token-comment: #8f7d96;
-  --shiki-token-punctuation: #8f7d96;
+}
+
+/*
+ * e-finance — the mark's navy (#003366) on white, its red (#E31E24) as the
+ * signal, slate neutrals and a light rail. Where it departs from the theme it
+ * was drawn from, it says why:
+ *
+ * - `secondary` stays a light navy tint rather than solid navy: the app uses
+ *   it as a soft fill (hover rows, chips, step numbers) in dozens of places.
+ * - In dark, red as text is a lighter step (#E31E24 reads 3.8:1 on the dark
+ *   card), `destructive` is that same red (a deep maroon was 1.8:1), and the
+ *   focus ring is blue, not red — red only ever means "act on this".
+ */
+:root[data-palette='efinance'] {
+  --background: #ffffff;
+  --foreground: #003366;
+  --card: #ffffff;
+  --card-foreground: #003366;
+  --popover: #ffffff;
+  --popover-foreground: #003366;
+  --primary: #e31e24;
+  --primary-foreground: #ffffff;
+  --secondary: #eef2f7;
+  --secondary-foreground: #003366;
+  --muted: #f4f4f4;
+  --muted-foreground: #5e6675;
+  --accent: #f1f5f9;
+  --accent-foreground: #003366;
+  --destructive: #e31e24;
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #003366;
+  /* In progress is teal, not blue: blue is the brand's ground, and a running
+     build must not read as decoration. */
+  --info: #0f6a8a;
+  --info-soft: #e2f1f6;
+  --rail: #f8fafc;
+  --rail-foreground: #003366;
+  --rail-border: #e2e8f0;
+  --rail-muted: #5e6675;
+  --sidebar-primary: #e31e24;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e2e8f0;
+  --sidebar-accent-foreground: #003366;
+  --sidebar-ring: #003366;
+  --sidebar-hover: #eef2f7;
+  --sidebar-indicator: #003366;
+  --skeleton: #eef2f7;
+  --chart-1: #2b4b7c;
+  --chart-failure: #e31e24;
+  --chart-aborted: #9aa6b8;
+  --shiki-token-keyword: #003366;
+  --shiki-token-function: #003366;
+  --shiki-token-parameter: #003366;
+  --shiki-token-comment: #5e6675;
+  --shiki-token-punctuation: #5e6675;
+}
+:root.dark[data-palette='efinance'] {
+  --background: #0a111f;
+  --foreground: #f8fafc;
+  --card: #0f172a;
+  --card-foreground: #f8fafc;
+  --popover: #0f172a;
+  --popover-foreground: #f8fafc;
+  --primary: #f2493e;
+  --primary-foreground: #1a0402;
+  --secondary: #1e293b;
+  --secondary-foreground: #f8fafc;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --accent: #1e293b;
+  --accent-foreground: #f8fafc;
+  --destructive: #f2493e;
+  --destructive-foreground: #1a0402;
+  --border: #1e293b;
+  --input: #1e293b;
+  --ring: #60a5fa;
+  --info: #7ccbe8;
+  --info-soft: #0d2633;
+  --rail: #0f172a;
+  --rail-foreground: #f1f5f9;
+  --rail-border: #1e293b;
+  --rail-muted: #94a3b8;
+  --sidebar-primary: #f2493e;
+  --sidebar-primary-foreground: #1a0402;
+  --sidebar-accent: #1e293b;
+  --sidebar-accent-foreground: #f8fafc;
+  --sidebar-ring: #60a5fa;
+  --sidebar-hover: #172033;
+  --sidebar-indicator: #60a5fa;
+  --skeleton: #1e293b;
+  --chart-1: #60a5fa;
+  --chart-failure: #f2564b;
+  --chart-aborted: #7c889b;
+  --shiki-token-keyword: #93c5fd;
+  --shiki-token-function: #93c5fd;
+  --shiki-token-parameter: #93c5fd;
+  --shiki-token-comment: #94a3b8;
+  --shiki-token-punctuation: #94a3b8;
 }
 
 /* The palettes as the Colours menu shows them: fixed, whichever is in use, in both themes. */
 :root {
-  --swatch-efinance-ground: #002e6d;
-  --swatch-efinance-signal: #e1241a;
   --swatch-classic-ground: #2a1930;
   --swatch-classic-signal: #c4142b;
+  --swatch-efinance-ground: #003366;
+  --swatch-efinance-signal: #e31e24;
 }
 
 @theme inline {
@@ -601,10 +620,10 @@ a[data-slot='item']:hover {
   background-color: var(--skeleton);
 }
 :root {
-  --skeleton: #e4eaf3;
+  --skeleton: #ece3ee;
 }
 .dark {
-  --skeleton: #17233a;
+  --skeleton: #2c1e31;
 }
 /* The pulse is motion too. */
 @media (prefers-reduced-motion: reduce) {
@@ -626,17 +645,17 @@ a[data-slot='item']:hover {
 }
 
 /*
- * Chart marks. One hue, the brand navy's — every chart here is a single
+ * Chart marks. One hue, the palette's ground — every chart here is a single
  * series, so one colour is honest and a legend box would only restate the
  * title. Never red: red means "act". Each is 3:1 or better against the card
- * and the page; the dark one is its own step, not the light one flipped —
- * the brand's #002E6D itself would vanish on a dark card.
+ * and the page; the dark one is its own step, not the light one flipped.
+ * e-finance's are in its block above.
  */
 :root {
-  --chart-1: #1c4a94;
+  --chart-1: #6b3a78;
 }
 .dark {
-  --chart-1: #78a6ec;
+  --chart-1: #b474d0;
 }
 
 /*
@@ -652,47 +671,47 @@ a[data-slot='item']:hover {
  * exactly what red is for here.
  */
 :root {
-  --chart-failure: #d4211a;
+  --chart-failure: #c4142b;
   --chart-unstable: #d4981c;
   --chart-success: #2e9c6b;
-  --chart-aborted: #9aa6b8;
+  --chart-aborted: #a898ad;
 }
 .dark {
-  --chart-failure: #f2564b;
+  --chart-failure: #f0506a;
   --chart-unstable: #e0aa3a;
   --chart-success: #4cbf8a;
-  --chart-aborted: #7c889b;
+  --chart-aborted: #8a7a90;
 }
 
 /*
  * Syntax colours for DataView (Shiki's css-variables theme). Drawn from the
- * palette: navy for keys, a quiet teal for strings, amber for numbers and
+ * palette: its ground for keys (e-finance's are in its block above), a quiet teal for strings, amber for numbers and
  * booleans. Never red — red means "act", and a string is not asking for that.
  */
 :root {
   --shiki-foreground: var(--foreground);
   --shiki-background: transparent;
-  --shiki-token-keyword: #1c4a94;
-  --shiki-token-function: #1c4a94;
-  --shiki-token-parameter: #1c4a94;
+  --shiki-token-keyword: #6b3a78;
+  --shiki-token-function: #6b3a78;
+  --shiki-token-parameter: #6b3a78;
   --shiki-token-string: #2f6b64;
   --shiki-token-string-expression: #2f6b64;
   --shiki-token-link: #2f6b64;
   --shiki-token-constant: #99541a;
-  --shiki-token-comment: #5c6a82;
-  --shiki-token-punctuation: #5c6a82;
+  --shiki-token-comment: #6b5771;
+  --shiki-token-punctuation: #6b5771;
 }
 
 .dark {
-  --shiki-token-keyword: #9cbcf0;
-  --shiki-token-function: #9cbcf0;
-  --shiki-token-parameter: #9cbcf0;
+  --shiki-token-keyword: #d3a6e0;
+  --shiki-token-function: #d3a6e0;
+  --shiki-token-parameter: #d3a6e0;
   --shiki-token-string: #7fcfc3;
   --shiki-token-string-expression: #7fcfc3;
   --shiki-token-link: #7fcfc3;
   --shiki-token-constant: #e8b375;
-  --shiki-token-comment: #8593ab;
-  --shiki-token-punctuation: #8593ab;
+  --shiki-token-comment: #8f7d96;
+  --shiki-token-punctuation: #8f7d96;
 }
 
 /*

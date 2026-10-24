@@ -1,4 +1,4 @@
-import type { OverviewLayout } from '@eidp/contracts/preferences'
+import type { Appearance, OverviewLayout } from '@eidp/contracts/preferences'
 import { jsonb, pgTable, primaryKey, text, timestamp } from 'drizzle-orm/pg-core'
 
 /**
@@ -11,7 +11,8 @@ export const userPreferences = pgTable(
     /** Lower-cased, as the directory's uid is matched everywhere else. */
     uid: text().notNull(),
     name: text().notNull(),
-    value: jsonb().$type<OverviewLayout>().notNull(),
+    /** By name: `overview` holds an OverviewLayout, `appearance` an Appearance. */
+    value: jsonb().$type<OverviewLayout | Appearance>().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [primaryKey({ columns: [table.uid, table.name] })],

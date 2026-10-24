@@ -8,6 +8,10 @@ import { ErrorBoundary } from '@/components/error-boundary.tsx'
 import '@fontsource-variable/archivo/wdth.css'
 import '@fontsource-variable/jetbrains-mono/index.css'
 import './index.css'
+import { applyStoredPalette } from '@/lib/palette.ts'
+
+// The colours this browser chose, set again in case index.html's early script was not run (a policy against inline scripts).
+applyStoredPalette()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
