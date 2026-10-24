@@ -2,35 +2,62 @@
 
 Colours, light and dark, brand marks, type and the logo. Moved out of CLAUDE.md, which keeps the rules that break things and points here.
 
-**The palette is the e-finance mark's**: navy `#002E6D` is the ground, red
-`#E1241A` is the signal — if something is red it is an action or it wants
-attention, never decoration. The app chrome (`--rail`) is the brand navy
-itself, in both themes; `--background` is a cool paper. The red used in the
-app (`--primary`, `--destructive`) is the brand's hue one step deeper,
-`#D4211A`: it is also text (an alarm count, an error), and `#E1241A` reads
-4.4:1 on the page, just short of 4.5. Navy tints the neutrals (borders,
-muted text, secondary fills) so the whole page reads as one family, and the
-chart colour and focus ring are lighter steps of the same navy. In progress
-(`--info`) is teal rather than blue, so a running build never reads as the
-brand's decoration. Every text pair is 4.5:1 or better and every ring or
-mark 3:1, in both themes; check a new value with a contrast tool before it
-lands. The shadcn `--sidebar-*`
-tokens point at the rail, so the sidebar is the rail. `shadcn add` writes
-its own neutral values into `src/index.css` — check them after adding any
-component and point them back at the rail.
+**Two palettes, chosen per person; Classic is the default.**
 
-**Two palettes, chosen per person.** e-finance (above) is the default;
-**Classic** is the eggplant ground and crimson signal the portal started
-with. The user menu's *Colours* picks one, beside *Theme* (light, dark,
-system), so there are four looks in all. It is kept per browser in
-`eidp.palette` (`lib/palette.ts`) and set as `data-palette="classic"` on
-`<html>` before the first paint by index.html's script, as the theme is, so a
-page never flashes the other colours. Classic is a block of overrides in
-`index.css` — `:root[data-palette='classic']` outranks `:root` and `.dark`,
-and `:root.dark[data-palette='classic']` outranks both — so a token added to
-the default palette needs its classic value there too, or Classic quietly
-shows the e-finance one. The menu's swatches are their own tokens
-(`--swatch-*`), fixed whichever palette is in use.
+- **Classic**: an eggplant ground (`--rail` `#2a1930`) and a crimson signal
+  (`#c4142b`). It is `:root` and `.dark` in `src/index.css`.
+- **e-finance**: the e-finance mark's navy (`#003366`) on white, its red
+  (`#E31E24`) as the signal, slate neutrals and a light rail. It is
+  `data-palette="efinance"` on `<html>`, a block of overrides:
+  `:root[data-palette='efinance']` outranks `:root` and `.dark`, and
+  `:root.dark[data-palette='efinance']` outranks both. A token added to
+  Classic needs its e-finance value in that block too, or e-finance quietly
+  shows the Classic one.
+
+e-finance was drawn from a shadcn token set, and departs from it only where
+the rules below need it:
+
+- `secondary` stays a light navy tint, not solid navy: the app uses it as a
+  soft fill (hover rows, chips, step numbers) in dozens of places.
+- In dark, red as text is a lighter step: `#E31E24` reads 3.8:1 on the dark
+  card. `destructive` is that same red; the set's deep maroon read 1.8:1.
+- The dark focus ring is blue, not red.
+- The chart colour is navy, never red.
+
+In both palettes, red is the signal. If something is red, it is an action or
+it wants attention, never decoration. Every text pair is 4.5:1 or better, and
+every ring or mark 3:1, in both themes. Check a new value with a contrast
+tool before it lands.
+
+**`accent` is a light tint of the ground, never the ground itself.** It is
+what a menu item, a select option and a ghost button turn when pointed at. It
+was once the dark navy (and the dark eggplant), which turned every hovered
+item into a solid block.
+
+The shadcn `--sidebar-*` tokens point at the rail (`--rail*`), so the sidebar
+is the rail. `shadcn add` writes its own neutral values into
+`src/index.css`, so check them after adding any component and point them
+back at the rail.
+
+The user menu's *Colours* picks the palette, beside *Theme* (light, dark,
+system), so there are four looks in all. The menu's swatches are their own
+tokens (`--swatch-*`), fixed whichever palette is in use.
+
+**The choice is kept twice**, so it holds wherever the person signs in:
+
+- **In the browser**: `eidp.palette` (`lib/palette.ts`) and `eidp.theme`
+  (next-themes). index.html's script applies them before the first paint, so
+  a page never flashes the other colours. `applyStoredPalette()` applies the
+  palette again as the app starts, in case a policy against inline scripts
+  stops that script.
+- **With the account**: `GET`/`PUT /preferences/appearance`
+  (`lib/appearance.ts`). The user menu saves every change there.
+  `app/appearance-sync.tsx` reads it after sign-in, so another browser,
+  another machine or cleared site data still looks the way the person left
+  it. Someone who chose before this existed has their browser's choice saved
+  as theirs on their next sign-in.
+- **Not while viewing as someone else**: that session is read-only, and the
+  admin keeps their own look.
 
 Three **meaning colours** sit beside those two, for state and nothing else:
 `success` (green, done), `warning` (amber, waiting) and `info` (teal, in
@@ -52,12 +79,12 @@ only for meanings: a log level, a result.
 
 **Light and dark.** `next-themes` (already a shadcn dependency, for the
 Toaster) puts `dark` on `<html>` — Light, Dark or Same as the system, from the
-user menu at the foot of the rail, kept per browser in `eidp.theme`, the
-system's by default. A dark page never flashes paper because of a small
+user menu at the foot of the rail, kept in `eidp.theme` and with the account
+(above), the system's by default. A dark page never flashes paper because of a small
 script in `index.html` that sets the class before the first paint —
 next-themes' own script is rendered by React, which never runs scripts it
 renders. Every colour is a token with a value in both `:root` and `.dark`
-(`src/index.css`); the rail is the one exception, identical in both. A new
+(`src/index.css`); Classic's rail is the one exception, identical in both. A new
 colour needs both values, checked in both themes — a hex in a component is
 how a dark page grows a white box. Brand marks take a `dark` shade where their
 blue would sink into a dark card (Jira's #0052CC was 2.6:1).
@@ -91,7 +118,7 @@ stays quiet.
 
 `apps/web/src/assets/logo.png` is the logo the app uses: the supplied mark
 with its baked `rgb(240,243,250)` background knocked out and the padding
-trimmed, so it sits on the navy rail and on paper without a visible box,
+trimmed, so it sits on either palette's rail and on paper without a visible box,
 and scaled to 128 px — over three times the 36 px it is ever shown at, sharp on
 a high-density screen, 7 KB instead of 21 on every first load.
 `logo-source.png` beside it is the untouched original. Replacing the logo

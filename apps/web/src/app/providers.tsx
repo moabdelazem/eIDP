@@ -6,13 +6,15 @@ import { BrowserRouter } from 'react-router'
 import { Toaster } from '@/components/ui/sonner'
 import { SessionProvider } from '@/features/auth/session-context.tsx'
 import { queryClient } from '@/lib/query-client.ts'
+import { AppearanceSync } from './appearance-sync.tsx'
 
 /**
  * Everything the whole app needs in scope. Add new providers here. The
  * query client is the one cache of API answers (`lib/query-client.ts`).
  *
  * The theme is next-themes': light, dark or the system's, kept per browser
- * (`eidp.theme`), applied as the `dark` class on <html>. Before the first
+ * (`eidp.theme`) and with the account (`AppearanceSync`), applied as the
+ * `dark` class on <html>. Before the first
  * paint it is index.html's own script that sets it, so a dark page never
  * flashes paper first: the script next-themes renders never runs in an SPA
  * (React does not run scripts it renders). It is marked a data block, which
@@ -33,7 +35,10 @@ export function Providers({ children }: { children: ReactNode }) {
         <LazyMotion features={loadMotion} strict>
           <MotionConfig reducedMotion="user">
             <BrowserRouter>
-              <SessionProvider>{children}</SessionProvider>
+              <SessionProvider>
+                <AppearanceSync />
+                {children}
+              </SessionProvider>
               <Toaster position="bottom-right" />
             </BrowserRouter>
           </MotionConfig>
