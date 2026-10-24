@@ -1,6 +1,6 @@
 # Integrations
 
-Azure DevOps Server, Jira, Jenkins, Ollama, Vault and the inventories parser — each one's quirks and the traps it has. Moved out of CLAUDE.md, which keeps the rules that break things and points here.
+Azure DevOps Server, Jira, Jenkins, Elasticsearch, Ollama, Vault and the inventories parser — each one's quirks and the traps it has. Moved out of CLAUDE.md, which keeps the rules that break things and points here.
 
 `integrations/ado/` — Azure DevOps **Server** (on-prem), not Services. URLs are
 `<base>/<project>/_apis/<area>?api-version=<version>`, where `ADO_BASE_URL`
@@ -21,6 +21,32 @@ user's password instead (Basic), for servers older than PATs. Optional like
 ADO — `jiraConfig()` names what is missing. `fake-server.ts` stands in for it
 (`pnpm --filter @eidp/api jira:fake`), including the ErrorCollection its
 refusals use and an archived project whose key is still taken.
+
+`integrations/elasticsearch/` — Elasticsearch, the store of the ELK stack, over
+its REST API with Node's fetch (no `@elastic/elasticsearch`: five calls do not
+need its transport). `ELASTICSEARCH_API_KEY` is sent as `ApiKey <key>` (the
+encoded form Kibana shows); without one, `ELASTICSEARCH_USERNAME` and
+`ELASTICSEARCH_PASSWORD` go as Basic. Optional like Jira — `esConfig()` names
+what is missing — and a private CA is trusted through `NODE_EXTRA_CA_CERTS`.
+It reads a document by id, searches one index, and adds or replaces a
+document (`refresh=wait_for` when the caller will read it straight back).
+
+**The portal is not an open door to the cluster.** Every call names one
+concrete index, and it must be on `ELASTICSEARCH_INDICES` (comma-separated, `*`
+matches anything; unset allows none). Names are checked against Elasticsearch's
+own rules first, so a wildcard, a comma list, `_all` or a remote `cluster:index`
+is a 400 before anything is sent — any of those would reach past the list. An
+index outside the list is a 403 whether or not it exists: what else the
+cluster holds is not the caller's to learn. A search never runs a script
+(`script`, `script_score`, `runtime_mappings`, … anywhere in the query or
+sort), returns at most 100 hits a page, and pages no deeper than 10,000 — the
+cluster's own `max_result_window`. Give the portal's Elasticsearch account
+only `read`, `index` and `create_doc` on those same indices: the allowlist is
+the portal's check, the role is the cluster's. Writes are logged with index
+and id, never the document. `/elk` (`modules/elk`) puts it behind the API for
+`elk.read` and `elk.write`; `fake-server.ts` stands in for it
+(`pnpm --filter @eidp/api elasticsearch:fake`, seeded with
+`eidp-applications`).
 
 `integrations/jenkins/` — Jenkins' remote access API, `<JENKINS_URL>/.../api/json`
 with `tree` so it sends only what is asked. `JENKINS_USER` + `JENKINS_TOKEN` (an

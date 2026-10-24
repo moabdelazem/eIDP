@@ -7,7 +7,7 @@ Permissions, roles and bindings; viewing as someone; the Access page; and the th
 | Layer | What | Where |
 |---|---|---|
 | **Permission** | one thing the portal can do (`requests.decide`, `rbac.manage`, …) | `PERMISSIONS`, in code |
-| **Role** | a named bundle of permissions (`member`, `team-lead`, `approver`, `pipeline-operator`, `build-operator`, `devops-admin`) | `ROLES`, in code |
+| **Role** | a named bundle of permissions (`member`, `team-lead`, `approver`, `pipeline-operator`, `build-operator`, `elk-reader`, `elk-writer`, `devops-admin`) | `ROLES`, in code |
 | **Binding** | a directory group or one user → a role, everywhere or limited to a `team` or `project` | `rbac_bindings`, managed on the Access page (`/access`) |
 
 Two bindings are **built in** and are not rows: everyone is a `member`

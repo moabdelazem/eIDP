@@ -20,7 +20,7 @@ on an Envoy Gateway. Why it is shaped this way is in
 3. **Secrets**, in Vault or a Kubernetes Secret (or both: Vault wins). The
    API needs at least `DATABASE_URL` (unless `postgresql.enabled`),
    `LDAP_BIND_PASSWORD`, and the token of each integration it should use —
-   `ADO_PAT`, `JIRA_TOKEN`, `JENKINS_TOKEN`. `JWT_SECRET` is generated if
+   `ADO_PAT`, `JIRA_TOKEN`, `JENKINS_TOKEN`, `ELASTICSEARCH_API_KEY`. `JWT_SECRET` is generated if
    neither has one.
 
 ## Install
