@@ -607,6 +607,105 @@ test('when Jira fails to create, the request says why and nothing is recorded as
   assert.equal((await settled(created.id)).status, 'completed')
 })
 
+// ---- a new project, in Azure DevOps, Jira or both ---------------------------
+// The old portal's "Request New DevOps Project": one form, a request per system.
+
+const projectRequest = (project: string, parts: { ado?: object; jira?: object }) => ({
+  project,
+  description: 'Billing for every channel.',
+  ...parts,
+  justification: 'Billing moves off the old platform this quarter.',
+  teamGroup: 'Payments',
+})
+
+type Filed = { id: string; kind: string; bundleId: string | null; grantees: string[] | null; projectLead: string | null; collection: string | null; projectKey: string | null }
+
+test('project: the developers and the Jira lead are checked by name before anything is filed', async () => {
+  const check = async (target: object) => json<{ ok: boolean; reason?: string }>(await call('bob', 'POST', '/requests/check', target))
+  const ado = (developers: string[]) => ({ kind: 'create_project', collection: 'DefaultCollection', project: 'Billing', developers })
+  const jira = (lead: string) => ({ ...jiraRequest('Billing', 'BILL'), lead })
+
+  assert.deepEqual(await check(ado(['carol', 'alice'])), { ok: true })
+  assert.match(String((await check(ado(['carol', 'nosuchperson']))).reason), /no account called nosuchperson/)
+  assert.match(String((await check(ado(['Carol Example']))).reason), /space in it\. Use login names/)
+  assert.deepEqual(await check(jira('carol')), { ok: true })
+  assert.match(String((await check(jira('nosuchperson'))).reason), /Jira does not know an account called nosuchperson/)
+  assert.match(String((await check(jira('mallory'))).reason), /deactivated/)
+  assert.match(String((await check(jira('Carol Example'))).reason), /Jira username, like jsmith/)
+})
+
+test('project: in both systems it is filed as two linked requests, or not at all', async () => {
+  // Jira refuses the key: nothing is filed, Azure DevOps included, and the refusal says which system.
+  const refused = await call('bob', 'POST', '/requests/project', projectRequest('Billing', { ado: { collection: 'DefaultCollection' }, jira: { projectKey: 'AGRI' } }))
+  assert.equal(refused.status, 409)
+  assert.match((await json<{ error: { message: string } }>(refused)).error.message, /^Jira: Project 'AgriLand' uses this project key/)
+  assert.ok(!(await json<{ project: string }[]>(await call('bob', 'GET', '/requests/mine'))).some((r) => r.project === 'Billing'))
+
+  const res = await call('bob', 'POST', '/requests/project', projectRequest('Billing', {
+    ado: { collection: 'DefaultCollection', developers: ['carol', 'Carol'] },
+    jira: { projectKey: 'BILL', lead: 'carol' },
+  }))
+  assert.equal(res.status, 201)
+  const [ado, jira] = await json<Filed[]>(res)
+  assert.equal(ado!.kind, 'create_project')
+  assert.equal(jira!.kind, 'create_jira_project')
+  assert.ok(ado!.bundleId)
+  assert.equal(ado!.bundleId, jira!.bundleId)
+  assert.deepEqual(ado!.grantees, ['carol'])
+  assert.equal(jira!.projectLead, 'carol')
+  assert.equal(jira!.projectKey, 'BILL')
+
+  // Each request page names the other, for the requester and for DevOps.
+  for (const who of ['bob', 'alice']) {
+    const page = await json<{ filedWith: { id: string; kind: string }[] }>(await call(who, 'GET', `/requests/${ado!.id}`))
+    assert.deepEqual(page.filedWith.map((r) => [r.id, r.kind]), [[jira!.id, 'create_jira_project']])
+  }
+
+  // Asking again is refused for both.
+  const again = await call('carol', 'POST', '/requests/project', projectRequest('Billing', { ado: { collection: 'DefaultCollection' }, jira: { projectKey: 'BILL' } }))
+  assert.equal(again.status, 409)
+  const message = (await json<{ error: { message: string } }>(again)).error.message
+  assert.match(message, /Azure DevOps: Bob Example has already asked/)
+  assert.match(message, /Jira: Bob Example has already asked/)
+})
+
+test('project: each part is approved on its own; developers get Contributor, the named lead leads in Jira', async () => {
+  const filed = (await json<Filed[]>(await call('bob', 'GET', '/requests/mine'))).filter((r) => r.bundleId && r.collection !== 'Legacy')
+  const ado = filed.find((r) => r.kind === 'create_project')!
+  const jira = filed.find((r) => r.kind === 'create_jira_project')!
+
+  await call('alice', 'POST', `/requests/${jira.id}/approve`, {})
+  assert.equal((await settled(jira.id)).status, 'completed')
+  // Approving one leaves the other waiting.
+  assert.equal((await json<{ status: string }>(await call('bob', 'GET', `/requests/${ado.id}`))).status, 'pending')
+  const project = fakeJira.projects.find((p) => p.key === 'BILL')!
+  assert.equal(project.lead, 'carol')
+  assert.deepEqual(jiraRole('BILL', 'Developers'), ['group:Payments', 'user:bob', 'user:carol'])
+
+  await call('alice', 'POST', `/requests/${ado.id}/approve`, {})
+  assert.equal((await settled(ado.id)).status, 'completed')
+  const contributors = fake.identities.find((i) => i.providerDisplayName === '[Billing]\\Contributors')!
+  const joined = [...(fake.members.get(contributors.id) ?? [])].map((id) => fake.identities.find((i) => i.id === id)!.properties.Account.$value)
+  assert.deepEqual(joined.sort(), ['Payments', 'bob', 'carol'])
+})
+
+test('project: one system alone has no bundle, and neither is refused', async () => {
+  const res = await call('bob', 'POST', '/requests/project', projectRequest('Ledger', { jira: { projectKey: 'LEDG' } }))
+  assert.equal(res.status, 201)
+  const [only, ...rest] = await json<Filed[]>(res)
+  assert.equal(rest.length, 0)
+  assert.equal(only!.kind, 'create_jira_project')
+  assert.equal(only!.bundleId, null)
+  // The requester leading is the default, not a value stored.
+  assert.equal(only!.projectLead, null)
+
+  const neither = await call('bob', 'POST', '/requests/project', projectRequest('Nowhere', {}))
+  assert.equal(neither.status, 400)
+  assert.match((await json<{ error: { message: string } }>(neither)).error.message, /Azure DevOps, Jira, or both/)
+  const notMine = await call('bob', 'POST', '/requests/project', { ...projectRequest('Elsewhere', { jira: { projectKey: 'ELSE' } }), teamGroup: 'DEVOPS' })
+  assert.equal(notMine.status, 400)
+})
+
 // ---- risk summaries --------------------------------------------------------
 // The catalog is shared with catalog.test.ts, which replaces it wholesale:
 // hold its lock while these tests' own system is in it.

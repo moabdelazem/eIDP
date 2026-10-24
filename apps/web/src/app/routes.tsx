@@ -17,7 +17,7 @@ const ApprovalsPage = lazyPage(() => import('@/features/requests/approvals-page.
 const MyRequestsPage = lazyPage(() => import('@/features/requests/my-requests-page.tsx'), 'MyRequestsPage')
 const NewRequestPage = lazyPage(() => import('@/features/requests/new-request-page.tsx'), 'NewRequestPage')
 const GrantAccessPage = lazyPage(() => import('@/features/requests/grant-access-page.tsx'), 'GrantAccessPage')
-const JiraProjectPage = lazyPage(() => import('@/features/requests/jira-project-page.tsx'), 'JiraProjectPage')
+const ProjectRequestPage = lazyPage(() => import('@/features/requests/project-request-page.tsx'), 'ProjectRequestPage')
 const PipelineRequestPage = lazyPage(() => import('@/features/requests/pipeline-request-page.tsx'), 'PipelineRequestPage')
 const RequestPage = lazyPage(() => import('@/features/requests/request-page.tsx'), 'RequestPage')
 const AccessPage = lazyPage(() => import('@/features/admin/access-page.tsx'), 'AccessPage')
@@ -48,8 +48,9 @@ export function AppRoutes() {
               element={
                 type.kind === 'grant_access' ? (
                   <GrantAccessPage />
-                ) : type.kind === 'create_jira_project' ? (
-                  <JiraProjectPage />
+                ) : type.kind === 'create_project' || type.kind === 'create_jira_project' ? (
+                  // One form for a project in either or both; keyed so moving between the two starts afresh.
+                  <ProjectRequestPage key={type.path} start={type.provider} />
                 ) : type.kind === 'create_pipeline' ? (
                   <PipelineRequestPage />
                 ) : (

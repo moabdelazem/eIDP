@@ -160,7 +160,14 @@ export function AccessLine({
   const names =
     r.kind === 'grant_access'
       ? (r.grantees ?? []).map((name) => ({ name, mono: true }))
-      : [{ name: own ? 'you' : r.requestedByName, mono: false }, ...(r.teamGroup ? [{ name: r.teamGroup, mono: true }] : [])]
+      : [
+          { name: own ? 'you' : r.requestedByName, mono: false },
+          // A Jira project's lead joins it too, when it is not the requester.
+          ...(isJira(r) && r.projectLead ? [{ name: r.projectLead, mono: true }] : []),
+          ...(r.teamGroup ? [{ name: r.teamGroup, mono: true }] : []),
+          // A new Azure DevOps project's developers get Contributor with them.
+          ...(r.kind === 'create_project' ? (r.grantees ?? []).map((name) => ({ name, mono: true })) : []),
+        ]
   const level = r.kind === 'grant_access' && r.accessLevel === 'read' ? 'Read' : 'Contributor'
   return (
     <p className={`text-sm ${className}`}>

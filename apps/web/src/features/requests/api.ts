@@ -1,8 +1,8 @@
 import { api } from '@/lib/api-client.ts'
 
 // The JSON's shapes are the API's, from @eidp/contracts — one definition, so the two cannot drift.
-import type { Assessment, Check, PipelinePreview, PipelineProject, RequestChanges, RequestStatus, RequestStep, RequestView, StepName, Target, Technology } from '@eidp/contracts/requests'
-export type { AccessLevel, Adjustment, Assessment, Check, DeployTarget, Namespace, PipelineFile, PipelinePreview, PipelineProject, PipelineSpec, ProjectTeams, RequestChanges, RequestKind, RequestStatus, RequestStep, StepName, StepStatus, Target, Technology } from '@eidp/contracts/requests'
+import type { Assessment, Check, PipelinePreview, PipelineProject, ProjectRequest, RequestChanges, RequestStatus, RequestStep, RequestView, StepName, Target, Technology } from '@eidp/contracts/requests'
+export type { AccessLevel, Adjustment, Assessment, Check, DeployTarget, FiledWith, Namespace, PipelineFile, PipelinePreview, PipelineProject, PipelineSpec, ProjectRequest, ProjectTeams, RequestChanges, RequestKind, RequestStatus, RequestStep, StepName, StepStatus, Target, Technology } from '@eidp/contracts/requests'
 
 /** A request as the web holds it: the record, and on a single one whether the viewer may decide it. */
 export type PortalRequest = RequestView
@@ -33,6 +33,8 @@ export const requestsApi = {
       method: 'POST',
       body: JSON.stringify({ ...target, justification, teamGroup }),
     }),
+  /** A project in Azure DevOps, Jira or both: one request per system, filed together. */
+  submitProject: (input: ProjectRequest) => api<PortalRequest[]>('/requests/project', { method: 'POST', body: JSON.stringify(input) }),
   mine: () => api<PortalRequest[]>('/requests/mine'),
   pool: () => api<{ open: PortalRequest[]; recent: PortalRequest[] }>('/requests/pool'),
   /** Every request the viewer may decide, newest first — capped at the API's HISTORY_LIMIT. */
@@ -50,6 +52,15 @@ export const requestsApi = {
   adjust: (id: string, changes: RequestChanges) => api<PortalRequest>(`/requests/${id}`, { method: 'PATCH', body: JSON.stringify(changes) }),
   /** Runs a pushed pipeline's provisioning or test build again. */
   retryStep: (id: string, step: StepName) => api<RequestStep[]>(`/requests/${id}/steps/${step}/retry`, { method: 'POST' }),
+}
+
+/** Login names, however they were typed: commas, spaces, one per line — each once, as first spelled. */
+export function parseNames(text: string): string[] {
+  const seen = new Map<string, string>()
+  for (const name of text.split(/[\s,;]+/)) {
+    if (name && !seen.has(name.toLowerCase())) seen.set(name.toLowerCase(), name)
+  }
+  return [...seen.values()]
 }
 
 /** Whether a step is still on its way in Jenkins — the page keeps watching until none is. */

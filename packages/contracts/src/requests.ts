@@ -158,11 +158,19 @@ export type RequestRecord = {
   justification: string
   /** The requester's directory group, granted access with them. Null on older requests. */
   teamGroup: string | null
-  /** grant_access only: who is to be granted, and at what level. */
+  /**
+   * Who else is given access, by login name: on grant_access, everyone it
+   * grants; on create_project, the developers who get Contributor with the
+   * requester and their team.
+   */
   grantees: string[] | null
   accessLevel: AccessLevel | null
   /** create_pipeline only: the application and how it is built and deployed. */
   pipeline: PipelineSpec | null
+  /** create_jira_project: who leads it, by login name; null when the requester does. */
+  projectLead: string | null
+  /** Set on the requests one New project form filed together — its Azure DevOps project and its Jira project. */
+  bundleId: string | null
   requestedBy: string
   requestedByName: string
   requestedAt: string
@@ -233,18 +241,38 @@ export type RequestStep = {
   finishedAt: string | null
 }
 
-/** One request as `GET /requests/:id` sends it: with whether the viewer may decide it. */
-export type RequestView = RequestRecord & { canDecide?: boolean }
+/** Another request filed from the same New project form, as its request page links to it. */
+export type FiledWith = Pick<RequestRecord, 'id' | 'kind' | 'status' | 'collection' | 'project' | 'projectKey'>
+
+/** One request as `GET /requests/:id` sends it: with whether the viewer may decide it, and what was filed with it. */
+export type RequestView = RequestRecord & { canDecide?: boolean; filedWith?: FiledWith[] }
 
 /** What the form sends to `/requests/check` and `/requests`: exactly one kind's fields. */
 export type Target =
   | { kind: 'create_repository'; collection: string; project: string; repository: string }
-  | { kind: 'create_project'; collection: string; project: string; description?: string }
+  /** `developers`: login names that get Contributor with the requester and their team. */
+  | { kind: 'create_project'; collection: string; project: string; description?: string; developers?: string[] }
   /** Always Contribute on the whole project; neither is the requester's choice. */
   | { kind: 'grant_access'; collection: string; project: string; grantees: string[] }
   /** `project` is the Jira project's name; `projectKey` its key. */
-  | { kind: 'create_jira_project'; project: string; projectKey: string; description?: string }
+  /** `lead`: who leads it, by login name, when not the requester. */
+  | { kind: 'create_jira_project'; project: string; projectKey: string; description?: string; lead?: string }
   /** For a repository that exists: `repository` is its name in `collection`/`project`. */
   | { kind: 'create_pipeline'; collection: string; project: string; repository: string; pipeline: PipelineSpec }
 
 export type Check = { ok: true } | { ok: false; reason: string }
+
+/**
+ * `POST /requests/project`: one project, in Azure DevOps, in Jira, or both —
+ * the old portal's "Request New DevOps Project". One name and description for
+ * both; each system's own details beside it. Filed as one request per system,
+ * together or not at all, and decided one by one.
+ */
+export type ProjectRequest = {
+  project: string
+  description?: string
+  ado?: { collection: string; developers?: string[] }
+  jira?: { projectKey: string; lead?: string }
+  justification: string
+  teamGroup: string
+}

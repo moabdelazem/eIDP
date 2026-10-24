@@ -4,7 +4,6 @@ import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Textarea } from '@/components/ui/textarea'
 import { ApiError } from '@/lib/api-client.ts'
 import { useResource } from '@/lib/use-resource.ts'
 import { requestsApi, type RequestKind, type Target } from './api.ts'
@@ -30,25 +29,19 @@ import {
 } from './form-layout.tsx'
 
 // The title comes from kinds.ts, so the menu, the breadcrumb and this heading
-// cannot drift apart; only the form's own wording lives here.
-type CreationKind = Exclude<RequestKind, 'grant_access' | 'create_jira_project' | 'create_pipeline'>
+// cannot drift apart; only the form's own wording lives here. A project — in
+// Azure DevOps, Jira or both — has its own form (project-request-page.tsx).
+type CreationKind = Extract<RequestKind, 'create_repository'>
 
-const COPY: Record<CreationKind, { lead: string; noun: string; why: string }> = {
-  create_repository: {
-    lead: 'A Git repository in an existing project, created once someone in DevOps approves it.',
-    noun: 'repository',
-    why: 'e.g. New service for loan scoring, owned by the Payments team.',
-  },
-  create_project: {
-    lead: 'A project with Git, in any collection, created once someone in DevOps approves it.',
-    noun: 'project',
-    why: 'e.g. Platform rewrite agreed in Q3 planning; repositories will follow.',
-  },
+const COPY = {
+  lead: 'A Git repository in an existing project, created once someone in DevOps approves it.',
+  noun: 'repository',
+  why: 'e.g. New service for loan scoring, owned by the Payments team.',
 }
 
-
+/** A new Git repository in an existing Azure DevOps project. */
 export function NewRequestPage({ kind }: { kind: CreationKind }) {
-  const copy = { ...COPY[kind], title: REQUEST_TYPES.find((type) => type.kind === kind)!.title }
+  const copy = { ...COPY, title: REQUEST_TYPES.find((type) => type.kind === kind)!.title }
   usePageTitle(copy.title)
   const navigate = useNavigate()
   const collections = useResource(['requests', 'collections'], () => requestsApi.collections())
@@ -56,9 +49,8 @@ export function NewRequestPage({ kind }: { kind: CreationKind }) {
   // A link may carry the form filled in — the chatbot's drafts do.
   const [params] = useSearchParams()
   const [collection, setCollection] = useState(params.get('collection') ?? '')
-  const [project, setProject] = useState(kind === 'create_repository' ? (params.get('project') ?? '') : '')
-  const [name, setName] = useState((kind === 'create_repository' ? params.get('repository') : params.get('project')) ?? '')
-  const [description, setDescription] = useState('')
+  const [project, setProject] = useState(params.get('project') ?? '')
+  const [name, setName] = useState(params.get('repository') ?? '')
   const [justification, setJustification] = useState(params.get('reason') ?? '')
   const [chosenTeam, setChosenTeam] = useState('')
   const team = useTeam(chosenTeam)
@@ -70,7 +62,7 @@ export function NewRequestPage({ kind }: { kind: CreationKind }) {
     if (!collection && collections.data) setCollection(collections.data.defaultCollection)
   }, [collections.data, collection])
 
-  const projects = useResource(collection && kind === 'create_repository' ? ['requests', 'projects', collection] : ['requests', 'projects', 'none'], () => (collection && kind === 'create_repository' ? requestsApi.projects(collection) : Promise.resolve([])))
+  const projects = useResource(collection ? ['requests', 'projects', collection] : ['requests', 'projects', 'none'], () => (collection ? requestsApi.projects(collection) : Promise.resolve([])))
 
   // A prefilled project — a link's or the chatbot's — takes the spelling ADO uses.
   useEffect(() => {
@@ -79,13 +71,10 @@ export function NewRequestPage({ kind }: { kind: CreationKind }) {
     if (project && !exact && match) setProject(match.name)
   }, [projects.data, project])
 
-  const target: Target | null = useMemo(() => {
-    if (!collection) return null
-    if (kind === 'create_repository') {
-      return project && name ? { kind, collection, project, repository: name } : null
-    }
-    return name ? { kind, collection, project: name, description } : null
-  }, [kind, collection, project, name, description])
+  const target: Target | null = useMemo(
+    () => (collection && project && name ? { kind, collection, project, repository: name } : null),
+    [kind, collection, project, name],
+  )
 
   // Ask the API as they type, with the same rules it applies on submit, so
   // what the form says is what will happen.
@@ -112,7 +101,7 @@ export function NewRequestPage({ kind }: { kind: CreationKind }) {
       stale = true
       clearTimeout(timer)
     }
-    // description does not affect whether the name is available
+    // target is rebuilt from these; listing it would ask again for an equal object
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, collection, project, name])
 
@@ -151,19 +140,14 @@ export function NewRequestPage({ kind }: { kind: CreationKind }) {
     )
   }
 
-  const pathParts =
-    kind === 'create_repository'
-      ? [collection || '…', project || '…', name || '…']
-      : [collection || '…', name || '…']
+  const pathParts = [collection || '…', project || '…', name || '…']
   const cloneUrl =
-    kind === 'create_repository' && collections.data && project && name
+    collections.data && project && name
       ? `${collections.data.serverUrl}/${encodeURIComponent(collection)}/${encodeURIComponent(project)}/_git/${encodeURIComponent(name)}`
       : null
   const nameOk = verdict.state === 'done' && verdict.result.ok
   const ready: Readiness = [
-    ...(kind === 'create_repository'
-      ? [{ label: 'Project chosen', done: Boolean(collection && project), missing: 'Choose the project it goes in.' }]
-      : [{ label: 'Collection chosen', done: Boolean(collection), missing: 'Choose a collection.' }]),
+    { label: 'Project chosen', done: Boolean(collection && project), missing: 'Choose the project it goes in.' },
     {
       label: 'Name available',
       done: nameOk,
@@ -204,7 +188,7 @@ export function NewRequestPage({ kind }: { kind: CreationKind }) {
       <FormSection
         step={1}
         title="Location"
-        description={kind === 'create_repository' ? 'The collection and the project the repository goes in.' : 'The collection the project goes in.'}
+        description="The collection and the project the repository goes in."
       >
         <Field label="Collection" htmlFor="collection">
           {collections.loading ? (
@@ -238,23 +222,13 @@ export function NewRequestPage({ kind }: { kind: CreationKind }) {
           )}
         </Field>
 
-        {kind === 'create_repository' && (
-          <Field label="Project" htmlFor="project">
-            <ProjectPicker id="project" projects={projects.data ?? []} value={project} onChange={setProject} loading={projects.loading} after={!collection ? 'a collection' : undefined} />
-          </Field>
-        )}
+        <Field label="Project" htmlFor="project">
+          <ProjectPicker id="project" projects={projects.data ?? []} value={project} onChange={setProject} loading={projects.loading} after={!collection ? 'a collection' : undefined} />
+        </Field>
       </FormSection>
 
-      <FormSection
-        step={2}
-        title={kind === 'create_repository' ? 'Repository' : 'Project'}
-        description={kind === 'create_repository' ? 'Its name, checked against Azure DevOps as you type.' : 'Its name, checked as you type, and what it is for.'}
-      >
-        <Field
-          label={kind === 'create_repository' ? 'Repository name' : 'Project name'}
-          htmlFor="name"
-          hint={kind === 'create_repository' ? 'Lowercase with dashes, like loan-scoring-api.' : 'Usually the system name, like NBFS_LoanManagementSystem.'}
-        >
+      <FormSection step={2} title="Repository" description="Its name, checked against Azure DevOps as you type.">
+        <Field label="Repository name" htmlFor="name" hint="Lowercase with dashes, like loan-scoring-api.">
           <Input
             id="name"
             value={name}
@@ -268,11 +242,6 @@ export function NewRequestPage({ kind }: { kind: CreationKind }) {
           <CheckMessage id="name-check" check={checkState(verdict, 'Checking Azure DevOps…', `Available — no ${copy.noun} by that name yet.`)} />
         </Field>
 
-        {kind === 'create_project' && (
-          <Field label="Description" htmlFor="description" hint="Shown on the project in Azure DevOps." optional>
-            <Textarea id="description" value={description} onChange={(event) => setDescription(event.target.value)} rows={2} />
-          </Field>
-        )}
       </FormSection>
 
       <FormSection step={3} title="Access" description={`Who can work in the ${copy.noun} once it exists.`}>

@@ -31,12 +31,17 @@ export const requests = pgTable('requests', {
   adjustments: jsonb().$type<Adjustment[]>().default([]).notNull(),
   /** create_pipeline: files of what approving writes, as a decider edited them. */
   pipelineEdits: jsonb('pipeline_edits').$type<PipelineFile[]>(),
+  /** create_jira_project: who leads it, when not the requester. */
+  projectLead: text('project_lead'),
+  /** The requests filed together from one New project form — its Azure DevOps and its Jira project. */
+  bundleId: uuid('bundle_id'),
 }, (table) => [
   uniqueIndex('requests_one_open_create_idx').on(sql`kind`, sql`lower(collection)`, sql`lower(project)`, sql`lower(COALESCE(repository, ''::text))`).where(sql`((status = ANY (ARRAY['pending'::text, 'approved'::text])) AND (kind <> 'grant_access'::text))`),
   uniqueIndex('requests_one_open_jira_key_idx').on(sql`lower(project_key)`).where(sql`((status = ANY (ARRAY['pending'::text, 'approved'::text])) AND (kind = 'create_jira_project'::text))`),
   uniqueIndex('requests_one_open_jira_name_idx').on(sql`lower(project)`).where(sql`((status = ANY (ARRAY['pending'::text, 'approved'::text])) AND (kind = 'create_jira_project'::text))`),
   index('requests_requested_by_idx').on(table.requestedBy, table.requestedAt.desc().nullsFirst()),
   index('requests_status_idx').on(table.status, table.requestedAt),
+  index('requests_bundle_idx').on(table.bundleId).where(sql`bundle_id IS NOT NULL`),
   check('requests_status_check', sql`status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'completed'::text, 'failed'::text, 'cancelled'::text])`),
   check('requests_repository_check', sql`((kind <> 'create_repository'::text) OR (repository IS NOT NULL)) AND ((kind <> 'create_project'::text) OR (repository IS NULL))`),
   check('requests_grant_check', sql`(kind <> 'grant_access'::text) OR ((cardinality(grantees) > 0) AND (access_level = ANY (ARRAY['read'::text, 'contribute'::text])))`),
