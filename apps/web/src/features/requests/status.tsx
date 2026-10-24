@@ -46,7 +46,7 @@ const PIPELINE_LABEL: Partial<Record<RequestStatus, string>> = { approved: 'Sett
 /**
  * What each status looks like: a badge fill and a dot. Red only where someone
  * has to act — a rejection to read, a failure to retry. The rest say what they
- * mean without asking anything: amber waits, indigo is moving, green is done,
+ * mean without asking anything: amber waits, teal is moving, green is done,
  * and a withdrawn request goes quiet.
  */
 export const STATUS_TONE: Record<RequestStatus, { badge: string; dot: string }> = {

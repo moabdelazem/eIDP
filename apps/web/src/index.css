@@ -3,99 +3,105 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Eggplant is the ground, red is the signal. Nothing decorative is red:
-   if it's red, it's an action or it wants attention. */
+/* Navy is the ground, red is the signal — the two colours of the e-finance
+   mark (navy #002E6D, red #E1241A). Nothing decorative is red: if it's red,
+   it's an action or it wants attention. Every pair here is checked for
+   contrast (docs/design.md). */
 :root {
   --radius: 0.375rem;
 
-  --background: #fbf8fa;
-  --foreground: #251829;
+  --background: #f6f8fc;
+  --foreground: #0d1b33;
   --card: #ffffff;
-  --card-foreground: #251829;
+  --card-foreground: #0d1b33;
   --popover: #ffffff;
-  --popover-foreground: #251829;
+  --popover-foreground: #0d1b33;
 
-  --primary: #c4142b;
-  --primary-foreground: #fff5f6;
-  --secondary: #f0e8f1;
-  --secondary-foreground: #3c2842;
-  --muted: #f3edf4;
-  --muted-foreground: #6b5771;
-  --accent: #4a2b52;
-  --accent-foreground: #faf5fb;
-  --destructive: #c4142b;
-  --destructive-foreground: #fff5f6;
+  /* The brand red, one step deeper: it is also text (an alarm count, an
+     error), and #E1241A itself reads 4.4:1 on the page — just short. */
+  --primary: #d4211a;
+  --primary-foreground: #ffffff;
+  --secondary: #e8eef7;
+  --secondary-foreground: #0f2a55;
+  --muted: #edf1f7;
+  --muted-foreground: #4c5c78;
+  --accent: #0b2a5c;
+  --accent-foreground: #f2f6fc;
+  --destructive: #d4211a;
+  --destructive-foreground: #ffffff;
 
-  --border: #e3d7e6;
-  --input: #e3d7e6;
-  --ring: #7a4a85;
+  --border: #d6dfeb;
+  --input: #d6dfeb;
+  --ring: #2a5bab;
 
-  /* What a state means, beside the palette's two jobs (eggplant ground, red
+  /* What a state means, beside the palette's two jobs (navy ground, red
      action). Each is a readable text colour (4.5:1 on its soft fill and on a
-     card) and a soft fill; always with an icon and a word, never alone. */
+     card) and a soft fill; always with an icon and a word, never alone.
+     In progress is teal, not blue: blue is the brand's ground now, and a
+     running build must not read as decoration. */
   --success: #1d6b47;
   --success-soft: #e5f3ec;
   --warning: #8a5300;
   --warning-soft: #fcf1db;
-  --info: #3a4a94;
-  --info-soft: #eaedfa;
+  --info: #0f6a8a;
+  --info-soft: #e2f1f6;
 
-  /* App chrome — the eggplant rail, identical in both themes. */
-  --rail: #2a1930;
-  --rail-foreground: #e8dcea;
-  --rail-border: #422c4a;
-  --rail-muted: #9c86a4;
+  /* App chrome — the brand navy rail, identical in both themes. */
+  --rail: #002e6d;
+  --rail-foreground: #e8eef8;
+  --rail-border: #1d4a8a;
+  --rail-muted: #9db4d8;
   --sidebar: var(--rail);
   --sidebar-foreground: var(--rail-foreground);
-  --sidebar-primary: #e8394f;
-  --sidebar-primary-foreground: #1a0509;
-  --sidebar-accent: #3a2743;
-  --sidebar-accent-foreground: #f6eef7;
+  --sidebar-primary: #ff6a60;
+  --sidebar-primary-foreground: #1a0402;
+  --sidebar-accent: #174896;
+  --sidebar-accent-foreground: #f4f7fc;
   --sidebar-border: var(--rail-border);
-  --sidebar-ring: #9c6faa;
+  --sidebar-ring: #7fa6e3;
   /* Pointing at a link is lighter than being on it, so the two never look the
-     same; the current page also carries a bar in the rail's own lilac (not
-     red: where you are is not something to act on). */
-  --sidebar-hover: #33213a;
-  --sidebar-indicator: #c9a6d6;
+     same; the current page also carries a bar in the rail's own light blue
+     (not red: where you are is not something to act on). */
+  --sidebar-hover: #0a3a80;
+  --sidebar-indicator: #a9c8f5;
 }
 
 .dark {
-  --background: #150e18;
-  --foreground: #ece2ee;
-  --card: #1f1523;
-  --card-foreground: #ece2ee;
-  --popover: #1f1523;
-  --popover-foreground: #ece2ee;
+  --background: #070f1e;
+  --foreground: #e5ecf6;
+  --card: #0e1a2f;
+  --card-foreground: #e5ecf6;
+  --popover: #0e1a2f;
+  --popover-foreground: #e5ecf6;
 
-  --primary: #e8394f;
-  --primary-foreground: #1a0509;
-  --secondary: #2c1e31;
-  --secondary-foreground: #ece2ee;
-  --muted: #2c1e31;
-  --muted-foreground: #a08faa;
-  --accent: #3a2740;
-  --accent-foreground: #f2e9f4;
-  --destructive: #e8394f;
-  --destructive-foreground: #1a0509;
+  --primary: #f2493e;
+  --primary-foreground: #1a0402;
+  --secondary: #172540;
+  --secondary-foreground: #e5ecf6;
+  --muted: #172540;
+  --muted-foreground: #93a3bf;
+  --accent: #1b3159;
+  --accent-foreground: #eef3fb;
+  --destructive: #f2493e;
+  --destructive-foreground: #1a0402;
 
-  --border: #392640;
-  --input: #392640;
-  --ring: #9c6faa;
+  --border: #22314d;
+  --input: #22314d;
+  --ring: #6f9de6;
   --success: #7fd4a8;
   --success-soft: #12291f;
   --warning: #f0c06a;
   --warning-soft: #2e2310;
-  --info: #a9b6f2;
-  --info-soft: #1c2240;
+  --info: #7ccbe8;
+  --info-soft: #0d2633;
   --sidebar: var(--rail);
   --sidebar-foreground: var(--rail-foreground);
-  --sidebar-primary: #e8394f;
-  --sidebar-primary-foreground: #1a0509;
-  --sidebar-accent: #3a2743;
-  --sidebar-accent-foreground: #f6eef7;
+  --sidebar-primary: #ff6a60;
+  --sidebar-primary-foreground: #1a0402;
+  --sidebar-accent: #174896;
+  --sidebar-accent-foreground: #f4f7fc;
   --sidebar-border: var(--rail-border);
-  --sidebar-ring: #9c6faa;
+  --sidebar-ring: #7fa6e3;
 }
 
 @theme inline {
@@ -418,7 +424,7 @@
 }
 
 /* A trigger whose menu is open looks pointed-at, and its chevron leans out
-   toward the menu in the indicator's lilac. */
+   toward the menu in the indicator's light blue. */
 [data-sidebar='menu-button'][data-state='open']:not([data-active='true']) {
   background-color: var(--sidebar-hover);
   color: var(--sidebar-accent-foreground);
@@ -439,7 +445,7 @@
 
 /*
  * Menu, palette and select items. shadcn highlights them with --accent, which
- * here is the rail's dark eggplant: a heavy bar on a white menu, with the grey
+ * here is the rail's dark navy: a heavy bar on a white menu, with the grey
  * description under it at about 2:1. A soft tint of the ground instead, dark
  * text on it, and the change eased rather than snapped. Destructive items keep
  * their own red highlight.
@@ -456,7 +462,7 @@
 }
 
 /*
- * A linked shadcn Item hovers with --accent/50 — the rail's eggplant again,
+ * A linked shadcn Item hovers with --accent/50 — the rail's navy again,
  * a dark smear across a card. The ground's soft tint instead, as the menus.
  */
 a[data-slot='item']:hover {
@@ -465,7 +471,7 @@ a[data-slot='item']:hover {
 
 /*
  * shadcn's Progress fills with --primary, which here is red, and red means
- * "act". A bar counts how far along something is, so it fills eggplant (the
+ * "act". A bar counts how far along something is, so it fills navy (the
  * chart colour), and eases as it grows only where motion is welcome.
  */
 [data-slot='progress'] {
@@ -497,7 +503,7 @@ a[data-slot='item']:hover {
 
 /*
  * shadcn's Skeleton paints with --accent, which in this palette is the dark
- * eggplant of a selected item — loading blocks came out as solid purple bars.
+ * navy of a selected item — loading blocks came out as solid dark bars.
  * Overridden here rather than in the generated file, so a regenerated
  * skeleton.tsx keeps it. Unlayered, so it outranks the bg-accent utility.
  */
@@ -505,10 +511,10 @@ a[data-slot='item']:hover {
   background-color: var(--skeleton);
 }
 :root {
-  --skeleton: #ece3ee;
+  --skeleton: #e4eaf3;
 }
 .dark {
-  --skeleton: #2c1e31;
+  --skeleton: #17233a;
 }
 /* The pulse is motion too. */
 @media (prefers-reduced-motion: reduce) {
@@ -530,17 +536,17 @@ a[data-slot='item']:hover {
 }
 
 /*
- * Chart marks. One hue, eggplant — every chart here is a single series, so
- * one colour is honest and a legend box would only restate the title. Never
- * red: red means "act". Both values pass the dataviz validator (lightness
- * band, chroma floor, 3:1 against the card); the dark one is its own step,
- * not the light one flipped — #c79ad6 failed as too pale to read as a hue.
+ * Chart marks. One hue, the brand navy's — every chart here is a single
+ * series, so one colour is honest and a legend box would only restate the
+ * title. Never red: red means "act". Each is 3:1 or better against the card
+ * and the page; the dark one is its own step, not the light one flipped —
+ * the brand's #002E6D itself would vanish on a dark card.
  */
 :root {
-  --chart-1: #6b3a78;
+  --chart-1: #1c4a94;
 }
 .dark {
-  --chart-1: #b474d0;
+  --chart-1: #78a6ec;
 }
 
 /*
@@ -556,47 +562,47 @@ a[data-slot='item']:hover {
  * exactly what red is for here.
  */
 :root {
-  --chart-failure: #c4142b;
+  --chart-failure: #d4211a;
   --chart-unstable: #d4981c;
   --chart-success: #2e9c6b;
-  --chart-aborted: #a898ad;
+  --chart-aborted: #9aa6b8;
 }
 .dark {
-  --chart-failure: #f0506a;
+  --chart-failure: #f2564b;
   --chart-unstable: #e0aa3a;
   --chart-success: #4cbf8a;
-  --chart-aborted: #8a7a90;
+  --chart-aborted: #7c889b;
 }
 
 /*
  * Syntax colours for DataView (Shiki's css-variables theme). Drawn from the
- * palette: eggplant for keys, a quiet teal for strings, amber for numbers and
+ * palette: navy for keys, a quiet teal for strings, amber for numbers and
  * booleans. Never red — red means "act", and a string is not asking for that.
  */
 :root {
   --shiki-foreground: var(--foreground);
   --shiki-background: transparent;
-  --shiki-token-keyword: #6b3a78;
-  --shiki-token-function: #6b3a78;
-  --shiki-token-parameter: #6b3a78;
+  --shiki-token-keyword: #1c4a94;
+  --shiki-token-function: #1c4a94;
+  --shiki-token-parameter: #1c4a94;
   --shiki-token-string: #2f6b64;
   --shiki-token-string-expression: #2f6b64;
   --shiki-token-link: #2f6b64;
   --shiki-token-constant: #99541a;
-  --shiki-token-comment: #8c7a92;
-  --shiki-token-punctuation: #8c7a92;
+  --shiki-token-comment: #5c6a82;
+  --shiki-token-punctuation: #5c6a82;
 }
 
 .dark {
-  --shiki-token-keyword: #d3a6e0;
-  --shiki-token-function: #d3a6e0;
-  --shiki-token-parameter: #d3a6e0;
+  --shiki-token-keyword: #9cbcf0;
+  --shiki-token-function: #9cbcf0;
+  --shiki-token-parameter: #9cbcf0;
   --shiki-token-string: #7fcfc3;
   --shiki-token-string-expression: #7fcfc3;
   --shiki-token-link: #7fcfc3;
   --shiki-token-constant: #e8b375;
-  --shiki-token-comment: #8f7d96;
-  --shiki-token-punctuation: #8f7d96;
+  --shiki-token-comment: #8593ab;
+  --shiki-token-punctuation: #8593ab;
 }
 
 /*

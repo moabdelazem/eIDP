@@ -341,7 +341,7 @@ function Legend() {
         <EnvPills environments={['prd']} size="xs" /> Runs in production
       </li>
       <li className="flex items-center gap-2">
-        <span aria-hidden className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--chart-1)] px-1 text-[10px] font-semibold text-white">7</span> Closed: how many inside
+        <span aria-hidden className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--chart-1)] px-1 text-[10px] font-semibold text-background">7</span> Closed: how many inside
       </li>
       <li className="pt-1 leading-relaxed">Choose a card to see it beside the map; double-click an application to open it. Drag to move, scroll to zoom.</li>
     </ul>
@@ -372,7 +372,7 @@ function Toggle({ node, open, onToggle }: { node: Laid; open: boolean; onToggle:
       aria-label={`${open ? 'Hide' : 'Show'} ${node.childCount} ${noun} in ${node.label}`}
       className={cn(
         'nodrag nopan absolute top-1/2 -right-3 z-10 flex h-6 min-w-6 -translate-y-1/2 items-center justify-center rounded-full border px-1.5 text-[11px] font-semibold tabular-nums shadow-xs transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
-        open ? 'bg-card text-muted-foreground hover:text-foreground' : 'border-[var(--chart-1)] bg-[var(--chart-1)] text-white hover:opacity-90',
+        open ? 'bg-card text-muted-foreground hover:text-foreground' : 'border-[var(--chart-1)] bg-[var(--chart-1)] text-background hover:opacity-90',
       )}
     >
       {open ? <Minus className="size-3" aria-hidden /> : node.childCount}

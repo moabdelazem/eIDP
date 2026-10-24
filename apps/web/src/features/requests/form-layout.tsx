@@ -276,7 +276,7 @@ export function ReviewPanel({ ready, steps, children }: { ready: Readiness; step
             </span>
           </div>
           {/*
-            Eggplant while it fills, green once everything is in (data-complete; index.css colours it). shadcn's Progress
+            Navy while it fills, green once everything is in (data-complete; index.css colours it). shadcn's Progress
             keeps `value` to itself and never hands it to Radix, so the bar says its own value to screen readers.
           */}
           <Progress
